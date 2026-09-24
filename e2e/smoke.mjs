@@ -13,8 +13,11 @@ const clip = join(here, "fixtures", "test-speech.mp4");
 const outDir = join(here, "results");
 mkdirSync(outDir, { recursive: true });
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), join(project, "out"), String(port)], { stdio: "inherit" });
-await new Promise((r) => setTimeout(r, 800));
+// E2E_URL=https://host/path/ runs against a deployed site instead of the local build.
+const remote = process.env.E2E_URL?.replace(/\/?$/, "/");
+const baseUrl = remote ?? `http://localhost:${port}/`;
+const server = remote ? null : spawn(process.execPath, [join(here, "serve.mjs"), join(project, "out"), String(port)], { stdio: "inherit" });
+if (!remote) await new Promise((r) => setTimeout(r, 800));
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const browser = await chromium.launch({
@@ -43,8 +46,10 @@ page.on("console", (m) => {
 
 let failed = false;
 try {
-  await page.goto(`http://localhost:${port}/`);
+  await page.goto(baseUrl);
   await page.waitForSelector("text=ReelFlow Web");
+  // Hosts without COOP/COEP headers rely on the service worker, which reloads once.
+  await page.waitForFunction(() => crossOriginIsolated || performance.now() > 8000, null, { timeout: 15000 }).catch(() => {});
   const isolated = await page.evaluate(() => crossOriginIsolated);
   log("crossOriginIsolated:", isolated);
 
@@ -122,6 +127,6 @@ try {
   if (errors.length) console.log("browser messages:\n  " + errors.slice(0, 25).join("\n  "));
   if (failed && ffmpegLog.length) console.log("ffmpeg log (last 60 lines):\n  " + ffmpegLog.slice(-60).join("\n  "));
   await browser.close();
-  server.kill();
+  server?.kill();
   process.exit(failed ? 1 : 0);
 }
