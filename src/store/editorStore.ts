@@ -28,6 +28,8 @@ export interface EditorState {
   assetUrls: Record<string, string>;
   timelineZoom: number;
   canvasZoom: CanvasZoom;
+  /** One-line status shown under the top bar (auto-dismissed). */
+  notice: string | null;
 
   loadProject(id: string): Promise<boolean>;
   unload(): void;
@@ -43,12 +45,14 @@ export interface EditorState {
   select(sel: Selection | null): void;
   setTimelineZoom(z: number): void;
   setCanvasZoom(z: CanvasZoom): void;
+  setNotice(text: string | null): void;
   registerAsset(assetId: string, blob: Blob): string;
   releaseAsset(assetId: string): void;
 }
 
 const MAX_HISTORY = 60;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleSave(project: VideoProject, set: (s: Partial<EditorState>) => void) {
   if (saveTimer) clearTimeout(saveTimer);
@@ -82,6 +86,7 @@ export const useEditor = create<EditorState>()(
     assetUrls: {},
     timelineZoom: 80,
     canvasZoom: "fit",
+    notice: null,
 
     async loadProject(id) {
       get().unload();
@@ -166,6 +171,11 @@ export const useEditor = create<EditorState>()(
     select: (selection) => set({ selection }),
     setTimelineZoom: (timelineZoom) => set({ timelineZoom: Math.min(600, Math.max(10, timelineZoom)) }),
     setCanvasZoom: (canvasZoom) => set({ canvasZoom }),
+    setNotice(text) {
+      set({ notice: text });
+      if (noticeTimer) clearTimeout(noticeTimer);
+      if (text) noticeTimer = setTimeout(() => set({ notice: null }), 6000);
+    },
 
     registerAsset(assetId, blob) {
       const url = URL.createObjectURL(blob);

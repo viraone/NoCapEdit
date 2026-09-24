@@ -61,11 +61,11 @@ export function PicturePanel() {
       <PanelHeader title="Picture" description="Stickers, logos and images. Drag to place, use the corner handle to resize." />
       <PanelSection>
         <FileDrop accept="image/*" multiple onFiles={onFiles} disabled={!project.clips.length} className="flex flex-col items-center gap-1.5">
-          <Upload size={18} className="text-neutral-500" />
+          <Upload size={18} className="text-label-3" />
           <span className="text-sm">Add images</span>
-          <span className="text-[11px] text-neutral-500">PNG, JPG, WebP, GIF (first frame)</span>
+          <span className="text-[11px] text-label-3">PNG, JPG, WebP, GIF (first frame)</span>
         </FileDrop>
-        {error && <p className="text-[11px] text-red-400">{error}</p>}
+        {error && <p className="text-[11px] text-sys-red">{error}</p>}
       </PanelSection>
       <PanelSection title="Stickers">
         {images.length === 0 ? (
@@ -80,14 +80,14 @@ export function PicturePanel() {
                     select({ kind: "overlay", id: img.id });
                     seek(img.start);
                   }}
-                  className={cx("flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left", selected?.id === img.id ? "border-brand-500/70 bg-brand-500/5" : "border-neutral-800 hover:border-neutral-700")}
+                  className={cx("flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left", selected?.id === img.id ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray4 hover:border-sys-gray3")}
                 >
                   {assetUrls[img.assetId] && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={assetUrls[img.assetId]} alt="" className="h-8 w-8 rounded bg-neutral-800 object-contain" />
+                    <img src={assetUrls[img.assetId]} alt="" className="h-8 w-8 rounded bg-sys-gray4 object-contain" />
                   )}
                   <span className="min-w-0 flex-1 truncate text-sm">{img.name}</span>
-                  <span className="text-[10px] tabular-nums text-neutral-500">
+                  <span className="text-[10px] tabular-nums text-label-3">
                     {formatTime(img.start)}–{formatTime(img.end)}
                   </span>
                 </button>
@@ -98,17 +98,17 @@ export function PicturePanel() {
       </PanelSection>
       {selected && (
         <>
-          <PanelSection title="Appearance" right={<Button variant="ghost" size="iconSm" className="text-red-300" onClick={() => remove(selected.id)} title="Delete"><Trash2 size={13} /></Button>}>
+          <PanelSection title="Appearance" right={<Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => remove(selected.id)} title="Delete"><Trash2 size={13} /></Button>}>
             <Slider label="Size" value={selected.width} min={0.05} max={1.5} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((o) => void (o.width = v), false)} {...tx} />
             <Slider label="Opacity" value={selected.opacity} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((o) => void (o.opacity = v), false)} {...tx} />
             <Slider label="Rotation" value={selected.rotation} min={-180} max={180} step={1} format={(v) => `${v.toFixed(0)}°`} onChange={(v) => edit((o) => void (o.rotation = v), false)} {...tx} />
           </PanelSection>
           <PanelSection title="Timing">
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Start" right={<button type="button" className="text-brand-300 hover:underline" onClick={() => edit((o) => void (o.start = Math.min(useEditor.getState().currentTime, o.end - 0.1)))}>playhead</button>}>
+              <Field label="Start" right={<button type="button" className="text-sys-blue hover:underline" onClick={() => edit((o) => void (o.start = Math.min(useEditor.getState().currentTime, o.end - 0.1)))}>playhead</button>}>
                 <NumberInput value={selected.start} min={0} max={selected.end - 0.1} suffix="s" onCommit={(v) => edit((o) => void (o.start = v))} />
               </Field>
-              <Field label="End" right={<button type="button" className="text-brand-300 hover:underline" onClick={() => edit((o) => void (o.end = Math.max(useEditor.getState().currentTime, o.start + 0.1)))}>playhead</button>}>
+              <Field label="End" right={<button type="button" className="text-sys-blue hover:underline" onClick={() => edit((o) => void (o.end = Math.max(useEditor.getState().currentTime, o.start + 0.1)))}>playhead</button>}>
                 <NumberInput value={selected.end} min={selected.start + 0.1} suffix="s" onCommit={(v) => edit((o) => void (o.end = v))} />
               </Field>
             </div>

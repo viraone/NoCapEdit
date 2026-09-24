@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { inter, ALL_FONT_CLASSES } from "@/lib/fonts";
+import { ALL_FONT_CLASSES } from "@/lib/fonts";
 
 export const metadata: Metadata = {
   title: "ReelFlow Web",
@@ -16,8 +16,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.className} h-full antialiased`}>
-      <body className="min-h-full bg-neutral-950 text-neutral-100">
+    <html lang="en" className="h-full antialiased">
+      <body className="min-h-full text-white">
         {children}
         {/* Keeps every caption font in the CSS bundle so canvas text can use them. */}
         <div aria-hidden className="hidden">

@@ -86,6 +86,8 @@ export interface Clip {
   pan: { x: number; y: number };
   /** Clip audio gain 0..2. */
   volume: number;
+  /** Colour of the bands shown when the picture does not cover the frame. */
+  background: string;
   /** Transition into the next clip. */
   transition: { type: TransitionType; duration: number };
   /** Replacement audio (e.g. denoised WAV) that plays instead of the clip's own track. */
@@ -287,6 +289,7 @@ export function createClip(init: Pick<Clip, "assetId" | "name" | "duration" | "w
     zoom: 1,
     pan: { x: 0, y: 0 },
     volume: 1,
+    background: "#000000",
     transition: { type: "none", duration: 0.5 },
     ...init,
   };
@@ -345,6 +348,7 @@ export function normalizeProject(raw: VideoProject): VideoProject {
     ...createClip({ assetId: c.assetId, name: c.name, duration: c.duration, width: c.width, height: c.height, hasAudio: c.hasAudio ?? true }),
     ...c,
     pan: c.pan ?? { x: 0, y: 0 },
+    background: c.background ?? "#000000",
     transition: c.transition ?? { type: "none", duration: 0.5 },
   }));
   project.cues = raw.cues ?? [];

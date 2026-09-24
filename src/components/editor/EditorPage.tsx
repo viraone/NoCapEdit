@@ -29,7 +29,7 @@ export function EditorPage() {
 
   if (error) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm text-neutral-400">
+      <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm text-label-2">
         <p>{error}</p>
         <Link href="/" className="text-brand-400 underline">
           Back to projects
@@ -38,7 +38,7 @@ export function EditorPage() {
     );
   }
   if (!project || loading) {
-    return <div className="flex h-screen items-center justify-center text-sm text-neutral-500">Opening project…</div>;
+    return <div className="flex h-screen items-center justify-center text-sm text-label-3">Opening project…</div>;
   }
   return <EditorShell />;
 }

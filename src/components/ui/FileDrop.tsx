@@ -24,8 +24,8 @@ export function FileDrop({ accept, multiple, onFiles, children, className, disab
         if (files.length) onFiles(multiple ? files : files.slice(0, 1));
       }}
       className={cx(
-        "cursor-pointer rounded-lg border border-dashed px-4 py-5 text-center transition-colors",
-        over ? "border-brand-500 bg-brand-500/10" : "border-neutral-700 hover:border-neutral-500 hover:bg-neutral-800/40",
+        "cursor-pointer rounded-xl border border-dashed px-4 py-5 text-center transition-colors",
+        over ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray3 hover:border-sys-gray2 hover:bg-sys-gray5/60",
         disabled && "cursor-not-allowed opacity-50",
         className,
       )}

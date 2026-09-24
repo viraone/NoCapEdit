@@ -9,14 +9,14 @@ export function Toggle({ checked, onChange, label, description, disabled }: { ch
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-3 rounded-md px-1 py-1 text-left hover:bg-neutral-800/50 disabled:opacity-50"
+      className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1 text-left hover:bg-sys-gray5/60 disabled:opacity-50"
     >
       <span>
-        <span className="block text-sm text-neutral-200">{label}</span>
-        {description && <span className="block text-[11px] text-neutral-500">{description}</span>}
+        <span className="block text-[13px] text-white">{label}</span>
+        {description && <span className="block text-[11px] text-label-3">{description}</span>}
       </span>
-      <span className={cx("relative h-5 w-9 shrink-0 rounded-full transition-colors", checked ? "bg-brand-500" : "bg-neutral-700")}>
-        <span className={cx("absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all", checked ? "left-4.5" : "left-0.5")} />
+      <span className={cx("relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors", checked ? "bg-sys-green" : "bg-sys-gray3")}>
+        <span className={cx("absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all", checked ? "left-[18px]" : "left-[2px]")} />
       </span>
     </button>
   );

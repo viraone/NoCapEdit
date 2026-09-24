@@ -13,9 +13,9 @@ export function Modal({ open, onClose, title, children, width = "max-w-lg" }: { 
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" className={`w-full ${width} max-h-[90vh] overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl`}>
-        <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
-          <h2 className="text-sm font-semibold">{title}</h2>
+      <div role="dialog" aria-modal="true" className={`card w-full ${width} max-h-[90vh] overflow-y-auto`}>
+        <div className="flex items-center justify-between border-b border-sys-gray5 px-5 py-3">
+          <h2 className="text-[13px] font-semibold">{title}</h2>
           <Button variant="ghost" size="iconSm" onClick={onClose} aria-label="Close">
             <X size={16} />
           </Button>

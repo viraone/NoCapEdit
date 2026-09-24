@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Film } from "lucide-react";
+import { Film, Play } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
 import type { ElementRect, Frame, Rect } from "@/lib/captions/renderer";
@@ -309,16 +309,17 @@ export function VideoCanvas() {
   };
 
   const selectionLabel = selection?.kind === "cue" ? "Caption" : selection?.kind === "overlay" ? "Overlay" : "";
+  const isPlaying = useEditor((s) => s.isPlaying);
 
   return (
-    <div ref={containerRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
-      <div ref={canvasRef} className="relative shrink-0 shadow-2xl shadow-black/60" style={{ width: cssW, height: cssH }}>
+    <div ref={containerRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-2">
+      <div ref={canvasRef} className="relative shrink-0 overflow-hidden rounded-2xl shadow-2xl shadow-black/60" style={{ width: cssW, height: cssH }}>
         <CanvasRenderer project={project} frame={frame} cssWidth={cssW} cssHeight={cssH} tick={tick} images={getImage} onFrame={onFrame} className="block h-full w-full bg-black" />
         <SafeZoneGuide kind={project.safeZone} />
         {guides.map((g, i) => (
           <div
             key={i}
-            className="pointer-events-none absolute bg-cyan-400/90"
+            className="pointer-events-none absolute bg-sys-teal"
             style={g.axis === "x" ? { left: g.pos * scale, top: 0, width: 1, height: "100%" } : { top: g.pos * scale, left: 0, height: 1, width: "100%" }}
           />
         ))}
@@ -331,6 +332,21 @@ export function VideoCanvas() {
           onPointerCancel={onPointerUp}
           onDoubleClick={onDoubleClick}
         >
+          {!isPlaying && project.clips.length > 0 && (
+            <button
+              type="button"
+              aria-label="Play"
+              className="absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition-transform hover:scale-105"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                engine.play();
+              }}
+            >
+              <Play size={28} className="ml-1" fill="currentColor" />
+            </button>
+          )}
+          <span className="pointer-events-none absolute bottom-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white/90">{format.ratio}</span>
           {selRect && (
             <div
               className="pointer-events-none absolute border border-brand-400"
@@ -338,7 +354,7 @@ export function VideoCanvas() {
             >
               <span className="absolute -top-5 left-0 rounded bg-brand-500 px-1 text-[10px] text-white">{selectionLabel}</span>
               <div
-                className="pointer-events-auto absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-nwse-resize rounded-sm border border-brand-400 bg-neutral-950"
+                className="pointer-events-auto absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-nwse-resize rounded-sm border border-brand-400 bg-sys-gray6"
                 onPointerDown={startResize}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
@@ -348,9 +364,9 @@ export function VideoCanvas() {
           )}
         </div>
         {project.clips.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-center text-neutral-500">
-            <Film size={36} className="text-neutral-700" />
-            <p className="text-sm">Import a recording to start</p>
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl bg-sys-gray6 text-center text-label-2">
+            <Film size={36} className="text-sys-gray3" />
+            <p className="text-[13px]">Import a recording to start</p>
             <Button variant="primary" size="sm" className="pointer-events-auto" onClick={() => setTool("clips")}>
               Add clips
             </Button>
@@ -358,7 +374,7 @@ export function VideoCanvas() {
         )}
       </div>
       {tool === "trim" && project.clips.length > 0 && (
-        <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-900/90 px-2 py-1 text-[11px] text-neutral-400">
+        <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-md bg-sys-gray6/90 px-2 py-1 text-[11px] text-label-2">
           Drag the video to pan · use the Trim panel to zoom
         </p>
       )}

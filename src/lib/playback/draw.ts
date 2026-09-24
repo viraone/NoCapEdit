@@ -20,7 +20,7 @@ function drawClip(ctx: Ctx, video: HTMLVideoElement, layout: ClipLayout, frame: 
 
 /** Paints the video layer (including transitions) for one frame. */
 export function drawVideoFrame(ctx: Ctx, frame: Frame, f: EngineFrame) {
-  ctx.fillStyle = "#000";
+  ctx.fillStyle = f.primary?.layout.clip.background ?? "#000";
   ctx.fillRect(0, 0, frame.width, frame.height);
   if (!f.primary) return;
   if (!f.secondary) {

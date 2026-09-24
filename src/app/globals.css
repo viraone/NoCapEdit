@@ -1,36 +1,133 @@
 @import "tailwindcss";
 
+/* Apple system colours (dark appearance) */
 @theme {
-  --color-brand-300: #fda4af;
-  --color-brand-400: #fb7185;
-  --color-brand-500: #f43f5e;
-  --color-brand-600: #e11d48;
-  --color-brand-700: #be123c;
+  --color-sys-blue: #0a84ff;
+  --color-sys-green: #30d158;
+  --color-sys-indigo: #5e5ce6;
+  --color-sys-orange: #ff9f0a;
+  --color-sys-pink: #ff375f;
+  --color-sys-purple: #bf5af2;
+  --color-sys-red: #ff453a;
+  --color-sys-teal: #64d2ff;
+  --color-sys-yellow: #ffd60a;
+  --color-sys-mint: #66d4cf;
+  --color-sys-gray: #8e8e93;
+  --color-sys-gray2: #636366;
+  --color-sys-gray3: #48484a;
+  --color-sys-gray4: #3a3a3c;
+  --color-sys-gray5: #2c2c2e;
+  --color-sys-gray6: #1c1c1e;
+  --color-label: #ffffff;
+  --color-label-2: rgba(235, 235, 245, 0.6);
+  --color-label-3: rgba(235, 235, 245, 0.3);
+  /* brand == system blue so existing accent classes follow the theme */
+  --color-brand-300: #7fc0ff;
+  --color-brand-400: #409cff;
+  --color-brand-500: #0a84ff;
+  --color-brand-600: #0077ed;
+  --color-brand-700: #0064c8;
+  --font-sans: ui-monospace, "SF Mono", Menlo, "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-mono: ui-monospace, "SF Mono", Menlo, "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
 
 html,
 body {
   height: 100%;
-  background: #0a0a0a;
-  color: #f5f5f5;
+  background: #0b0b0d;
+  color: #ffffff;
   color-scheme: dark;
   overscroll-behavior: none;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #404040 transparent;
+  scrollbar-color: #48484a transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #404040;
+  background: #48484a;
   border-radius: 8px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Floating card, like a macOS inspector pane */
+.card {
+  background: rgba(28, 28, 30, 0.92);
+  border: 1px solid #2c2c2e;
+  border-radius: 14px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+/* Section label: small caps monospace */
+.caps {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-label-2);
+  font-weight: 600;
+}
+
+/* Tile buttons (icon over label) */
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 52px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  background: #2c2c2e;
+  border: 1px solid #3a3a3c;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.tile:hover {
+  background: #3a3a3c;
+}
+.tile[data-active="true"] {
+  background: rgba(10, 132, 255, 0.18);
+  border-color: #0a84ff;
+  color: #409cff;
+}
+.tile:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Pill controls (canvas bar) */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: #2c2c2e;
+  border: 1px solid #3a3a3c;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill:hover {
+  background: #3a3a3c;
+}
+.pill[data-active="true"] {
+  background: rgba(10, 132, 255, 0.18);
+  border-color: #0a84ff;
+  color: #409cff;
 }
 
 .rf-range {
@@ -38,26 +135,26 @@ body {
   appearance: none;
   height: 4px;
   border-radius: 999px;
-  background: #3f3f46;
+  background: #48484a;
   outline: none;
   cursor: pointer;
 }
 .rf-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0.5px solid rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.rf-range::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
   background: #fff;
-  border: 2px solid #f43f5e;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-}
-.rf-range::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid #f43f5e;
+  border: 0.5px solid rgba(0, 0, 0, 0.3);
 }
 .rf-range:disabled {
   opacity: 0.4;

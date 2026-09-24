@@ -141,7 +141,7 @@ function videoChain(plan: ExportPlan, c: ClipInputPlan, i: number): string {
   const dh = Math.max(2, Math.round(c.placement.dh));
   return (
     `${head},scale=${dw}:${dh}:flags=bicubic,setsar=1[vs${i}];` +
-    `color=c=black:s=${plan.width}x${plan.height}:r=${plan.fps}:d=${dur}[bg${i}];` +
+    `color=c=${(clip.background ?? "#000000").replace("#", "0x")}:s=${plan.width}x${plan.height}:r=${plan.fps}:d=${dur}[bg${i}];` +
     `[bg${i}][vs${i}]overlay=x=${Math.round(c.placement.dx)}:y=${Math.round(c.placement.dy)}:shortest=1,${tail}`
   );
 }

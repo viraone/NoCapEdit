@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, ArrowLeftRight } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, ArrowLeftRight, MessageSquare } from "lucide-react";
+import { TransportBar } from "@/components/canvas/TransportBar";
 import { useEditor } from "@/store/editorStore";
 import { layoutClips, type ClipLayout } from "@/lib/models/timeline";
 import type { CaptionCue } from "@/lib/models/project";
@@ -17,6 +18,12 @@ const VIDEO_H = 76;
 const MUSIC_H = 28;
 const EDGE = 7;
 
+function rulerLabel(t: number, fine: boolean): string {
+  if (fine) return formatTime(t, true);
+  if (t < 60) return `${Math.round(t)}s`;
+  return formatTime(t, false);
+}
+
 function Ruler({ pxPerSec, duration, width }: { pxPerSec: number; duration: number; width: number }) {
   const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
   const major = steps.find((s) => s * pxPerSec >= 72) ?? 600;
@@ -28,11 +35,11 @@ function Ruler({ pxPerSec, duration, width }: { pxPerSec: number; duration: numb
     ticks.push({ t: Math.round(t * 1000) / 1000, major: isMajor });
   }
   return (
-    <div className="relative border-b border-neutral-800 bg-neutral-950" style={{ height: RULER_H }}>
+    <div className="relative border-b border-sys-gray5" style={{ height: RULER_H }}>
       {ticks.map((tick) => (
         <div key={tick.t} className="absolute bottom-0" style={{ left: tick.t * pxPerSec }}>
-          <div className={cx("w-px bg-neutral-600", tick.major ? "h-3" : "h-1.5")} />
-          {tick.major && <span className="absolute bottom-3 left-1 text-[9px] tabular-nums text-neutral-500">{formatTime(tick.t, major < 1)}</span>}
+          <div className={cx("w-px bg-sys-gray3", tick.major ? "h-3" : "h-1.5")} />
+          {tick.major && <span className="absolute bottom-3 left-1 text-[10px] font-semibold tabular-nums text-label-2">{rulerLabel(tick.t, major < 1)}</span>}
         </div>
       ))}
     </div>
@@ -71,8 +78,8 @@ function Playhead({ pxPerSec, scrollRef, height }: { pxPerSec: number; scrollRef
         e.currentTarget.releasePointerCapture(e.pointerId);
       }}
     >
-      <div className="absolute -left-2 top-0 h-3 w-4 cursor-ew-resize rounded-b-sm bg-brand-500" />
-      <div className="absolute left-0 top-0 h-full w-px bg-brand-500" />
+      <div className="absolute -left-2 top-0 h-3 w-4 cursor-ew-resize rounded-b-sm bg-sys-blue" />
+      <div className="absolute left-0 top-0 h-full w-px bg-sys-blue" />
     </div>
   );
 }
@@ -84,9 +91,9 @@ function CueBlock({ cue, pxPerSec, selected, active, showTranslated }: { cue: Ca
   return (
     <div
       className={cx(
-        "absolute top-1 flex h-[26px] cursor-grab items-center overflow-hidden rounded border px-1.5 text-[11px] leading-none select-none",
-        active ? "border-brand-400 bg-brand-500/30 text-white" : "border-sky-500/50 bg-sky-500/15 text-sky-100",
-        selected && "ring-1 ring-brand-400",
+        "absolute top-1 flex h-[26px] cursor-grab items-center overflow-hidden rounded-md border px-1.5 text-[11px] leading-none select-none",
+        active ? "border-sys-blue bg-sys-blue/30 text-white" : "border-sys-teal/50 bg-sys-teal/15 text-white",
+        selected && "ring-1 ring-sys-blue",
       )}
       style={{ left: cue.start * pxPerSec, width }}
       title={cue.text}
@@ -147,8 +154,8 @@ function ClipBlock({ layout, pxPerSec, selected, active }: { layout: ClipLayout;
   return (
     <div
       className={cx(
-        "absolute top-1 h-[68px] cursor-pointer overflow-hidden rounded-md border bg-neutral-900 select-none",
-        selected ? "border-brand-400 ring-1 ring-brand-400" : active ? "border-neutral-500" : "border-neutral-700",
+        "absolute top-1 h-[68px] cursor-pointer overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
+        selected || active ? "border-sys-blue" : "border-sys-gray4",
       )}
       style={{ left: layout.start * pxPerSec, width }}
       onPointerDown={(e) => {
@@ -191,13 +198,14 @@ function ClipBlock({ layout, pxPerSec, selected, active }: { layout: ClipLayout;
       }}
     >
       <Filmstrip assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={68} />
-      {clip.hasAudio && <AudioWaveform assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={26} />}
-      <div className="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/60 px-1 py-0.5 text-[10px] text-neutral-200">
+      {clip.hasAudio && <AudioWaveform assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={28} color="rgba(255,214,10,0.9)" />}
+      <div className="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/60 px-1 py-0.5 text-[10px] font-semibold text-white">
         <span className="max-w-32 truncate">{clip.name}</span>
-        {clip.speed !== 1 && <span className="text-amber-300">{clip.speed}×</span>}
+        <span className="text-label-2">{formatTime(layout.duration)}</span>
+        {clip.speed !== 1 && <span className="text-sys-yellow">{clip.speed}×</span>}
       </div>
       {layout.transitionOut > 0 && (
-        <div className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-violet-600/80 px-1 text-[9px] text-white" title={`${clip.transition.type} ${clip.transition.duration}s`}>
+        <div className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-sys-purple/80 px-1 text-[9px] text-white" title={`${clip.transition.type} ${clip.transition.duration}s`}>
           <ArrowLeftRight size={9} /> {clip.transition.type}
         </div>
       )}
@@ -215,6 +223,7 @@ export function TimelineDock() {
   const seek = useEditor((s) => s.seek);
   const select = useEditor((s) => s.select);
   const setTool = useEditor((s) => s.setTool);
+  const hasCues = project.cues.length > 0;
   const activeCueId = useEditor((s) => {
     const t = s.currentTime;
     return s.project?.cues.find((c) => t >= c.start && t < c.end)?.id ?? null;
@@ -262,11 +271,12 @@ export function TimelineDock() {
   const musicWidth = music ? (music.loop ? duration : Math.min(duration, Math.max(0, music.duration - music.startOffset))) * pxPerSec : 0;
 
   return (
-    <div className="flex shrink-0 flex-col border-t border-neutral-800 bg-neutral-950" style={{ height: lanesH + 36 }}>
-      <div className="flex h-9 items-center gap-2 border-b border-neutral-800 px-3 text-[11px] text-neutral-400">
-        <span className="font-medium text-neutral-300">Timeline</span>
+    <div className="card flex shrink-0 flex-col overflow-hidden" style={{ height: lanesH + 44 + 30 }}>
+      <TransportBar />
+      <div className="flex h-[30px] items-center gap-2 border-b border-sys-gray5 px-3 text-[11px] text-label-2">
+        <span className="font-semibold text-white">Timeline</span>
         <span className="tabular-nums">{formatTime(duration)}</span>
-        <span className="text-neutral-600">·</span>
+        <span className="text-label-3">·</span>
         <span>{project.clips.length} clips · {project.cues.length} captions</span>
         <div className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="iconSm" onClick={() => setZoom(zoom / 1.4)} title="Zoom out">
@@ -281,7 +291,7 @@ export function TimelineDock() {
         </div>
       </div>
       <div className="flex min-h-0 flex-1">
-        <div className="flex w-20 shrink-0 flex-col border-r border-neutral-800 text-[10px] uppercase tracking-wide text-neutral-500">
+        <div className="flex w-20 shrink-0 flex-col border-r border-sys-gray5 text-[10px] uppercase tracking-wide text-label-3">
           <div style={{ height: RULER_H }} />
           <div className="flex items-center gap-1 px-2" style={{ height: CUE_H }}>
             <Captions size={11} /> Captions
@@ -309,7 +319,18 @@ export function TimelineDock() {
         >
           <div className="relative" style={{ width: contentW, height: lanesH }}>
             <Ruler pxPerSec={pxPerSec} duration={duration} width={contentW} />
-            <div className="relative border-b border-neutral-800/70" style={{ height: CUE_H }}>
+            <div className="relative border-b border-sys-gray5/70" style={{ height: CUE_H }}>
+              {!hasCues && (
+                <button
+                  type="button"
+                  className="absolute inset-x-1 top-1 flex h-[26px] items-center justify-center gap-2 rounded-md border border-sys-gray4 bg-sys-gray5 text-[12px] font-semibold text-label-2 hover:bg-sys-gray4 hover:text-white"
+                  style={{ width: Math.max(0, contentW - 8) }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => setTool("subtitles")}
+                >
+                  <MessageSquare size={13} /> No subtitles yet — click here, then press Generate captions
+                </button>
+              )}
               {project.cues.map((cue) => (
                 <CueBlock
                   key={cue.id}
@@ -321,7 +342,7 @@ export function TimelineDock() {
                 />
               ))}
             </div>
-            <div className="relative border-b border-neutral-800/70" style={{ height: VIDEO_H }}>
+            <div className="relative border-b border-sys-gray5/70" style={{ height: VIDEO_H }}>
               {layouts.map((layout) => (
                 <ClipBlock key={layout.clip.id} layout={layout} pxPerSec={pxPerSec} selected={selection?.kind === "clip" && selection.id === layout.clip.id} active={activeClipId === layout.clip.id} />
               ))}
@@ -330,7 +351,7 @@ export function TimelineDock() {
               {project.voiceovers.map((vo) => (
                 <div
                   key={vo.id}
-                  className="absolute top-1 z-10 flex h-5 cursor-pointer items-center overflow-hidden rounded border border-amber-400/60 bg-amber-500/25 px-1 text-[10px] text-amber-100"
+                  className="absolute top-1 z-10 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-orange/60 bg-sys-orange/25 px-1 text-[10px] text-white"
                   style={{ left: vo.start * pxPerSec, width: Math.max(6, vo.duration * pxPerSec) }}
                   title={vo.text}
                   onPointerDown={(e) => {
@@ -344,7 +365,7 @@ export function TimelineDock() {
               ))}
               {music && (
                 <div
-                  className="absolute top-1 flex h-5 cursor-pointer items-center overflow-hidden rounded border border-emerald-500/50 bg-emerald-500/15 px-1.5 text-[10px] text-emerald-100"
+                  className="absolute top-1 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-green/50 bg-sys-green/15 px-1.5 text-[10px] text-white"
                   style={{
                     width: Math.max(6, musicWidth),
                     backgroundImage: `linear-gradient(to right, rgba(16,185,129,0.05) 0, rgba(16,185,129,0.35) ${music.fadeIn * pxPerSec}px, rgba(16,185,129,0.35) calc(100% - ${music.fadeOut * pxPerSec}px), rgba(16,185,129,0.05) 100%)`,

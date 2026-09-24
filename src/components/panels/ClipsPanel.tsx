@@ -3,10 +3,10 @@ import { useState } from "react";
 import { Upload, ArrowUp, ArrowDown, Scissors, Copy, Trash2, Film, Broom } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
-import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
-import { layoutClips, locateFrame, toSourceTime } from "@/lib/models/timeline";
+import { useImportClips } from "./useImportClips";
+import { layoutClips } from "@/lib/models/timeline";
+import { duplicateClip, moveClip, removeClip, splitClipAt } from "@/lib/models/clipOps";
 import { deleteAsset, listProjectAssets } from "@/lib/storage/db";
-import { uid } from "@/lib/utils/id";
 import { formatTime } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
@@ -18,60 +18,19 @@ import { StockSection } from "./StockSection";
 export function ClipsPanel() {
   const project = useProject();
   const selection = useEditor((s) => s.selection);
-  const { update, select, seek, setTool, registerAsset } = useEditor.getState();
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { update, select, seek, setTool, setNotice } = useEditor.getState();
+  const { onFiles, status, error } = useImportClips();
+  const [cleanupNote, setCleanupNote] = useState<string | null>(null);
 
-  const onFiles = async (files: File[]) => {
-    setError(null);
-    for (const [i, file] of files.entries()) {
-      try {
-        const { clip, assetId, blob } = await importVideo(file, project.id, (s) => setStatus(`${s} (${i + 1}/${files.length})`));
-        registerAsset(assetId, blob);
-        const isFirst = useEditor.getState().project?.clips.length === 0;
-        update((p) => void p.clips.push(clip));
-        if (isFirst) updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
-      } catch (e) {
-        setError(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    }
-    setStatus(null);
-  };
-
-  const move = (id: string, dir: -1 | 1) =>
-    update((p) => {
-      const i = p.clips.findIndex((c) => c.id === id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= p.clips.length) return;
-      [p.clips[i], p.clips[j]] = [p.clips[j], p.clips[i]];
-    });
-
+  const move = (id: string, dir: -1 | 1) => update((p) => void moveClip(p, id, dir));
   const splitAtPlayhead = () => {
-    const t = useEditor.getState().currentTime;
-    const loc = locateFrame(layoutClips(project.clips), t);
-    if (!loc) return;
-    const layout = loc.primary;
-    if (t <= layout.start + 0.1 || t >= layout.end - 0.1) return;
-    const s = toSourceTime(layout, t);
-    update((p) => {
-      const i = p.clips.findIndex((c) => c.id === layout.clip.id);
-      if (i < 0) return;
-      const a = p.clips[i];
-      const b = { ...structuredClone(a), id: uid("clip"), inPoint: s };
-      a.outPoint = s;
-      a.transition = { type: "none", duration: a.transition.duration };
-      p.clips.splice(i + 1, 0, b);
-    });
+    let ok = false;
+    update((p) => void (ok = splitClipAt(p, useEditor.getState().currentTime) !== null));
+    setNotice(ok ? "Split the clip at the playhead." : "Move the playhead inside a clip to split it.");
   };
-
-  const duplicate = (id: string) =>
-    update((p) => {
-      const i = p.clips.findIndex((c) => c.id === id);
-      if (i >= 0) p.clips.splice(i + 1, 0, { ...structuredClone(p.clips[i]), id: uid("clip") });
-    });
-
+  const duplicate = (id: string) => update((p) => void duplicateClip(p, id));
   const remove = (id: string) => {
-    update((p) => void (p.clips = p.clips.filter((c) => c.id !== id)));
+    update((p) => removeClip(p, id));
     if (selection?.id === id) select(null);
   };
 
@@ -87,8 +46,8 @@ export function ClipsPanel() {
       }
     }
     useEditor.setState({ past: [], future: [] });
-    setStatus(n ? `Removed ${n} unused file${n === 1 ? "" : "s"}` : "Nothing to clean up");
-    setTimeout(() => setStatus(null), 2500);
+    setCleanupNote(n ? `Removed ${n} unused file${n === 1 ? "" : "s"}` : "Nothing to clean up");
+    setTimeout(() => setCleanupNote(null), 2500);
   };
 
   const layouts = layoutClips(project.clips);
@@ -98,17 +57,17 @@ export function ClipsPanel() {
       <PanelHeader title="Clips" description="Import recordings, order them and split at the playhead." />
       <PanelSection>
         <FileDrop accept="video/*" multiple onFiles={onFiles} disabled={!!status} className="flex flex-col items-center gap-1.5">
-          <Upload size={18} className="text-neutral-500" />
-          <span className="text-sm">Add video files</span>
-          <span className="text-[11px] text-neutral-500">Drag & drop or click · stays on this device</span>
+          <Upload size={18} className="text-label-2" />
+          <span className="text-[13px] font-semibold">Add video files</span>
+          <span className="text-[11px] text-label-3">Drag & drop or click · stays on this device</span>
         </FileDrop>
         {status && (
           <div>
             <ProgressBar value={null} />
-            <p className="mt-1 text-[11px] text-neutral-400">{status}</p>
+            <p className="mt-1 text-[11px] text-label-2">{status}</p>
           </div>
         )}
-        {error && <p className="text-[11px] text-red-400">{error}</p>}
+        {error && <p className="text-[11px] text-sys-red">{error}</p>}
       </PanelSection>
       <PanelSection
         title="Sequence"
@@ -128,17 +87,17 @@ export function ClipsPanel() {
               return (
                 <li
                   key={clip.id}
-                  className={cx("rounded-lg border p-2", selected ? "border-brand-500/70 bg-brand-500/5" : "border-neutral-800 hover:border-neutral-700")}
+                  className={cx("rounded-xl border p-2", selected ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray4 bg-sys-gray5 hover:border-sys-gray3")}
                   onClick={() => {
                     select({ kind: "clip", id: clip.id });
                     seek(layout.start);
                   }}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-neutral-800 text-[11px] text-neutral-300">{i + 1}</span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-sys-gray4 text-[11px] text-white">{i + 1}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{clip.name}</p>
-                      <p className="text-[11px] text-neutral-500">
+                      <p className="truncate text-[13px] font-semibold">{clip.name}</p>
+                      <p className="text-[11px] text-label-2">
                         {formatTime(layout.duration)} · {clip.width}×{clip.height}
                         {clip.speed !== 1 && ` · ${clip.speed}×`}
                         {!clip.hasAudio && " · no audio"}
@@ -158,7 +117,7 @@ export function ClipsPanel() {
                     <Button variant="ghost" size="xs" className="ml-auto" onClick={(e) => (e.stopPropagation(), select({ kind: "clip", id: clip.id }), setTool("trim"))}>
                       Trim
                     </Button>
-                    <Button variant="ghost" size="iconSm" className="text-red-300" onClick={(e) => (e.stopPropagation(), remove(clip.id))} title="Remove">
+                    <Button variant="ghost" size="iconSm" className="text-sys-red" onClick={(e) => (e.stopPropagation(), remove(clip.id))} title="Remove">
                       <Trash2 size={13} />
                     </Button>
                   </div>
@@ -173,6 +132,7 @@ export function ClipsPanel() {
         <Button variant="outline" size="sm" className="w-full" onClick={cleanup} title="Delete imported files that no clip, sticker or music uses anymore">
           <Broom size={13} /> Clean up unused media
         </Button>
+        {cleanupNote && <p className="text-[11px] text-label-2">{cleanupNote}</p>}
       </PanelSection>
     </>
   );

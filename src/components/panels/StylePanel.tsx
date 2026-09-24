@@ -53,15 +53,15 @@ export function StylePanel() {
                 type="button"
                 onClick={() => set((s) => void (s.presetId = p.id))}
                 className={cx(
-                  "flex h-16 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border bg-neutral-800/60 px-1",
-                  style.presetId === p.id ? "border-brand-500 ring-1 ring-brand-500/60" : "border-neutral-800 hover:border-neutral-600",
+                  "flex h-16 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border bg-sys-gray4 px-1",
+                  style.presetId === p.id ? "border-sys-blue ring-1 ring-sys-blue/60" : "border-sys-gray4 hover:border-sys-gray2",
                 )}
                 title={p.name}
               >
                 <span className="text-[13px] leading-tight" style={previewStyle(p)}>
                   Word <span style={{ color: p.accent }}>up</span>
                 </span>
-                <span className="text-[10px] text-neutral-400">{p.name}</span>
+                <span className="text-[10px] text-label-2">{p.name}</span>
               </button>
             ))}
           </div>

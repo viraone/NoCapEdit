@@ -1,5 +1,6 @@
 "use client";
 import { useEffect } from "react";
+import { Lightbulb, GripHorizontal } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
 import { ensureFontsLoaded } from "@/lib/captions/fonts";
@@ -15,7 +16,6 @@ import { MusicPanel } from "@/components/panels/MusicPanel";
 import { ExportPanel } from "@/components/panels/ExportPanel";
 import { CanvasBar } from "@/components/canvas/CanvasBar";
 import { VideoCanvas } from "@/components/canvas/VideoCanvas";
-import { TransportBar } from "@/components/canvas/TransportBar";
 import { TimelineDock } from "@/components/timeline/TimelineDock";
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -23,6 +23,17 @@ function isTypingTarget(target: EventTarget | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
+
+function NoticeStrip() {
+  const notice = useEditor((s) => s.notice);
+  if (!notice) return null;
+  return (
+    <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg bg-sys-blue/10 px-3 text-[13px] text-white">
+      <Lightbulb size={14} className="text-sys-blue" />
+      {notice}
+    </div>
+  );
 }
 
 export function EditorShell() {
@@ -86,25 +97,30 @@ export function EditorShell() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100">
+    <div className="flex h-screen flex-col gap-2 overflow-hidden bg-[#0b0b0d] p-2.5 text-white">
       <TopBar />
-      <div className="flex min-h-0 flex-1">
-        <ToolRail />
-        <aside className="flex w-[21rem] shrink-0 flex-col overflow-y-auto border-r border-neutral-800 bg-neutral-950">
-          {tool === "clips" && <ClipsPanel />}
-          {tool === "trim" && <TrimPanel />}
-          {tool === "subtitles" && <SubtitlesPanel />}
-          {tool === "style" && <StylePanel />}
-          {tool === "text" && <TextPanel />}
-          {tool === "picture" && <PicturePanel />}
-          {tool === "music" && <MusicPanel />}
-          {tool === "export" && <ExportPanel />}
-        </aside>
-        <main className="flex min-w-0 flex-1 flex-col bg-neutral-900/40">
-          <CanvasBar />
+      <NoticeStrip />
+      <div className="flex min-h-0 flex-1 gap-3">
+        <div className="flex shrink-0 gap-3">
+          <ToolRail />
+          <aside className="card flex w-[22rem] flex-col overflow-y-auto">
+            {tool === "clips" && <ClipsPanel />}
+            {tool === "trim" && <TrimPanel />}
+            {tool === "subtitles" && <SubtitlesPanel />}
+            {tool === "style" && <StylePanel />}
+            {tool === "text" && <TextPanel />}
+            {tool === "picture" && <PicturePanel />}
+            {tool === "music" && <MusicPanel />}
+            {tool === "export" && <ExportPanel />}
+          </aside>
+        </div>
+        <main className="flex min-w-0 flex-1 flex-col gap-2">
           <VideoCanvas />
-          <TransportBar />
+          <CanvasBar />
         </main>
+      </div>
+      <div className="flex h-3 shrink-0 items-center justify-center text-sys-gray2" aria-hidden>
+        <GripHorizontal size={16} />
       </div>
       <TimelineDock />
     </div>

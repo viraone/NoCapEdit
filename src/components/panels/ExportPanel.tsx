@@ -210,7 +210,7 @@ export function ExportPanel() {
         </Field>
       </PanelSection>
       <PanelSection>
-        <div className="space-y-1 text-[11px] text-neutral-500">
+        <div className="space-y-1 text-[11px] text-label-3">
           <p className="flex items-center gap-1.5">
             <Cpu size={12} /> {supportsMultithread() ? "Multi-threaded encoder available" : "Single-threaded encoder (page is not cross-origin isolated)"}
           </p>
@@ -226,18 +226,18 @@ export function ExportPanel() {
             <Download size={14} /> Export MP4
           </Button>
         ) : (
-          <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-2.5">
+          <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={progress.stage === "loading" || progress.stage === "preparing" ? null : progress.progress} />
-            <p className="text-[11px] text-neutral-300">{progress.message}</p>
+            <p className="text-[11px] text-label-2">{progress.message}</p>
             <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}>
               <Square size={12} /> Cancel
             </Button>
           </div>
         )}
-        {error && <p className="whitespace-pre-wrap text-[11px] text-red-400">{error}</p>}
+        {error && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{error}</p>}
         {result && (
-          <div className="space-y-2 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-2.5 text-[11px] text-neutral-300">
-            <p className="flex items-center gap-1.5 text-emerald-300">
+          <div className="space-y-2 rounded-lg border border-sys-green/40 bg-sys-green/10 p-2.5 text-[11px] text-label-2">
+            <p className="flex items-center gap-1.5 text-sys-green">
               <CheckCircle2 size={13} /> Rendered in {result.seconds.toFixed(0)} s · {formatBytes(result.bytes)} · {result.segments} segment{result.segments === 1 ? "" : "s"}
               {result.streamed ? " · saved to disk" : ""}
             </p>

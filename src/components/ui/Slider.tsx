@@ -21,8 +21,8 @@ export function Slider({ label, value, min, max, step = 0.01, onChange, onDragSt
     <div className={cx("block", className)}>
       {label && (
         <div className="mb-1 flex items-center justify-between">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">{label}</span>
-          <span className="text-[11px] tabular-nums text-neutral-300">{display}</span>
+          <span className="caps">{label}</span>
+          <span className="text-[11px] tabular-nums text-label-2">{display}</span>
         </div>
       )}
       <input

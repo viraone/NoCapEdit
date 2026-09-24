@@ -64,16 +64,16 @@ export function TrackControls({ overlay }: { overlay: Overlay }) {
   return (
     <div className="space-y-2">
       {overlay.track ? (
-        <div className="flex items-center justify-between rounded-md border border-emerald-500/40 bg-emerald-500/5 px-2 py-1.5 text-[11px] text-emerald-200">
+        <div className="flex items-center justify-between rounded-md border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[11px] text-sys-green">
           <span>Locked to motion ({overlay.track.keyframes.length} keyframes)</span>
           <Button variant="ghost" size="xs" onClick={clear}>
             <Undo2 size={11} /> Unlock
           </Button>
         </div>
       ) : job ? (
-        <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-2.5">
+        <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
           <ProgressBar value={job.progress} />
-          <p className="text-[11px] text-neutral-300">{job.message}</p>
+          <p className="text-[11px] text-label-2">{job.message}</p>
           <Button variant="outline" size="xs" onClick={() => abortRef.current?.abort()}>
             <Square size={11} /> Cancel
           </Button>
@@ -83,8 +83,8 @@ export function TrackControls({ overlay }: { overlay: Overlay }) {
           <Crosshair size={13} /> Track motion from the playhead
         </Button>
       )}
-      <p className="text-[11px] text-neutral-500">Place the element over the subject, then track: it follows whatever is under its centre until the element ends. Drag it afterwards to adjust the offset.</p>
-      {error && <p className="text-[11px] text-red-400">{error}</p>}
+      <p className="text-[11px] text-label-3">Place the element over the subject, then track: it follows whatever is under its centre until the element ends. Drag it afterwards to adjust the offset.</p>
+      {error && <p className="text-[11px] text-sys-red">{error}</p>}
     </div>
   );
 }

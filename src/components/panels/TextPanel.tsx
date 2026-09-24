@@ -72,11 +72,11 @@ export function TextPanel() {
                     select({ kind: "overlay", id: t.id });
                     seek(t.start);
                   }}
-                  className={cx("flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left", selected?.id === t.id ? "border-brand-500/70 bg-brand-500/5" : "border-neutral-800 hover:border-neutral-700")}
+                  className={cx("flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left", selected?.id === t.id ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray4 hover:border-sys-gray3")}
                 >
-                  <span className="rounded bg-neutral-800 px-1 text-[10px] uppercase text-neutral-400">{t.variant}</span>
+                  <span className="rounded bg-sys-gray4 px-1 text-[10px] uppercase text-label-2">{t.variant}</span>
                   <span className="min-w-0 flex-1 truncate text-sm">{t.text}</span>
-                  <span className="text-[10px] tabular-nums text-neutral-500">
+                  <span className="text-[10px] tabular-nums text-label-3">
                     {formatTime(t.start)}–{formatTime(t.end)}
                   </span>
                 </button>
@@ -87,7 +87,7 @@ export function TextPanel() {
       </PanelSection>
       {selected && (
         <>
-          <PanelSection title="Content" right={<Button variant="ghost" size="iconSm" className="text-red-300" onClick={() => remove(selected.id)} title="Delete"><Trash2 size={13} /></Button>}>
+          <PanelSection title="Content" right={<Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => remove(selected.id)} title="Delete"><Trash2 size={13} /></Button>}>
             <textarea className={textareaClass} value={selected.text} onChange={(e) => edit((o) => void (o.text = e.target.value), false)} onBlur={() => edit(() => undefined)} rows={2} />
             <Field label="Font">
               <Select value={selected.fontFamily} onChange={(e) => edit((o) => void (o.fontFamily = e.target.value as FontKey))} style={{ fontFamily: fontFamily(selected.fontFamily) }}>
@@ -101,7 +101,7 @@ export function TextPanel() {
             <div className="flex items-center gap-1">
               <Button variant={selected.bold ? "primary" : "outline"} size="iconSm" onClick={() => edit((o) => void (o.bold = !o.bold))} title="Bold"><Bold size={13} /></Button>
               <Button variant={selected.italic ? "primary" : "outline"} size="iconSm" onClick={() => edit((o) => void (o.italic = !o.italic))} title="Italic"><Italic size={13} /></Button>
-              <span className="mx-1 h-5 w-px bg-neutral-800" />
+              <span className="mx-1 h-5 w-px bg-sys-gray4" />
               {(["left", "center", "right"] as const).map((a) => {
                 const Icon = a === "left" ? AlignLeft : a === "center" ? AlignCenter : AlignRight;
                 return (
@@ -121,10 +121,10 @@ export function TextPanel() {
           </PanelSection>
           <PanelSection title="Timing">
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Start" right={<button type="button" className="text-brand-300 hover:underline" onClick={() => edit((o) => void (o.start = Math.min(useEditor.getState().currentTime, o.end - 0.1)))}>playhead</button>}>
+              <Field label="Start" right={<button type="button" className="text-sys-blue hover:underline" onClick={() => edit((o) => void (o.start = Math.min(useEditor.getState().currentTime, o.end - 0.1)))}>playhead</button>}>
                 <NumberInput value={selected.start} min={0} max={selected.end - 0.1} suffix="s" onCommit={(v) => edit((o) => void (o.start = v))} />
               </Field>
-              <Field label="End" right={<button type="button" className="text-brand-300 hover:underline" onClick={() => edit((o) => void (o.end = Math.max(useEditor.getState().currentTime, o.start + 0.1)))}>playhead</button>}>
+              <Field label="End" right={<button type="button" className="text-sys-blue hover:underline" onClick={() => edit((o) => void (o.end = Math.max(useEditor.getState().currentTime, o.start + 0.1)))}>playhead</button>}>
                 <NumberInput value={selected.end} min={selected.start + 0.1} suffix="s" onCommit={(v) => edit((o) => void (o.end = v))} />
               </Field>
             </div>

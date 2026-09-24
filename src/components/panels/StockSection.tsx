@@ -85,7 +85,7 @@ export function StockSection({ onImport, disabled }: { onImport: (files: File[])
           </div>
           <Field label="API key" hint={provider === "pexels" ? "Free at pexels.com/api — stored only in this browser." : "Free at pixabay.com/api/docs — stored only in this browser."}>
             <div className="flex items-center gap-1.5">
-              <KeyRound size={14} className="shrink-0 text-neutral-500" />
+              <KeyRound size={14} className="shrink-0 text-label-3" />
               <input className={inputClass} type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste your key" />
             </div>
           </Field>
@@ -98,24 +98,24 @@ export function StockSection({ onImport, disabled }: { onImport: (files: File[])
           {busy && (
             <div>
               <ProgressBar value={progress} />
-              <p className="mt-1 text-[11px] text-neutral-400">{busy}</p>
+              <p className="mt-1 text-[11px] text-label-2">{busy}</p>
             </div>
           )}
-          {error && <p className="text-[11px] text-red-400">{error}</p>}
+          {error && <p className="text-[11px] text-sys-red">{error}</p>}
           {results.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
               {results.map((r) => (
-                <div key={r.id} className="overflow-hidden rounded-md border border-neutral-800 bg-neutral-900/60">
-                  <div className="relative aspect-video bg-neutral-950">
+                <div key={r.id} className="overflow-hidden rounded-md border border-sys-gray4 bg-sys-gray5">
+                  <div className="relative aspect-video bg-sys-gray6">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={r.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
                     <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[10px] tabular-nums">{formatTime(r.duration, false)}</span>
                   </div>
                   <div className="flex items-center gap-1 px-1.5 py-1">
-                    <span className="min-w-0 flex-1 truncate text-[10px] text-neutral-400" title={`${r.title} · ${r.author}`}>
+                    <span className="min-w-0 flex-1 truncate text-[10px] text-label-2" title={`${r.title} · ${r.author}`}>
                       {r.width}×{r.height} · {r.author}
                     </span>
-                    <a href={r.pageUrl} target="_blank" rel="noreferrer" className="rounded p-0.5 text-neutral-500 hover:text-neutral-200" title="Open on provider site">
+                    <a href={r.pageUrl} target="_blank" rel="noreferrer" className="rounded p-0.5 text-label-3 hover:text-white" title="Open on provider site">
                       <ExternalLink size={11} />
                     </a>
                     <Button variant="ghost" size="xs" onClick={() => add(r)} disabled={!!busy || disabled} title="Download and add to the sequence">

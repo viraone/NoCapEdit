@@ -295,7 +295,7 @@ export function SubtitlesPanel() {
             <option value="wasm">WASM (CPU)</option>
           </Select>
         </Field>
-        <p className="text-[11px] text-neutral-500">{WHISPER_MODELS.find((m) => m.id === model)?.note}</p>
+        <p className="text-[11px] text-label-3">{WHISPER_MODELS.find((m) => m.id === model)?.note}</p>
         <Toggle checked={diarize} onChange={setDiarize} label="Identify speakers" description="pyannote + WeSpeaker on-device; adds a minute or two" disabled={busy} />
         {diarize && (
           <Field label="Max speakers">
@@ -318,24 +318,24 @@ export function SubtitlesPanel() {
             </Button>
           </div>
         ) : (
-          <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-2.5">
+          <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={job.progress} />
-            <p className="text-[11px] text-neutral-300">{job.message}</p>
-            {job.partial && <p className="max-h-16 overflow-hidden text-[11px] leading-snug text-neutral-500">{job.partial}</p>}
+            <p className="text-[11px] text-label-2">{job.message}</p>
+            {job.partial && <p className="max-h-16 overflow-hidden text-[11px] leading-snug text-label-3">{job.partial}</p>}
             <Button variant="outline" size="sm" onClick={cancel}>
               <Square size={12} /> Cancel
             </Button>
           </div>
         )}
-        {error && <p className="text-[11px] text-red-400">{error}</p>}
-        {notice && <p className="text-[11px] text-emerald-400">{notice}</p>}
+        {error && <p className="text-[11px] text-sys-red">{error}</p>}
+        {notice && <p className="text-[11px] text-sys-green">{notice}</p>}
         <div className="flex items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200">
+          <label className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-label-2 hover:text-white">
             <FileUp size={12} /> Import .srt
             <input type="file" accept=".srt,text/plain" className="hidden" onChange={(e) => e.target.files?.[0] && importSrt(e.target.files[0])} />
           </label>
-          <span className="text-neutral-700">·</span>
-          <button type="button" className="text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => update((p) => void (p.cues = []))} disabled={!project.cues.length}>
+          <span className="text-sys-gray3">·</span>
+          <button type="button" className="text-[11px] text-label-2 hover:text-white" onClick={() => update((p) => void (p.cues = []))} disabled={!project.cues.length}>
             Clear all
           </button>
         </div>
@@ -364,7 +364,7 @@ export function SubtitlesPanel() {
         <Button variant="secondary" className="w-full" onClick={translate} disabled={busy || !project.cues.length || !canTranslate(sourceLang, project.captions.targetLanguage)}>
           <Languages size={14} /> Translate captions
         </Button>
-        {!canTranslate(sourceLang, project.captions.targetLanguage) && <p className="text-[11px] text-neutral-500">No on-device model for this language pair yet.</p>}
+        {!canTranslate(sourceLang, project.captions.targetLanguage) && <p className="text-[11px] text-label-3">No on-device model for this language pair yet.</p>}
         <Toggle checked={project.captions.showTranslated} onChange={(v) => update((p) => void (p.captions.showTranslated = v))} label="Show translated captions" description="Applies to the preview and the export" />
       </PanelSection>
       <PanelSection
@@ -386,39 +386,39 @@ export function SubtitlesPanel() {
                 <div
                   key={cue.id}
                   data-cue={cue.id}
-                  className={cx("rounded-md border px-2 py-1.5", active ? "border-brand-500/60 bg-brand-500/5" : "border-neutral-800", selected && "ring-1 ring-brand-500")}
+                  className={cx("rounded-md border px-2 py-1.5", active ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray4", selected && "ring-1 ring-sys-blue")}
                   onClick={() => select({ kind: "cue", id: cue.id })}
                 >
-                  <div className="mb-1 flex items-center gap-1 text-[10px] tabular-nums text-neutral-500">
-                    <button type="button" className="rounded p-0.5 hover:bg-neutral-800 hover:text-neutral-200" onClick={(e) => (e.stopPropagation(), seek(cue.start))} title="Jump to cue">
+                  <div className="mb-1 flex items-center gap-1 text-[10px] tabular-nums text-label-3">
+                    <button type="button" className="rounded p-0.5 hover:bg-sys-gray4 hover:text-white" onClick={(e) => (e.stopPropagation(), seek(cue.start))} title="Jump to cue">
                       <Play size={10} />
                     </button>
                     <NumberInput value={cue.start} min={0} max={cue.end - 0.1} className="h-5 w-16 px-1 text-[10px]" onCommit={(v) => editCue(cue.id, (c) => void (c.start = v))} />
                     <span>→</span>
                     <NumberInput value={cue.end} min={cue.start + 0.1} className="h-5 w-16 px-1 text-[10px]" onCommit={(v) => editCue(cue.id, (c) => void (c.end = v))} />
                     <span className="ml-auto flex items-center">
-                      <button type="button" className="rounded p-0.5 hover:bg-neutral-800 hover:text-neutral-200" title="Split in the middle" onClick={(e) => (e.stopPropagation(), splitMiddle(cue.id))}>
+                      <button type="button" className="rounded p-0.5 hover:bg-sys-gray4 hover:text-white" title="Split in the middle" onClick={(e) => (e.stopPropagation(), splitMiddle(cue.id))}>
                         <Scissors size={11} />
                       </button>
-                      <button type="button" className="rounded p-0.5 hover:bg-neutral-800 hover:text-neutral-200 disabled:opacity-30" title="Merge with next" disabled={i === sorted.length - 1} onClick={(e) => (e.stopPropagation(), mergeWithNext(cue.id))}>
+                      <button type="button" className="rounded p-0.5 hover:bg-sys-gray4 hover:text-white disabled:opacity-30" title="Merge with next" disabled={i === sorted.length - 1} onClick={(e) => (e.stopPropagation(), mergeWithNext(cue.id))}>
                         <Merge size={11} />
                       </button>
                       <button
                         type="button"
-                        className={cx("rounded p-0.5 hover:bg-neutral-800 hover:text-neutral-200", cue.anchor && "text-amber-300")}
+                        className={cx("rounded p-0.5 hover:bg-sys-gray4 hover:text-white", cue.anchor && "text-sys-yellow")}
                         title={cue.anchor ? "Detached: click to follow the global position again" : "Detach: give this cue its own position (or Alt-drag it on the preview)"}
                         onClick={(e) => (e.stopPropagation(), editCue(cue.id, (c) => void (c.anchor = c.anchor ? null : { x: project.subtitleStyle.x, y: project.subtitleStyle.y })))}
                       >
                         <Anchor size={11} />
                       </button>
-                      <button type="button" className="rounded p-0.5 text-red-300 hover:bg-neutral-800" title="Delete" onClick={(e) => (e.stopPropagation(), removeCue(cue.id))}>
+                      <button type="button" className="rounded p-0.5 text-sys-red hover:bg-sys-gray4" title="Delete" onClick={(e) => (e.stopPropagation(), removeCue(cue.id))}>
                         <Trash2 size={11} />
                       </button>
                     </span>
                   </div>
                   <CueText value={cue.text} onCommit={(v) => editCue(cue.id, (c) => void (c.text = v))} />
                   {project.captions.showTranslated && (
-                    <CueText className="mt-1 text-neutral-300" value={cue.translatedText ?? ""} placeholder="Translation" onCommit={(v) => editCue(cue.id, (c) => void (c.translatedText = v))} />
+                    <CueText className="mt-1 text-label-2" value={cue.translatedText ?? ""} placeholder="Translation" onCommit={(v) => editCue(cue.id, (c) => void (c.translatedText = v))} />
                   )}
                 </div>
               );

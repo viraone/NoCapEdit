@@ -89,11 +89,11 @@ export function MusicPanel() {
       <PanelHeader title="Music" description="Background track mixed under the clip audio." />
       <PanelSection>
         <FileDrop accept="audio/*,video/mp4,video/webm" onFiles={onFiles} className="flex flex-col items-center gap-1.5">
-          <Upload size={18} className="text-neutral-500" />
+          <Upload size={18} className="text-label-3" />
           <span className="text-sm">{music ? "Replace music" : "Add a music file"}</span>
-          <span className="text-[11px] text-neutral-500">MP3, WAV, M4A, OGG</span>
+          <span className="text-[11px] text-label-3">MP3, WAV, M4A, OGG</span>
         </FileDrop>
-        {error && <p className="text-[11px] text-red-400">{error}</p>}
+        {error && <p className="text-[11px] text-sys-red">{error}</p>}
       </PanelSection>
       <PanelSection title="Voice-over (offline TTS)">
         <textarea className={textareaClass} rows={3} placeholder="Type the narration to synthesise…" value={voText} onChange={(e) => setVoText(e.target.value)} disabled={!!voJob} />
@@ -116,9 +116,9 @@ export function MusicPanel() {
             </Button>
           </div>
         ) : (
-          <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-2.5">
+          <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={voJob.progress} />
-            <p className="text-[11px] text-neutral-300">{voJob.message}</p>
+            <p className="text-[11px] text-label-2">{voJob.message}</p>
             <Button
               variant="outline"
               size="xs"
@@ -131,23 +131,23 @@ export function MusicPanel() {
             </Button>
           </div>
         )}
-        {voError && <p className="text-[11px] text-red-400">{voError}</p>}
+        {voError && <p className="text-[11px] text-sys-red">{voError}</p>}
         {project.voiceovers.length > 0 && (
           <ul className="space-y-1.5">
             {project.voiceovers.map((vo) => (
-              <li key={vo.id} className={cx("rounded-md border border-neutral-800 p-2", selection?.id === vo.id && "border-brand-500/60")}>
+              <li key={vo.id} className={cx("rounded-md border border-sys-gray4 p-2", selection?.id === vo.id && "border-sys-blue")}>
                 <div className="flex items-center gap-1.5">
-                  <button type="button" className="rounded p-0.5 text-neutral-400 hover:bg-neutral-800 hover:text-white" onClick={() => useEditor.getState().seek(vo.start)} title="Jump to voice-over">
+                  <button type="button" className="rounded p-0.5 text-label-2 hover:bg-sys-gray4 hover:text-white" onClick={() => useEditor.getState().seek(vo.start)} title="Jump to voice-over">
                     <Play size={11} />
                   </button>
                   <span className="min-w-0 flex-1 truncate text-sm">{vo.name}</span>
-                  <span className="text-[10px] tabular-nums text-neutral-500">{formatTime(vo.duration)}</span>
-                  <Button variant="ghost" size="iconSm" className="text-red-300" onClick={() => update((p) => void (p.voiceovers = p.voiceovers.filter((v) => v.id !== vo.id)))} title="Delete">
+                  <span className="text-[10px] tabular-nums text-label-3">{formatTime(vo.duration)}</span>
+                  <Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => update((p) => void (p.voiceovers = p.voiceovers.filter((v) => v.id !== vo.id)))} title="Delete">
                     <Trash2 size={12} />
                   </Button>
                 </div>
                 <div className="mt-1.5 grid grid-cols-2 gap-2">
-                  <Field label="Start" right={<button type="button" className="text-brand-300 hover:underline" onClick={() => editVo(vo.id, (v) => void (v.start = useEditor.getState().currentTime))}>playhead</button>}>
+                  <Field label="Start" right={<button type="button" className="text-sys-blue hover:underline" onClick={() => editVo(vo.id, (v) => void (v.start = useEditor.getState().currentTime))}>playhead</button>}>
                     <NumberInput value={vo.start} min={0} suffix="s" onCommit={(v) => editVo(vo.id, (x) => void (x.start = v))} />
                   </Field>
                   <Slider label="Volume" value={vo.volume} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => editVo(vo.id, (x) => void (x.volume = v), false)} {...tx} />
@@ -163,9 +163,9 @@ export function MusicPanel() {
         </PanelSection>
       ) : (
         <>
-          <PanelSection title="Track" right={<Button variant="ghost" size="iconSm" className="text-red-300" onClick={() => update((p) => void (p.music = null))} title="Remove"><Trash2 size={13} /></Button>}>
+          <PanelSection title="Track" right={<Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => update((p) => void (p.music = null))} title="Remove"><Trash2 size={13} /></Button>}>
             <p className="truncate text-sm">{music.name}</p>
-            <p className="text-[11px] text-neutral-500">{formatTime(music.duration)}</p>
+            <p className="text-[11px] text-label-3">{formatTime(music.duration)}</p>
           </PanelSection>
           <PanelSection title="Mix">
             <Slider label="Volume" value={music.volume} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((m) => void (m.volume = v), false)} {...tx} />
