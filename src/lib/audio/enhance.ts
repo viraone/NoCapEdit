@@ -7,6 +7,7 @@
  * The result is a 48 kHz stereo WAV used as the clip's replacement audio.
  */
 import { ffmpegEngine, FFmpegHungError } from "@/lib/ffmpegEngine";
+import { withBase } from "@/lib/basePath";
 
 export type EnhanceMode = "rnnoise" | "fft" | "both";
 
@@ -48,7 +49,7 @@ async function runEnhance(blob: Blob, opts: EnhanceOptions): Promise<{ blob: Blo
     if (!info.audio) throw new Error("This clip has no audio track.");
     const filters: string[] = [];
     if (opts.mode === "rnnoise" || opts.mode === "both") {
-      const res = await fetch("/models/sh.rnnn");
+      const res = await fetch(withBase("/models/sh.rnnn"));
       if (!res.ok) throw new Error("The RNNoise model could not be loaded.");
       await ffmpeg.writeFile("/sh.rnnn", new Uint8Array(await res.arrayBuffer()));
       temp.push("/sh.rnnn");

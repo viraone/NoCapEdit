@@ -10,9 +10,10 @@ import type { Clip, Keyframe } from "@/lib/models/project";
 import type { Frame } from "@/lib/captions/renderer";
 import { computePlacement } from "@/lib/models/placement";
 import { clamp } from "@/lib/utils/math";
+import { withBase } from "@/lib/basePath";
 
 export const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
-const WASM_BASE = "/mediapipe/wasm";
+const WASM_BASE = withBase("/mediapipe/wasm");
 
 export interface SubjectSample {
   /** Source time in seconds. */

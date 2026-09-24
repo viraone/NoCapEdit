@@ -79,12 +79,29 @@ Pages the app transparently falls back to loading the core from unpkg (see
 `public/ffmpeg/` on R2 and point `NEXT_PUBLIC_FFMPEG_BASE_URL`-style config at it, or
 use a Worker.
 
-## GitHub Pages / any host without header control
+## GitHub Pages
 
-Headers cannot be configured, so the app registers `public/coi-sw.js`, a small
-service worker that adds the COOP/COEP headers to every same-origin response and
-reloads once. After that first reload `crossOriginIsolated` is `true`. Append
-`?nocoi` to the URL to disable the service worker for debugging.
+`.github/workflows/pages.yml` builds the site on every push to `main` and deploys
+`out/` with `actions/deploy-pages`. Enable Pages once with "Build and deployment →
+Source: GitHub Actions" (or `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`).
+
+Project sites live under `https://<owner>.github.io/<repo>/`, so the workflow builds
+with `NEXT_PUBLIC_BASE_PATH=/<repo>`; Next.js prefixes its routes and chunks, and
+`src/lib/basePath.ts` prefixes the self-hosted ffmpeg cores, the service worker, the
+RNNoise model and the MediaPipe runtime. `public/.nojekyll` keeps Jekyll from
+dropping the `_next/` folder.
+
+GitHub Pages cannot send COOP/COEP headers, so the app registers `public/coi-sw.js`,
+a small service worker that adds them to every same-origin response and reloads
+once. After that first reload `crossOriginIsolated` is `true` and the multi-threaded
+ffmpeg core loads. Append `?nocoi` to the URL to disable the service worker for
+debugging. Pages serves `.wasm` as `application/wasm` and allows files up to 100 MB,
+so the 32 MB cores are served first-party.
+
+## Any other host without header control
+
+Same service-worker fallback as GitHub Pages; build without `NEXT_PUBLIC_BASE_PATH`
+when the site is served from the domain root.
 
 ## nginx
 

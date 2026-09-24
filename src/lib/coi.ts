@@ -4,6 +4,8 @@
  * cannot set headers get the same effect from a tiny service worker that adds
  * them to every response. Skip with ?nocoi in the URL.
  */
+import { BASE_PATH } from "@/lib/basePath";
+
 export function ensureCrossOriginIsolation(): void {
   if (typeof window === "undefined") return;
   if (window.crossOriginIsolated) return;
@@ -14,7 +16,7 @@ export function ensureCrossOriginIsolation(): void {
   if (sessionStorage.getItem(key)) return;
 
   navigator.serviceWorker
-    .register("/coi-sw.js", { scope: "/" })
+    .register(`${BASE_PATH}/coi-sw.js`, { scope: `${BASE_PATH}/` })
     .then((registration) => {
       const reload = () => {
         sessionStorage.setItem(key, "1");

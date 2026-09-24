@@ -6,8 +6,12 @@ import path from "node:path";
  * (ffmpeg, Whisper, translation, storage) runs inside the visitor's browser,
  * so the only infrastructure needed is a static file host.
  */
+// Sub-directory hosting (GitHub Pages project sites): NEXT_PUBLIC_BASE_PATH=/Repo
+const basePath = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/$/, "");
+
 const nextConfig: NextConfig = {
   output: "export",
+  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   // /editor -> /editor/index.html so every static host serves it without rewrites.
   trailingSlash: true,
   reactStrictMode: true,

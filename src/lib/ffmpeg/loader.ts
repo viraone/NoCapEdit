@@ -5,6 +5,7 @@
  */
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
+import { BASE_PATH } from "@/lib/basePath";
 
 const CORE_VERSION = "0.12.10";
 
@@ -48,7 +49,7 @@ export async function loadFFmpeg(opts: LoadOptions = {}): Promise<{ ffmpeg: FFmp
   if (instance?.loaded && info) return { ffmpeg: instance, info };
   if (loading) return loading;
   loading = (async () => {
-    const base = `${location.origin}/ffmpeg`;
+    const base = `${location.origin}${BASE_PATH}/ffmpeg`;
     const mt = supportsMultithread() && !opts.forceSingleThread && !debugFlag("singleThread");
     const coreName = mt ? "core-mt" : "core";
     const localCore = `${base}/${coreName}`;
