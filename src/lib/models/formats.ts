@@ -44,6 +44,16 @@ export function getFormat(id: string): FrameFormat {
 /**
  * Safe zone masks. Values are fractions of the frame that the platform UI
  * typically covers. Content inside the remaining area stays visible.
+ *
+ * Reels: Meta only publishes a safe zone for ads (top 14%, bottom 35%, 6%
+ * each side, which is where the old 14/35 came from); an organic Reel has
+ * no call-to-action bar, so it loses less. These are the 2026 measurements
+ * of the organic player that third-party guides agree on, at the generous
+ * end: bottom 400-450 px of 1920 (username, caption, audio line), right
+ * about 120 px of 1080 (like, comment, share, more, audio disc). The top is
+ * held at 14.8% rather than the header's 150-220 px so a title also
+ * survives the 4:5 feed preview and the 3:4 profile-grid crop. Checked
+ * September 2026; the same mask serves Stories and Facebook Reels.
  */
 export interface SafeZoneMask {
   top: number;
@@ -54,7 +64,7 @@ export interface SafeZoneMask {
 }
 
 export const SAFE_ZONES: Record<Exclude<SafeZoneKind, "none">, SafeZoneMask> = {
-  reels: { top: 0.14, bottom: 0.35, left: 0.0, right: 0.18, label: "Instagram Reels" },
+  reels: { top: 0.148, bottom: 0.22, left: 0.0, right: 0.12, label: "Instagram Reels" },
   tiktok: { top: 0.07, bottom: 0.25, left: 0.05, right: 0.14, label: "TikTok" },
   shorts: { top: 0.06, bottom: 0.2, left: 0.0, right: 0.14, label: "YouTube Shorts" },
 };
