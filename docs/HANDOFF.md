@@ -91,6 +91,8 @@ src/components/
   canvas/CanvasBar.tsx        pill row: format, picture zoom, Fill/Fit, caption style, safe zone
   canvas/TransportBar.tsx     play / cut buttons, timecode, Earlier / Later / Remove
   timeline/TimelineDock.tsx   ruler, caption lane + prompt, clip strip, hover preview, music/sfx lane
+  timeline/TimelineResizeHandle.tsx  grip above the dock: drag up/down (or arrow keys) to resize it, double-click resets
+  timeline/dockLayout.ts      lane heights, the dock's min/default/max, and the height remembered in localStorage
   ui/                         Button, Tile, Panel, Field, Select, Toggle, Slider, ColorInput, Modal…
 src/lib/
   models/project.ts           VideoProject schema, factories, normalizeProject (migrations), keyframes

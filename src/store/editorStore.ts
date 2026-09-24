@@ -3,6 +3,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 import type { VideoProject } from "@/lib/models/project";
 import { getProject, listProjectAssets, saveProject } from "@/lib/storage/db";
 import { engine } from "@/lib/playback/engine";
+import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/components/timeline/dockLayout";
 
 export type ToolId = "clips" | "trim" | "subtitles" | "style" | "text" | "picture" | "music" | "export";
 
@@ -27,6 +28,8 @@ export interface EditorState {
   selection: Selection | null;
   assetUrls: Record<string, string>;
   timelineZoom: number;
+  /** Height of the timeline dock (px), dragged via the grip above it and remembered across sessions. */
+  timelineHeight: number;
   canvasZoom: CanvasZoom;
   /** One-line status shown under the top bar (auto-dismissed). */
   notice: string | null;
@@ -46,6 +49,7 @@ export interface EditorState {
   setPlaying(playing: boolean): void;
   select(sel: Selection | null): void;
   setTimelineZoom(z: number): void;
+  setTimelineHeight(h: number): void;
   setCanvasZoom(z: CanvasZoom): void;
   setNotice(text: string | null): void;
   /** Selects the element, switches to its panel and asks that panel to focus its editor. */
@@ -89,6 +93,7 @@ export const useEditor = create<EditorState>()(
     selection: null,
     assetUrls: {},
     timelineZoom: 80,
+    timelineHeight: readStoredDockHeight(),
     canvasZoom: "fit",
     notice: null,
     editRequest: null,
@@ -175,6 +180,12 @@ export const useEditor = create<EditorState>()(
     setPlaying: (isPlaying) => set({ isPlaying }),
     select: (selection) => set({ selection }),
     setTimelineZoom: (timelineZoom) => set({ timelineZoom: Math.min(600, Math.max(10, timelineZoom)) }),
+    setTimelineHeight: (h) => {
+      const timelineHeight = clampDockHeight(h, typeof window === "undefined" ? undefined : window.innerHeight);
+      if (timelineHeight === get().timelineHeight) return;
+      storeDockHeight(timelineHeight);
+      set({ timelineHeight });
+    },
     setCanvasZoom: (canvasZoom) => set({ canvasZoom }),
     setNotice(text) {
       set({ notice: text });

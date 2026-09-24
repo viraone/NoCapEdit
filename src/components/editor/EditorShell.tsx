@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from "react";
-import { Lightbulb, GripHorizontal } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
 import { ensureFontsLoaded } from "@/lib/captions/fonts";
@@ -19,6 +19,7 @@ import { ExportPanel } from "@/components/panels/ExportPanel";
 import { CanvasBar } from "@/components/canvas/CanvasBar";
 import { VideoCanvas } from "@/components/canvas/VideoCanvas";
 import { TimelineDock } from "@/components/timeline/TimelineDock";
+import { TimelineResizeHandle } from "@/components/timeline/TimelineResizeHandle";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -135,9 +136,7 @@ export function EditorShell() {
           <CanvasBar />
         </main>
       </div>
-      <div className="flex h-3 shrink-0 items-center justify-center text-sys-gray2" aria-hidden>
-        <GripHorizontal size={16} />
-      </div>
+      <TimelineResizeHandle />
       <TimelineDock />
     </div>
   );

@@ -13,12 +13,11 @@ import { Button } from "@/components/ui/Button";
 import { Filmstrip, loadThumbs, type Loaded } from "./Filmstrip";
 import { toSourceTime } from "@/lib/models/timeline";
 import { AudioWaveform } from "./AudioWaveform";
+import { RULER_H, CUE_H, MUSIC_H, DOCK_CHROME_H, videoLaneHeight } from "./dockLayout";
 
-const RULER_H = 24;
-const CUE_H = 34;
-const VIDEO_H = 76;
-const MUSIC_H = 28;
 const EDGE = 7;
+/** Vertical inset of a clip block inside the video lane. */
+const CLIP_PAD = 4;
 /** Pointer travel before a press on a clip body becomes a reorder drag. */
 const DRAG_THRESHOLD = 8;
 
@@ -161,6 +160,7 @@ function ClipBlock({
   layout,
   layouts,
   pxPerSec,
+  laneH,
   selected,
   active,
   onDropIndicator,
@@ -168,6 +168,8 @@ function ClipBlock({
   layout: ClipLayout;
   layouts: ClipLayout[];
   pxPerSec: number;
+  /** Height of the video lane; the block fills it minus CLIP_PAD on each side. */
+  laneH: number;
   selected: boolean;
   active: boolean;
   /** x (px) of the insertion slot while a reorder drag is in progress, null when none. */
@@ -176,6 +178,9 @@ function ClipBlock({
   const { update, beginTransaction, endTransaction, select, setTool } = useEditor.getState();
   const { clip } = layout;
   const width = Math.max(6, layout.duration * pxPerSec);
+  const blockH = laneH - CLIP_PAD * 2;
+  // The waveform keeps its 28-of-68 share of the block as the lane grows, within sane bounds.
+  const waveH = clamp(Math.round(blockH * 0.41), 16, 56);
   const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null } | null>(null);
   const [dragging, setDragging] = useState(false);
   /** Project time under the pointer, measured against the lane so scrolling is accounted for. */
@@ -187,11 +192,11 @@ function ClipBlock({
   return (
     <div
       className={cx(
-        "absolute top-1 h-[68px] overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
+        "absolute top-1 overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
         dragging ? "cursor-grabbing opacity-60" : "cursor-grab",
         selected || active ? "border-sys-blue" : "border-sys-gray4",
       )}
-      style={{ left: layout.start * pxPerSec, width }}
+      style={{ left: layout.start * pxPerSec, width, height: blockH }}
       data-clip={clip.id}
       onPointerDown={(e) => {
         e.stopPropagation();
@@ -264,8 +269,8 @@ function ClipBlock({
         setTool("trim");
       }}
     >
-      <Filmstrip assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={68} />
-      {clip.hasAudio && <AudioWaveform assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={28} color="rgba(255,214,10,0.9)" />}
+      <Filmstrip assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={blockH} />
+      {clip.hasAudio && <AudioWaveform assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={waveH} color="rgba(255,214,10,0.9)" />}
       <div className="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/60 px-1 py-0.5 text-[10px] font-semibold text-white">
         <span className="max-w-32 truncate">{clip.name}</span>
         <span className="text-label-2">{formatTime(layout.duration)}</span>
@@ -318,6 +323,7 @@ export function TimelineDock() {
   const project = useEditor((s) => s.project)!;
   const zoom = useEditor((s) => s.timelineZoom);
   const setZoom = useEditor((s) => s.setTimelineZoom);
+  const videoH = useEditor((s) => videoLaneHeight(s.timelineHeight));
   const selection = useEditor((s) => s.selection);
   const seek = useEditor((s) => s.seek);
   const select = useEditor((s) => s.select);
@@ -350,7 +356,7 @@ export function TimelineDock() {
 
   const pxPerSec = zoom;
   const contentW = Math.max(viewW, duration * pxPerSec + 160);
-  const lanesH = RULER_H + CUE_H + VIDEO_H + MUSIC_H;
+  const lanesH = RULER_H + CUE_H + videoH + MUSIC_H;
   const fit = () => setZoom(duration > 0 ? (viewW - 80) / duration : 80);
   const scrubbing = useRef(false);
   const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout } | null>(null);
@@ -372,7 +378,7 @@ export function TimelineDock() {
   const musicWidth = music ? (music.loop ? duration : Math.min(duration, Math.max(0, music.duration - music.startOffset))) * pxPerSec : 0;
 
   return (
-    <div className="card flex shrink-0 flex-col overflow-hidden" style={{ height: lanesH + 44 + 30 }}>
+    <div className="card flex shrink-0 flex-col overflow-hidden" style={{ height: DOCK_CHROME_H + lanesH }}>
       <TransportBar />
       <div className="flex h-[30px] items-center gap-2 border-b border-sys-gray5 px-3 text-[11px] text-label-2">
         <span className="font-semibold text-white">Timeline</span>
@@ -397,7 +403,7 @@ export function TimelineDock() {
           <div className="flex items-center gap-1 px-2" style={{ height: CUE_H }}>
             <Captions size={11} /> Captions
           </div>
-          <div className="flex items-center gap-1 px-2" style={{ height: VIDEO_H }}>
+          <div className="flex items-center gap-1 px-2" style={{ height: videoH }}>
             <Film size={11} /> Video
           </div>
           <div className="flex items-center gap-1 px-2" style={{ height: MUSIC_H }}>
@@ -413,7 +419,7 @@ export function TimelineDock() {
             const el = e.currentTarget;
             const r = el.getBoundingClientRect();
             const y = e.clientY - r.top;
-            const inVideoLane = y >= RULER_H + CUE_H && y <= RULER_H + CUE_H + VIDEO_H;
+            const inVideoLane = y >= RULER_H + CUE_H && y <= RULER_H + CUE_H + videoH;
             if (!inVideoLane || e.pointerType === "touch") {
               if (hover) setHover(null);
               return;
@@ -461,7 +467,7 @@ export function TimelineDock() {
                 />
               ))}
             </div>
-            <div className="relative border-b border-sys-gray5/70" style={{ height: VIDEO_H }}>
+            <div className="relative border-b border-sys-gray5/70" style={{ height: videoH }}>
               {hover && dropX === null && <HoverPreview x={hover.x} time={hover.time} layout={hover.layout} />}
               {layouts.map((layout) => (
                 <ClipBlock
@@ -469,6 +475,7 @@ export function TimelineDock() {
                   layout={layout}
                   layouts={layouts}
                   pxPerSec={pxPerSec}
+                  laneH={videoH}
                   selected={selection?.kind === "clip" && selection.id === layout.clip.id}
                   active={activeClipId === layout.clip.id}
                   onDropIndicator={setDropX}
