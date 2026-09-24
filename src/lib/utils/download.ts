@@ -11,5 +11,5 @@ export function downloadBlob(blob: Blob, filename: string) {
 }
 
 export function safeFilename(name: string): string {
-  return name.replace(/[^\w\-. ]+/g, "_").replace(/\s+/g, " ").trim() || "reelflow";
+  return name.replace(/[^\w\-. ]+/g, "_").replace(/\s+/g, " ").trim() || "nocapedit";
 }

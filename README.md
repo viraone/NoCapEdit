@@ -1,4 +1,4 @@
-# ReelFlow Web
+# NoCap Edit
 
 A browser-native video editor for solo creators. Drop in a recording and get a
 captioned, platform-shaped vertical clip (Instagram Reels, TikTok, YouTube Shorts)

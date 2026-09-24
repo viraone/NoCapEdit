@@ -1,6 +1,6 @@
 # Roadmap / feasibility notes
 
-Everything in ReelFlow must run in the browser with zero server cost. This page
+Everything in NoCap Edit must run in the browser with zero server cost. This page
 records what was implemented for the "CapCut-class" feature set and what was
 deliberately left as a plan, with the reason.
 

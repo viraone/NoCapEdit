@@ -47,7 +47,7 @@ page.on("console", (m) => {
 let failed = false;
 try {
   await page.goto(baseUrl);
-  await page.waitForSelector("text=ReelFlow Web");
+  await page.waitForSelector("text=NoCap Edit");
   // Hosts without COOP/COEP headers rely on the service worker, which reloads once.
   await page.waitForFunction(() => crossOriginIsolated || performance.now() > 8000, null, { timeout: 15000 }).catch(() => {});
   const isolated = await page.evaluate(() => crossOriginIsolated);

@@ -1,6 +1,6 @@
 # Deployment and required headers
 
-ReelFlow Web is a static site (`next build` writes `out/`). Every heavy job (ffmpeg,
+NoCap Edit is a static site (`next build` writes `out/`). Every heavy job (ffmpeg,
 Whisper, translation, diarization, TTS, storage) runs in the visitor's browser, so
 any static host works and the owner pays nothing per user.
 

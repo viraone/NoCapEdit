@@ -236,7 +236,7 @@ async function runExport(
     gopSeconds: 2,
     hdr: opts.hdr,
   };
-  const fileName = `${project.name.replace(/[^\w\-. ]+/g, "_").trim() || "reelflow"}.mp4`;
+  const fileName = `${project.name.replace(/[^\w\-. ]+/g, "_").trim() || "nocapedit"}.mp4`;
   const out = sink ?? createBlobSink(fileName);
 
   // ---- inputs ---------------------------------------------------------------

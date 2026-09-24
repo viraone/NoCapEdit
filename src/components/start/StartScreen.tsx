@@ -137,7 +137,7 @@ export function StartScreen() {
             <Film size={20} />
           </div>
           <div>
-            <h1 className="text-lg font-semibold leading-tight">ReelFlow Web</h1>
+            <h1 className="text-lg font-semibold leading-tight">NoCap Edit</h1>
             <p className="text-xs text-label-3">Captioned vertical clips, edited entirely in your browser.</p>
           </div>
         </div>

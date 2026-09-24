@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import path from "node:path";
 
 /**
- * ReelFlow Web ships as a fully static site. Every heavy operation
+ * NoCap Edit ships as a fully static site. Every heavy operation
  * (ffmpeg, Whisper, translation, storage) runs inside the visitor's browser,
  * so the only infrastructure needed is a static file host.
  */

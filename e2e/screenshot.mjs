@@ -15,7 +15,7 @@ const browser = await chromium.launch({ headless: true, args: ["--use-angle=swif
 const page = await browser.newPage({ viewport: { width: 1760, height: 990 }, deviceScaleFactor: 1 });
 try {
   await page.goto(`http://localhost:${port}/`);
-  await page.waitForSelector("text=ReelFlow Web");
+  await page.waitForSelector("text=NoCap Edit");
   await page.screenshot({ path: join(out, "shot-start.png") });
   await page.locator('input[type="file"]').first().setInputFiles([join(here, "fixtures", "test-speech.mp4")]);
   await page.waitForURL(/\/editor\/?\?id=/, { timeout: 60_000 });

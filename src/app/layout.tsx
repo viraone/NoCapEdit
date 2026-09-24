@@ -3,9 +3,9 @@ import "./globals.css";
 import { ALL_FONT_CLASSES } from "@/lib/fonts";
 
 export const metadata: Metadata = {
-  title: "ReelFlow Web",
+  title: "NoCap Edit",
   description: "Browser-native editor that turns raw recordings into captioned, platform-shaped vertical clips. Everything runs on your device.",
-  applicationName: "ReelFlow Web",
+  applicationName: "NoCap Edit",
 };
 
 export const viewport: Viewport = {
