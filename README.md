@@ -90,7 +90,7 @@ Static host + three headers. `vercel.json`, `netlify.toml` and `public/_headers`
 (Cloudflare Pages) are included; `docs/DEPLOYMENT.md` covers nginx, Caddy, Apache,
 GitHub Pages and why the headers matter. `docs/EXPORT-PIPELINE.md` explains the
 segmented/streamed export and the ffmpeg.wasm caveats; `docs/ROADMAP.md` lists what
-was deliberately left out and why.
+was deliberately left out and why; `docs/HANDOFF.md` is the developer handoff.
 
 ## Project layout
 
