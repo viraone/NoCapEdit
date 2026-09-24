@@ -6,7 +6,9 @@ import path from "node:path";
  * (ffmpeg, Whisper, translation, storage) runs inside the visitor's browser,
  * so the only infrastructure needed is a static file host.
  */
-// Sub-directory hosting (GitHub Pages project sites): NEXT_PUBLIC_BASE_PATH=/Repo
+// Production (https://nocapedit.com) is served from the domain root, so no
+// basePath/assetPrefix is applied. NEXT_PUBLIC_BASE_PATH is only for hosting
+// under a sub-directory (e.g. a GitHub Pages project site without a domain).
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/$/, "");
 
 const nextConfig: NextConfig = {

@@ -64,7 +64,7 @@ Zustand, `idb`, `@ffmpeg/ffmpeg` + `@ffmpeg/core(-mt)`, `@huggingface/transforme
 (the maintained successor of `@xenova/transformers`, with WebGPU), `@mediapipe/tasks-vision`,
 lucide icons.
 
-Live build (GitHub Pages): https://viraone.github.io/NoCapEdit/
+Live build (GitHub Pages, custom domain): https://nocapedit.com
 
 ## Getting started
 

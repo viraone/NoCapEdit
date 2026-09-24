@@ -28,10 +28,9 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       - run: npm run typecheck
       - run: npm test
+      # Served from the root of the custom domain (https://nocapedit.com), so no
+      # base path. Set NEXT_PUBLIC_BASE_PATH=/<repo> only for a project sub-path site.
       - run: npm run build
-        env:
-          # Project site: https://viraone.github.io/NoCapEdit/
-          NEXT_PUBLIC_BASE_PATH: /NoCapEdit
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out

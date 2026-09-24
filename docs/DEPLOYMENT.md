@@ -85,11 +85,15 @@ use a Worker.
 `out/` with `actions/deploy-pages`. Enable Pages once with "Build and deployment →
 Source: GitHub Actions" (or `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`).
 
-Project sites live under `https://<owner>.github.io/<repo>/`, so the workflow builds
-with `NEXT_PUBLIC_BASE_PATH=/<repo>`; Next.js prefixes its routes and chunks, and
-`src/lib/basePath.ts` prefixes the self-hosted ffmpeg cores, the service worker, the
-RNNoise model and the MediaPipe runtime. `public/.nojekyll` keeps Jekyll from
-dropping the `_next/` folder.
+Production runs on the custom domain **https://nocapedit.com**, served from the
+domain root, so the build uses no `basePath`/`assetPrefix`. `public/CNAME` holds the
+domain and is copied into `out/`, which keeps the custom-domain setting from being
+reset by the next deploy. `public/.nojekyll` keeps Jekyll from dropping `_next/`.
+
+If you ever host under a project sub-path (`https://<owner>.github.io/<repo>/`)
+instead, build with `NEXT_PUBLIC_BASE_PATH=/<repo>`: Next.js then prefixes routes
+and chunks, and `src/lib/basePath.ts` prefixes the self-hosted ffmpeg cores, the
+service worker, the RNNoise model and the MediaPipe runtime.
 
 GitHub Pages cannot send COOP/COEP headers, so the app registers `public/coi-sw.js`,
 a small service worker that adds them to every same-origin response and reloads
