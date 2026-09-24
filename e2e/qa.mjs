@@ -10,7 +10,9 @@
 //   speed     multi-threaded export is >= 2x faster than the single-threaded run
 //   pages     no console errors on / and /editor/; favicon, manifest, robots served
 //
-// Usage: node e2e/qa.mjs [--only=lut,keys,...] [--gpu=off] [--keep]
+// Usage: node e2e/qa.mjs [--only=lut,keys,...] [--gpu=off] [--channel=chromium] [--headed]
+//   --channel=chromium uses the full browser (new headless mode) so WebGPU gets
+//   the real GPU; the default headless shell only has a slow software adapter.
 // Needs ffmpeg/ffprobe and python3 on the PATH. E2E_URL runs against a deployed site.
 import { chromium } from "playwright";
 import { spawn, execFileSync } from "node:child_process";
@@ -46,7 +48,7 @@ const record = (id, ok, details) => {
 const browserArgs = ["--autoplay-policy=no-user-gesture-required", "--disable-features=BlockInsecurePrivateNetworkRequests"];
 if (gpuOff) browserArgs.push("--disable-features=WebGPU");
 else browserArgs.push("--enable-unsafe-webgpu", "--enable-features=WebGPU");
-const browser = await chromium.launch({ headless: true, args: browserArgs });
+const browser = await chromium.launch({ headless: !args.headed, args: browserArgs, ...(args.channel ? { channel: args.channel } : {}) });
 
 async function makeContext(opts = {}) {
   const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1500, height: 950 } });
@@ -421,8 +423,12 @@ async function testExport() {
     const timing = engineTiming(run);
     const val = run.file ? validate(run.file) : null;
     const isolated = await page.evaluate(() => crossOriginIsolated);
-    const engineOk = !isolated || (timing.mtLoadedAt !== null && timing.probeOutputAt !== null && timing.probeOutputAt - timing.mtLoadedAt <= 1 && !timing.stalled && /multi-threaded/.test(run.engineLine ?? ""));
-    const promptOk = timing.preparingAt !== null && timing.encodingAt !== null && timing.encodingAt - timing.preparingAt <= 5;
+    // The engine may already be loaded from an earlier export (no new "loaded"
+    // line), and preparation can finish between two progress samples; both are
+    // fine as long as nothing stalled and encoding starts promptly after the click.
+    const probeOk = timing.mtLoadedAt === null || (timing.probeOutputAt !== null && timing.probeOutputAt - timing.mtLoadedAt <= 1);
+    const engineOk = !isolated || (probeOk && !timing.stalled && /multi-threaded/.test(run.engineLine ?? ""));
+    const promptOk = timing.encodingAt !== null && timing.encodingAt - (timing.preparingAt ?? 0) <= 5;
     record(`export.${cfg.label}.engine`, engineOk && promptOk, { isolated, timing, engineLine: run.engineLine, elapsed: run.elapsed, panel: run.panelTail, summary: run.summary });
     const syncOk = !!val && val.fragmented && val.offsets.length === 8 && val.offsets.every((o) => Math.abs(o) <= 1) && Object.values(val.tracks).every((t) => t.contiguous) && val.frames === 750 && val.bframes === 0 && val.decode === "";
     record(`export.${cfg.label}.file`, syncOk, val ?? { error: "no download", panel: run.panelTail });
