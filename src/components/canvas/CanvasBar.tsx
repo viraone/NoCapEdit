@@ -33,7 +33,8 @@ export function CanvasBar() {
           onChange={(e) =>
             update((p) => {
               p.formatId = e.target.value;
-              p.safeZone = getFormat(e.target.value).safeZone;
+              // A guide that's showing follows the new format; one that's off stays off.
+              if (p.safeZone !== "none") p.safeZone = getFormat(e.target.value).safeZone;
             })
           }
           aria-label="Frame format"

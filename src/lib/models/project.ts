@@ -1,5 +1,5 @@
 import { uid } from "@/lib/utils/id";
-import { DEFAULT_FORMAT_ID, getFormat, type SafeZoneKind } from "./formats";
+import { DEFAULT_FORMAT_ID, type SafeZoneKind } from "./formats";
 
 export const PROJECT_VERSION = 1;
 
@@ -327,7 +327,8 @@ export function createProject(partial: Partial<VideoProject> = {}): VideoProject
     music: null,
     subtitleStyle: defaultSubtitleStyle(),
     captions: { visible: true, showTranslated: false, sourceLanguage: "auto", targetLanguage: "es" },
-    safeZone: getFormat(formatId).safeZone,
+    // The guide is opt-in: the Safe zone button turns on the mask the format suggests.
+    safeZone: "none",
     ...partial,
   };
 }
