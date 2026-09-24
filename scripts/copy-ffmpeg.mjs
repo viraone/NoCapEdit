@@ -13,7 +13,10 @@ const sources = [
   ["@ffmpeg/core-mt/dist/esm", "core-mt"],
 ];
 // MediaPipe vision runtime (face detection for auto-reframe), served same-origin.
-const extra = [["@mediapipe/tasks-vision/wasm", join(root, "public", "mediapipe", "wasm")]];
+const extra = [
+  ["@mediapipe/tasks-vision/wasm", join(root, "public", "mediapipe", "wasm")],
+  ["@lottiefiles/dotlottie-web/dist", join(root, "public", "lottie")],
+];
 
 if (existsSync(out)) rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -35,6 +38,6 @@ for (const [src, dest] of extra) {
   if (!existsSync(from)) continue;
   if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
-  cpSync(from, dest, { recursive: true, filter: (f) => !f.endsWith(".d.ts") });
+  cpSync(from, dest, { recursive: true, filter: (f) => !f.endsWith(".d.ts") && !f.endsWith(".map") && (f.endsWith(".wasm") || !f.includes("dotlottie-web/dist/") || f.endsWith("dist")) });
   console.log(`[copy-ffmpeg] ${src} -> ${dest.replace(root + "/", "")}`);
 }

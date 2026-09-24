@@ -6,6 +6,16 @@
 import type { TransitionType, VideoProject } from "@/lib/models/project";
 import { layoutClips, locateFrame, toProjectTime, toSourceTime, type ClipLayout } from "@/lib/models/timeline";
 import { clamp } from "@/lib/utils/math";
+import { audioFx, type AudioFxPreset } from "@/lib/audio/fx";
+
+interface FxChain {
+  source: MediaElementAudioSourceNode;
+  highpass: BiquadFilterNode;
+  peaks: [BiquadFilterNode, BiquadFilterNode];
+  compressor: DynamicsCompressorNode;
+  gain: GainNode;
+  preset: AudioFxPreset;
+}
 
 export interface EngineFrame {
   time: number;
@@ -22,6 +32,8 @@ export class PlaybackEngine {
   private voices = new Map<string, HTMLAudioElement>();
   private music: HTMLAudioElement | null = null;
   private musicAssetId: string | null = null;
+  private audioCtx: AudioContext | null = null;
+  private chains = new Map<HTMLMediaElement, FxChain>();
   private project: VideoProject | null = null;
   private layouts: ClipLayout[] = [];
   private primaryIndex = -1;
@@ -129,14 +141,75 @@ export class PlaybackEngine {
     }
 
     this.time = clamp(this.time, 0, this.duration);
+    if (this.audioCtx) this.syncFx();
     if (this.playing && (this.primaryIndex < 0 || this.primaryIndex >= this.layouts.length)) this.pause();
     if (!this.playing) this.activate(false);
+  }
+
+  /** Routes a media element through the Web Audio preset chain (created on first play). */
+  private applyFx(el: HTMLMediaElement, preset: AudioFxPreset) {
+    if (!this.audioCtx) {
+      if (preset === "none") return;
+      try {
+        this.audioCtx = new AudioContext();
+      } catch {
+        return;
+      }
+    }
+    const ctx = this.audioCtx;
+    let chain = this.chains.get(el);
+    if (!chain) {
+      if (preset === "none") return;
+      try {
+        const source = ctx.createMediaElementSource(el);
+        const highpass = ctx.createBiquadFilter();
+        highpass.type = "highpass";
+        const p1 = ctx.createBiquadFilter();
+        p1.type = "peaking";
+        const p2 = ctx.createBiquadFilter();
+        p2.type = "peaking";
+        const compressor = ctx.createDynamicsCompressor();
+        const gain = ctx.createGain();
+        source.connect(highpass).connect(p1).connect(p2).connect(compressor).connect(gain).connect(ctx.destination);
+        chain = { source, highpass, peaks: [p1, p2], compressor, gain, preset: "none" };
+        this.chains.set(el, chain);
+      } catch {
+        return;
+      }
+    }
+    if (chain.preset === preset) return;
+    const fx = audioFx(preset).web;
+    chain.highpass.frequency.value = fx.highpass ?? 10;
+    chain.peaks.forEach((node, i) => {
+      const p = fx.peaks?.[i];
+      node.frequency.value = p?.f ?? 1000;
+      node.Q.value = p?.q ?? 1;
+      node.gain.value = p?.gain ?? 0;
+    });
+    const c = fx.compressor;
+    chain.compressor.threshold.value = c?.threshold ?? 0;
+    chain.compressor.ratio.value = c?.ratio ?? 1;
+    chain.compressor.attack.value = c?.attack ?? 0.003;
+    chain.compressor.release.value = c?.release ?? 0.25;
+    chain.compressor.knee.value = c?.knee ?? 0;
+    chain.gain.gain.value = fx.gain;
+    chain.preset = preset;
+  }
+
+  private syncFx() {
+    if (!this.project) return;
+    for (const clip of this.project.clips) {
+      const el = this.clipAudio.get(clip.id) ?? this.videos.get(clip.id);
+      if (el) this.applyFx(el, clip.audioFx ?? "none");
+    }
   }
 
   play() {
     if (!this.layouts.length) return;
     if (this.time >= this.duration - 0.02) this.time = 0;
     this.playing = true;
+    this.syncFx();
+    this.audioCtx?.resume().catch(() => undefined);
     this.activate(true);
     this.onPlayingChange?.(true);
   }
@@ -320,6 +393,9 @@ export class PlaybackEngine {
     this.clipAudio.clear();
     for (const a of this.voices.values()) a.pause();
     this.voices.clear();
+    this.chains.clear();
+    this.audioCtx?.close().catch(() => undefined);
+    this.audioCtx = null;
     this.music = null;
     this.musicAssetId = null;
     this.project = null;

@@ -7,11 +7,19 @@ import { layoutClips, findLayout, toSourceTime } from "@/lib/models/timeline";
 import { SPEED_MAX, SPEED_MIN, TRANSITIONS, ZOOM_MAX, ZOOM_MIN, type Clip, type TransitionType } from "@/lib/models/project";
 import { cutAfter, cutBefore, fitZoom, splitClipAt } from "@/lib/models/clipOps";
 import { getFormat } from "@/lib/models/formats";
-import { getAsset, putAsset } from "@/lib/storage/db";
+import { getAsset, putAsset, getPeaks } from "@/lib/storage/db";
+import { applyRemovals, findFillerWords, findSilences, mergeRanges, totalDuration, DEFAULT_FILLERS, OPTIONAL_FILLERS, DEFAULT_SILENCE, type TimeRange } from "@/lib/edit/magicCut";
 import { enhanceAudio, ENHANCE_MODES, type EnhanceMode } from "@/lib/audio/enhance";
 import { autoReframe } from "@/lib/tracking/autoReframe";
+import { AUDIO_FX } from "@/lib/audio/fx";
+import { NEUTRAL_LOOK, isNeutralLook } from "@/lib/models/project";
+import { parseCube } from "@/lib/color/cube";
+import { Scopes } from "./Scopes";
+import { matteClip } from "@/lib/matte/matte";
+import { UserRoundMinus } from "lucide-react";
+import { Mic, Radio, Volume2, Music2, VolumeX, Palette, Upload, RotateCcw } from "lucide-react";
 import { uid } from "@/lib/utils/id";
-import { formatTime } from "@/lib/utils/time";
+import { formatTime, nowMs } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
 import { Tile, TileGrid } from "@/components/ui/Tile";
@@ -46,9 +54,67 @@ export function TrimPanel() {
   const tx = useSliderTx();
   const [more, setMore] = useState(false);
   const [enhanceMode, setEnhanceMode] = useState<EnhanceMode>("rnnoise");
-  const [job, setJob] = useState<{ kind: "enhance" | "reframe"; message: string; progress: number | null } | null>(null);
+  const [job, setJob] = useState<{ kind: "enhance" | "reframe" | "matte"; message: string; progress: number | null } | null>(null);
+  const [matteFps, setMatteFps] = useState(8);
   const [jobError, setJobError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [mcFillers, setMcFillers] = useState(true);
+  const [mcExtra, setMcExtra] = useState(false);
+  const [mcSilence, setMcSilence] = useState(true);
+  const [mcGap, setMcGap] = useState(DEFAULT_SILENCE.minGap);
+  const [mcScan, setMcScan] = useState<{ ranges: TimeRange[]; fillers: number; gaps: number } | null>(null);
+  const [mcBusy, setMcBusy] = useState(false);
+  const [showScopes, setShowScopes] = useState(false);
+  const lutInputRef = useRef<HTMLInputElement>(null);
+  const [lutError, setLutError] = useState<string | null>(null);
+
+  const loadLut = async (file: File) => {
+    setLutError(null);
+    try {
+      const text = await file.text();
+      const lut = parseCube(text);
+      const id = uid("asset");
+      await putAsset({ id, projectId: project.id, name: file.name, type: "text/plain", size: file.size, blob: new Blob([text], { type: "text/plain" }), createdAt: nowMs() });
+      edit((c) => void (c.look = { ...(c.look ?? NEUTRAL_LOOK), lutAssetId: id, lutName: lut.title || file.name.replace(/\.cube$/i, "") }));
+      setNotice(`Applied LUT ${lut.title || file.name} (${lut.size}³).`);
+    } catch (e) {
+      setLutError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const scanMagicCut = async () => {
+    setMcBusy(true);
+    try {
+      const ranges: TimeRange[] = [];
+      let fillers = 0;
+      let gaps = 0;
+      if (mcFillers) {
+        const found = findFillerWords(project.cues, mcExtra ? [...DEFAULT_FILLERS, ...OPTIONAL_FILLERS, "you know"] : DEFAULT_FILLERS);
+        fillers = found.length;
+        ranges.push(...found);
+      }
+      if (mcSilence) {
+        for (const l of layoutClips(project.clips)) {
+          const peaks = await getPeaks(l.clip.assetId);
+          if (!peaks) continue;
+          const found = findSilences(peaks, l, { ...DEFAULT_SILENCE, minGap: mcGap });
+          gaps += found.length;
+          ranges.push(...found);
+        }
+      }
+      setMcScan({ ranges: mergeRanges(ranges), fillers, gaps });
+    } finally {
+      setMcBusy(false);
+    }
+  };
+
+  const applyMagicCut = () => {
+    if (!mcScan) return;
+    let stats = { removedSeconds: 0, cuesDropped: 0, clipsAfter: 0, clipsBefore: 0 };
+    update((p) => void (stats = applyRemovals(p, mcScan.ranges)));
+    setMcScan(null);
+    setNotice(`Magic Cut removed ${stats.removedSeconds.toFixed(1)} s (${mcScan.fillers} filler words, ${mcScan.gaps} gaps).`);
+  };
 
   if (!clip) {
     return (
@@ -114,7 +180,7 @@ export function TrimPanel() {
       if (!asset) throw new Error("Source file is missing.");
       const { blob } = await enhanceAudio(asset.blob, { mode: enhanceMode, signal: controller.signal, onProgress: (message, progress) => setJob({ kind: "enhance", message, progress }) });
       const id = uid("asset");
-      await putAsset({ id, projectId: project.id, name: `${clip.name} (clean).wav`, type: "audio/wav", size: blob.size, blob, createdAt: Date.now() });
+      await putAsset({ id, projectId: project.id, name: `${clip.name} (clean).wav`, type: "audio/wav", size: blob.size, blob, createdAt: nowMs() });
       useEditor.getState().registerAsset(id, blob);
       edit((c) => {
         c.audioAssetId = id;
@@ -149,6 +215,25 @@ export function TrimPanel() {
     }
   };
 
+  const runMatte = async () => {
+    setJobError(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setJob({ kind: "matte", message: "Starting", progress: null });
+    try {
+      const url = useEditor.getState().assetUrls[clip.assetId];
+      if (!url) throw new Error("Source file is not loaded.");
+      const matte = await matteClip({ videoUrl: url, clip, projectId: project.id, fps: matteFps, signal: controller.signal, onProgress: (message, progress) => setJob({ kind: "matte", message, progress }) });
+      edit((c) => void (c.matte = matte));
+      setNotice("Subject cut out. Text and stickers can now go behind it.");
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) setJobError(e instanceof Error ? e.message : String(e));
+    } finally {
+      abortRef.current = null;
+      setJob(null);
+    }
+  };
+
   return (
     <>
       <PanelHeader
@@ -167,6 +252,41 @@ export function TrimPanel() {
           <Tile icon={<ArrowRightToLine size={16} />} label="Cut before" onClick={doCutBefore} />
           <Tile icon={<ArrowLeftToLine size={16} />} label="Cut after" onClick={doCutAfter} />
         </TileGrid>
+      </PanelSection>
+
+      <PanelSection title="Magic Cut">
+        <Toggle checked={mcFillers} onChange={setMcFillers} label="Filler words" description={project.cues.some((c) => c.words?.length) ? "um, uh, er, hmm… from the caption word timings" : "Generate captions first to detect fillers"} />
+        {mcFillers && <Toggle checked={mcExtra} onChange={setMcExtra} label="Also cut “like”, “so”, “actually”, “you know”" description="More aggressive; review the result" />}
+        <Toggle checked={mcSilence} onChange={setMcSilence} label="Dead air" description="Silent stretches found in the waveform" />
+        {mcSilence && (
+          <Field label="Minimum gap">
+            <Select value={String(mcGap)} onChange={(e) => setMcGap(Number(e.target.value))}>
+              <option value="0.5">0.5 s</option>
+              <option value="0.7">0.7 s</option>
+              <option value="1">1.0 s</option>
+              <option value="1.5">1.5 s</option>
+            </Select>
+          </Field>
+        )}
+        {!mcScan ? (
+          <Button variant="secondary" size="sm" className="w-full" onClick={scanMagicCut} disabled={mcBusy || !project.clips.length}>
+            <Wand2 size={13} /> {mcBusy ? "Scanning…" : "Scan for filler words & dead air"}
+          </Button>
+        ) : (
+          <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
+            <p className="text-[12px]">
+              Found <b>{mcScan.fillers}</b> filler word{mcScan.fillers === 1 ? "" : "s"} and <b>{mcScan.gaps}</b> gap{mcScan.gaps === 1 ? "" : "s"} · saves {totalDuration(mcScan.ranges).toFixed(1)} s
+            </p>
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" onClick={applyMagicCut} disabled={!mcScan.ranges.length}>
+                <Scissors size={12} /> Delete filler words & dead air
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setMcScan(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
       </PanelSection>
 
       <PanelSection title={`Speed  ${clip.speed}×`}>
@@ -193,6 +313,53 @@ export function TrimPanel() {
           <Tile icon={<Maximize size={16} />} label="Fill" active={Math.abs(clip.zoom - 1) < 1e-6} onClick={() => edit((c) => void ((c.zoom = 1), (c.pan = { x: 0, y: 0 })))} />
           <Tile icon={<Minimize size={16} />} label="Fit" active={Math.abs(clip.zoom - fit) < 1e-6} onClick={() => edit((c) => void ((c.zoom = fit), (c.pan = { x: 0, y: 0 })))} />
         </TileGrid>
+      </PanelSection>
+
+      <PanelSection title={`Sound  ${AUDIO_FX.find((f) => f.id === (clip.audioFx ?? "none"))?.label ?? "Off"}`}>
+        <TileGrid cols={5}>
+          {AUDIO_FX.map((f) => {
+            const icon = f.id === "none" ? <VolumeX size={15} /> : f.id === "voice" ? <Mic size={15} /> : f.id === "podcast" ? <Radio size={15} /> : f.id === "loud" ? <Volume2 size={15} /> : <Music2 size={15} />;
+            return <Tile key={f.id} icon={icon} label={f.label} active={(clip.audioFx ?? "none") === f.id} onClick={() => edit((c) => void (c.audioFx = f.id))} title={f.note} disabled={!clip.hasAudio} />;
+          })}
+        </TileGrid>
+        <p className="text-[11px] text-label-3">{AUDIO_FX.find((f) => f.id === (clip.audioFx ?? "none"))?.note}. The preview uses Web Audio; the export uses the matching ffmpeg filters.</p>
+      </PanelSection>
+
+      <PanelSection
+        title="Colour"
+        right={
+          !isNeutralLook(clip.look) && (
+            <Button variant="ghost" size="xs" onClick={() => edit((c) => void (c.look = null))}>
+              <RotateCcw size={11} /> Reset
+            </Button>
+          )
+        }
+      >
+        <Slider label="Brightness" value={clip.look?.brightness ?? 0} min={-0.5} max={0.5} step={0.01} format={(v) => (v >= 0 ? "+" : "") + v.toFixed(2)} onChange={(v) => edit((c) => void (c.look = { ...(c.look ?? NEUTRAL_LOOK), brightness: v }), false)} {...tx} />
+        <Slider label="Contrast" value={clip.look?.contrast ?? 1} min={0.5} max={1.5} step={0.01} format={(v) => v.toFixed(2)} onChange={(v) => edit((c) => void (c.look = { ...(c.look ?? NEUTRAL_LOOK), contrast: v }), false)} {...tx} />
+        <Slider label="Saturation" value={clip.look?.saturation ?? 1} min={0} max={2} step={0.01} format={(v) => v.toFixed(2)} onChange={(v) => edit((c) => void (c.look = { ...(c.look ?? NEUTRAL_LOOK), saturation: v }), false)} {...tx} />
+        <input ref={lutInputRef} type="file" accept=".cube" className="hidden" onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) loadLut(f);
+        }} />
+        {clip.look?.lutAssetId ? (
+          <div className="flex items-center justify-between rounded-lg border border-sys-gray4 bg-sys-gray5 px-2 py-1.5 text-[12px]">
+            <span className="flex items-center gap-1.5 truncate">
+              <Palette size={13} className="text-sys-purple" /> {clip.look.lutName ?? "LUT"}
+            </span>
+            <Button variant="ghost" size="xs" onClick={() => edit((c) => void (c.look = { ...(c.look ?? NEUTRAL_LOOK), lutAssetId: null, lutName: null }))}>
+              Remove
+            </Button>
+          </div>
+        ) : (
+          <Button variant="outline" size="sm" className="w-full" onClick={() => lutInputRef.current?.click()}>
+            <Upload size={13} /> Load a .cube LUT
+          </Button>
+        )}
+        {lutError && <p className="text-[11px] text-sys-red">{lutError}</p>}
+        <Toggle checked={showScopes} onChange={setShowScopes} label="Show scopes" description="Histogram and vectorscope of the preview" />
+        {showScopes && <Scopes />}
       </PanelSection>
 
       <PanelSection title={`Background  ${clip.background === "#000000" ? "Black" : clip.background === "#ffffff" ? "White" : clip.background.toUpperCase()}`}>
@@ -286,7 +453,34 @@ export function TrimPanel() {
               </>
             )}
           </PanelSection>
-          <PanelSection title="Auto-reframe">
+          <PanelSection title="Subject cut-out">
+        {clip.matte ? (
+          <div className="flex items-center justify-between rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[11px] text-sys-green">
+            <span>Background removed ({clip.matte.count} masks @ {clip.matte.fps} fps)</span>
+            <Button variant="ghost" size="xs" onClick={() => edit((c) => void (c.matte = null))}>
+              <Undo2 size={11} /> Restore
+            </Button>
+          </div>
+        ) : (
+          job?.kind !== "matte" && (
+            <>
+              <Field label="Mask rate" hint="Higher is smoother but slower; RMBG-1.4 runs on this device (about 0.2–0.5 s per frame on WebGPU).">
+                <Select value={String(matteFps)} onChange={(e) => setMatteFps(Number(e.target.value))}>
+                  <option value="4">4 masks / s (fast)</option>
+                  <option value="8">8 masks / s</option>
+                  <option value="15">15 masks / s (smooth)</option>
+                </Select>
+              </Field>
+              <Button variant="secondary" size="sm" className="w-full" onClick={runMatte} disabled={!!job}>
+                <UserRoundMinus size={13} /> Cut out the subject
+              </Button>
+            </>
+          )
+        )}
+        <p className="text-[11px] text-label-3">Removes the background from the person in the clip without a green screen. Then place text or stickers behind them (Text / Picture → “Behind the subject”), and pick a background colour above.</p>
+      </PanelSection>
+
+      <PanelSection title="Auto-reframe">
             {clip.reframe ? (
               <div className="flex items-center justify-between rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[11px] text-sys-green">
                 <span>Following the subject ({clip.reframe.keyframes.length} keyframes)</span>

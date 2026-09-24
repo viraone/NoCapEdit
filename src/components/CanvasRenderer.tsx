@@ -19,6 +19,12 @@ import { Compositor } from "@/lib/playback/compositor";
 
 export { captureFrames, Compositor, needsCompositor } from "@/lib/playback/compositor";
 
+let previewCanvas: HTMLCanvasElement | null = null;
+/** The live preview canvas (for scopes and thumbnails). */
+export function getPreviewCanvas(): HTMLCanvasElement | null {
+  return previewCanvas;
+}
+
 export interface CanvasRendererHandle {
   /** Rectangles of the elements drawn in the last frame (frame pixels). */
   getRects(): ElementRect[];
@@ -76,6 +82,7 @@ export const CanvasRenderer = forwardRef<CanvasRendererHandle, CanvasRendererPro
       }
       ctx.setTransform(pw / frame.width, 0, 0, ph / frame.height, 0, 0);
       rectsRef.current = compositor.composite(ctx, projectRef.current, f, { images: imagesRef.current });
+      previewCanvas = canvas;
       onFrameRef.current?.(rectsRef.current, f.time);
       raf = requestAnimationFrame(loop);
     };

@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { getThumbs, type ThumbsRecord } from "@/lib/storage/db";
 import { onAssetReady } from "@/lib/media/events";
 
-interface Loaded {
+export interface Loaded {
   img: HTMLImageElement;
   rec: ThumbsRecord;
 }
 const cache = new Map<string, Promise<Loaded | null>>();
 
-function loadThumbs(assetId: string, force = false): Promise<Loaded | null> {
+export function loadThumbs(assetId: string, force = false): Promise<Loaded | null> {
   if (!force && cache.has(assetId)) return cache.get(assetId)!;
   const p = getThumbs(assetId).then(
     (rec) =>

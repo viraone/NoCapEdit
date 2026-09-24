@@ -1,7 +1,11 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck } from "lucide-react";
+import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck, Video, Archive, PackageOpen } from "lucide-react";
+import { Recorder, isRecordingSupported } from "@/components/record/Recorder";
+import { exportBackup, importBackup } from "@/lib/storage/backup";
+import { requestDiskSink, createBlobSink } from "@/lib/ffmpeg/sinks";
+import { downloadBlob, safeFilename } from "@/lib/utils/download";
 import { createProject, type VideoProject } from "@/lib/models/project";
 import { FRAME_FORMATS, getFormat } from "@/lib/models/formats";
 import { projectDuration } from "@/lib/models/timeline";
@@ -54,6 +58,37 @@ export function StartScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<VideoProject | null>(null);
+  const [recording, setRecording] = useState(false);
+  const backupInputRef = useRef<HTMLInputElement>(null);
+
+  const backup = async (p: VideoProject) => {
+    setError(null);
+    const name = `${safeFilename(p.name)}.nocap`;
+    try {
+      const sink = (await requestDiskSink(name).catch(() => null)) ?? createBlobSink(name, "application/zip");
+      setBusy(`Packing ${p.name}`);
+      await exportBackup(p.id, sink, (done, total) => setBusy(`Packing ${p.name} · ${Math.round((done / total) * 100)}%`));
+      const blob = await sink.close();
+      if (blob) downloadBlob(blob, name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const restore = async (file: File) => {
+    setError(null);
+    try {
+      const id = await importBackup(file, setBusy);
+      setBusy(null);
+      refresh();
+      openProject(id);
+    } catch (e) {
+      setBusy(null);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const refresh = useCallback(async () => {
     const list = await listProjects();
@@ -142,6 +177,19 @@ export function StartScreen() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <input ref={backupInputRef} type="file" accept=".nocap,.zip,application/zip" className="hidden" onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) restore(f);
+          }} />
+          <Button variant="secondary" onClick={() => backupInputRef.current?.click()} disabled={!!busy} title="Restore a .nocap backup">
+            <PackageOpen size={16} /> Import backup
+          </Button>
+          {isRecordingSupported() && (
+            <Button variant="secondary" onClick={() => setRecording(true)} disabled={!!busy}>
+              <Video size={16} /> Record
+            </Button>
+          )}
           <Button variant="primary" onClick={() => setNewOpen(true)}>
             <Plus size={16} /> New project
           </Button>
@@ -214,6 +262,9 @@ export function StartScreen() {
                     <Button variant="ghost" size="xs" onClick={() => duplicate(p)} title="Duplicate">
                       <Copy size={12} /> Duplicate
                     </Button>
+                    <Button variant="ghost" size="xs" onClick={() => backup(p)} title="Save a .nocap backup with all media" disabled={!!busy}>
+                      <Archive size={12} /> Backup
+                    </Button>
                     <Button variant="ghost" size="xs" className="ml-auto text-sys-red hover:text-red-200" onClick={() => setConfirmDelete(p)} title="Delete">
                       <Trash2 size={12} /> Delete
                     </Button>
@@ -269,6 +320,11 @@ export function StartScreen() {
           </div>
         </div>
       </Modal>
+
+      <Recorder open={recording} onClose={() => setRecording(false)} onRecorded={(file) => {
+        setRecording(false);
+        quickImport([file]);
+      }} />
 
       <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title="Delete project?">
         <p className="text-sm text-label-2">

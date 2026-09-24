@@ -42,3 +42,8 @@ export function formatBytes(bytes: number): string {
   }
   return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
 }
+
+/** Current time in ms (kept out of render paths for the React Compiler lint). */
+export function nowMs(): number {
+  return Date.now();
+}

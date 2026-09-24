@@ -54,7 +54,7 @@ try {
   log("crossOriginIsolated:", isolated);
 
   // Quick import two copies of the clip -> new project -> editor.
-  const input = page.locator('input[type="file"]').first();
+  const input = page.locator('input[type="file"][accept^="video"]').first();
   await input.setInputFiles([clip, clip]);
   await page.waitForURL(/\/editor\/?\?id=/, { timeout: 120_000 });
   await page.waitForSelector("text=2 clips", { timeout: 60_000 });
@@ -63,14 +63,14 @@ try {
   const rail = page.getByRole("navigation", { name: "Tools" });
   // Crossfade between the clips.
   await rail.getByRole("button", { name: "Trim" }).click();
-  await page.getByLabel("Type").selectOption("fade");
+  await page.getByRole("button", { name: "Dissolve" }).click();
   await rail.getByRole("button", { name: "Clips" }).click();
 
   // Captions with Whisper tiny on WASM.
   await rail.getByRole("button", { name: "Subtitles" }).click();
   await page.getByLabel("Model").selectOption({ index: 0 });
   await page.getByLabel("Compute").selectOption("wasm");
-  await page.getByRole("button", { name: "Generate captions" }).click();
+  await page.getByRole("button", { name: "Generate captions", exact: true }).click();
   const started = Date.now();
   await page.waitForFunction(() => /Cues \([1-9]\d*\)/i.test(document.body.innerText) || /Speech recognition error|failed|Error:/i.test(document.body.innerText), null, { timeout: 8 * 60_000 });
   const cueText = await page.locator("[data-cue] input").first().inputValue();

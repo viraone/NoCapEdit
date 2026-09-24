@@ -154,7 +154,7 @@ export function VideoCanvas() {
       let origin = { x: 0, y: 0, size: 1, rect: hit.rect as Rect | null };
       if (hit.kind === "overlay") {
         const ov = proj.overlays.find((o) => o.id === hit.id);
-        if (ov) origin = { x: ov.track ? ov.track.offset.x : ov.x, y: ov.track ? ov.track.offset.y : ov.y, size: ov.kind === "image" ? ov.width : ov.fontSize, rect: hit.rect };
+        if (ov) origin = { x: ov.track ? ov.track.offset.x : ov.x, y: ov.track ? ov.track.offset.y : ov.y, size: ov.kind === "text" ? ov.fontSize : ov.width, rect: hit.rect };
       } else {
         const cue = proj.cues.find((c) => c.id === hit.id);
         const a = cue?.anchor ?? { x: proj.subtitleStyle.x, y: proj.subtitleStyle.y };
@@ -208,8 +208,8 @@ export function VideoCanvas() {
           if (d.elKind === "overlay") {
             const ov = p.overlays.find((o) => o.id === d.id);
             if (!ov) return;
-            if (ov.kind === "image") ov.width = clamp(d.origin.size * factor, 0.02, 3);
-            else ov.fontSize = clamp(d.origin.size * factor, 0.01, 0.3);
+            if (ov.kind === "text") ov.fontSize = clamp(d.origin.size * factor, 0.01, 0.3);
+            else ov.width = clamp(d.origin.size * factor, 0.02, 3);
           } else {
             p.subtitleStyle.sizeScale = clamp(d.origin.size * factor, 0.3, 3);
           }
@@ -301,7 +301,7 @@ export function VideoCanvas() {
     let sizeValue = proj.subtitleStyle.sizeScale;
     if (sel.kind === "overlay") {
       const ov = proj.overlays.find((o) => o.id === sel.id);
-      if (ov) sizeValue = ov.kind === "image" ? ov.width : ov.fontSize;
+      if (ov) sizeValue = ov.kind === "text" ? ov.fontSize : ov.width;
     }
     dragRef.current = { kind: "resize", id: sel.id, elKind: sel.kind, startX: e.clientX, startY: e.clientY, origin: { x: 0, y: 0, size: sizeValue, rect: r }, alt: false, moved: false };
     beginTransaction();

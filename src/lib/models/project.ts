@@ -95,6 +95,40 @@ export interface Clip {
   audioLabel?: string | null;
   /** Animated pan produced by auto-reframing. */
   reframe?: Reframe | null;
+  /** Audio enhancement preset (see lib/audio/fx.ts). */
+  audioFx?: "none" | "voice" | "podcast" | "loud" | "music";
+  /** Colour grade: optional 3D LUT asset plus ffmpeg-eq style adjustments. */
+  look?: ClipLook | null;
+  /** Subject cut-out masks produced by the matting pass. */
+  matte?: ClipMatte | null;
+}
+
+export interface ClipMatte {
+  assetId: string;
+  width: number;
+  height: number;
+  fps: number;
+  count: number;
+  /** Source range the masks were computed for. */
+  inPoint: number;
+  outPoint: number;
+}
+
+export interface ClipLook {
+  lutAssetId: string | null;
+  lutName: string | null;
+  /** -1..1, 0 = neutral (ffmpeg eq brightness). */
+  brightness: number;
+  /** 0..2, 1 = neutral. */
+  contrast: number;
+  /** 0..3, 1 = neutral. */
+  saturation: number;
+}
+
+export const NEUTRAL_LOOK: ClipLook = { lutAssetId: null, lutName: null, brightness: 0, contrast: 1, saturation: 1 };
+
+export function isNeutralLook(look: ClipLook | null | undefined): boolean {
+  return !look || (!look.lutAssetId && Math.abs(look.brightness) < 1e-3 && Math.abs(look.contrast - 1) < 1e-3 && Math.abs(look.saturation - 1) < 1e-3);
 }
 
 export interface WordTiming {
@@ -151,7 +185,14 @@ export interface TextOverlay {
   /** Max text width as a fraction of the frame width. */
   maxWidth: number;
   track?: MotionTrack | null;
+  /** Entrance animation (rendered per frame; exported through the compositor). */
+  animation?: TextAnimation;
+  layer?: OverlayLayer;
 }
+
+export type TextAnimation = "none" | "pop" | "typewriter" | "slide" | "bounce";
+/** "behind" draws under the (matted) video, "front" above it. */
+export type OverlayLayer = "front" | "behind";
 
 export interface ImageOverlay {
   id: string;
@@ -168,13 +209,38 @@ export interface ImageOverlay {
   opacity: number;
   rotation: number;
   track?: MotionTrack | null;
+  layer?: OverlayLayer;
 }
 
-export type Overlay = TextOverlay | ImageOverlay;
+export interface LottieOverlay {
+  id: string;
+  kind: "lottie";
+  assetId: string;
+  name: string;
+  start: number;
+  end: number;
+  x: number;
+  y: number;
+  width: number;
+  aspect: number;
+  opacity: number;
+  rotation: number;
+  loop: boolean;
+  speed: number;
+  track?: MotionTrack | null;
+  layer?: OverlayLayer;
+}
 
-/** Generated (TTS) or recorded voice-over placed on the timeline. */
+export type Overlay = TextOverlay | ImageOverlay | LottieOverlay;
+
+export function createLottieOverlay(init: Pick<LottieOverlay, "assetId" | "name">, start: number, end: number): LottieOverlay {
+  return { id: uid("lot"), kind: "lottie", start, end, x: 0.5, y: 0.5, width: 0.5, aspect: 1, opacity: 1, rotation: 0, loop: true, speed: 1, ...init };
+}
+
+/** Generated (TTS) voice-over or sound effect placed on the timeline. */
 export interface Voiceover {
   id: string;
+  kind?: "voice" | "sfx";
   assetId: string;
   name: string;
   text: string;
@@ -211,6 +277,8 @@ export interface SubtitleStyle {
   maxWidth: number;
   /** Colour captions per detected speaker. */
   speakerColors: boolean;
+  /** Append keyword emoji (null = preset default). */
+  emoji: boolean | null;
 }
 
 export interface CaptionSettings {
@@ -276,6 +344,7 @@ export function defaultSubtitleStyle(): SubtitleStyle {
     uppercase: null,
     maxWidth: 0.86,
     speakerColors: false,
+    emoji: null,
   };
 }
 
@@ -349,6 +418,9 @@ export function normalizeProject(raw: VideoProject): VideoProject {
     ...c,
     pan: c.pan ?? { x: 0, y: 0 },
     background: c.background ?? "#000000",
+    audioFx: c.audioFx ?? "none",
+    look: c.look ?? null,
+    matte: c.matte ?? null,
     transition: c.transition ?? { type: "none", duration: 0.5 },
   }));
   project.cues = raw.cues ?? [];

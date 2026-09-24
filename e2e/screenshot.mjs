@@ -17,7 +17,7 @@ try {
   await page.goto(`http://localhost:${port}/`);
   await page.waitForSelector("text=NoCap Edit");
   await page.screenshot({ path: join(out, "shot-start.png") });
-  await page.locator('input[type="file"]').first().setInputFiles([join(here, "fixtures", "test-speech.mp4")]);
+  await page.locator('input[type="file"][accept^="video"]').first().setInputFiles([join(here, "fixtures", "test-speech.mp4")]);
   await page.waitForURL(/\/editor\/?\?id=/, { timeout: 60_000 });
   await page.waitForSelector("text=1 clips", { timeout: 60_000 });
   await new Promise((r) => setTimeout(r, 1500));

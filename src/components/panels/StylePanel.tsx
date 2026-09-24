@@ -81,6 +81,7 @@ export function StylePanel() {
         </Field>
         <ColorInput label="Accent colour" value={style.accentColor ?? preset.accent} onChange={(v) => set((s) => void (s.accentColor = v))} onReset={style.accentColor ? () => set((s) => void (s.accentColor = null)) : undefined} />
         <ColorInput label="Text colour" value={style.textColor ?? preset.color} onChange={(v) => set((s) => void (s.textColor = v))} onReset={style.textColor ? () => set((s) => void (s.textColor = null)) : undefined} />
+        <Toggle checked={style.emoji ?? preset.emoji ?? false} onChange={(v) => set((s) => void (s.emoji = v))} label="Auto emoji" description="Appends an emoji to keywords like money, fire, idea" />
         <Toggle checked={style.speakerColors} onChange={(v) => set((s) => void (s.speakerColors = v))} label="Colour captions by speaker" description={project.cues.some((c) => c.speaker !== undefined) ? "Speakers were detected in this project" : "Run “Identify speakers” in Subtitles first"} />
         <Toggle checked={project.captions.visible} onChange={(v) => update((p) => void (p.captions.visible = v))} label="Show captions" />
       </PanelSection>

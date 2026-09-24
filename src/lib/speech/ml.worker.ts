@@ -4,7 +4,7 @@
  * once from the Hugging Face Hub and cached by the browser; inference runs on
  * WebGPU when available, otherwise on WASM. Nothing leaves the device.
  */
-import { pipeline, env, WhisperTextStreamer, AutoProcessor, AutoModel, AutoModelForAudioFrameClassification } from "@huggingface/transformers";
+import { pipeline, env, WhisperTextStreamer, AutoProcessor, AutoModel, AutoModelForAudioFrameClassification, RawImage } from "@huggingface/transformers";
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -23,6 +23,7 @@ export type MlRequest =
   | { type: "translate"; id: number; texts: string[]; steps: { model: string; prefix?: string }[] }
   | { type: "diarize"; id: number; audio: Float32Array; maxSpeakers: number }
   | { type: "tts"; id: number; text: string; model: string }
+  | { type: "matte"; id: number; image: Blob }
   | { type: "dispose"; id: number };
 
 export type MlResponse =
@@ -358,6 +359,29 @@ async function tts(req: Extract<MlRequest, { type: "tts" }>) {
   scope.postMessage({ type: "result", id: req.id, payload: { audio, sampleRate: out.sampling_rate } }, [audio.buffer]);
 }
 
+// ---------------------------------------------------------------------------
+// Background removal (RMBG-1.4) → alpha mask.
+// ---------------------------------------------------------------------------
+
+type MattePipe = ((img: unknown) => Promise<Array<{ data: Uint8Array; width: number; height: number; channels: number }>>) & { dispose: () => Promise<void> };
+let mattePipe: MattePipe | null = null;
+
+async function matte(req: Extract<MlRequest, { type: "matte" }>) {
+  if (!mattePipe) {
+    const device = await detectDevice("auto");
+    post({ type: "progress", id: req.id, stage: "load", message: `Loading background-removal model on ${device}`, progress: null });
+    mattePipe = (await pipeline("background-removal", "briaai/RMBG-1.4", { device, dtype: device === "webgpu" ? "fp32" : "q8", progress_callback: downloadProgress(req.id, "download") } as never)) as unknown as MattePipe;
+  }
+  const image = await RawImage.fromBlob(req.image);
+  const [out] = await mattePipe(image);
+  const { width, height, channels, data } = out;
+  const alpha = new Uint8Array(width * height);
+  if (channels === 4) for (let i = 0, j = 3; i < alpha.length; i++, j += 4) alpha[i] = data[j];
+  else if (channels === 1) alpha.set(data.subarray(0, alpha.length));
+  else for (let i = 0; i < alpha.length; i++) alpha[i] = data[i * channels];
+  scope.postMessage({ type: "result", id: req.id, payload: { alpha, width, height } }, [alpha.buffer]);
+}
+
 scope.onmessage = async (event: MessageEvent<MlRequest>) => {
   const req = event.data;
   try {
@@ -365,6 +389,7 @@ scope.onmessage = async (event: MessageEvent<MlRequest>) => {
     else if (req.type === "translate") await translate(req);
     else if (req.type === "diarize") await diarize(req);
     else if (req.type === "tts") await tts(req);
+    else if (req.type === "matte") await matte(req);
     else if (req.type === "dispose") {
       if (asr) await asr.pipe.dispose().catch(() => undefined);
       asr = null;

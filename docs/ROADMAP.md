@@ -19,3 +19,16 @@ deliberately left as a plan, with the reason.
 | Text-to-speech | Done | MMS-TTS (VITS) via Transformers.js, 12 languages; `speechSynthesis` for previews only because browsers cannot capture its audio |
 | GLSL transitions | Done | 10 shaders in `lib/gl/transitions.ts`; exported through the compositor path |
 | Stock media | Done | Pexels / Pixabay search with the user's own free key (browser → provider, no proxy) |
+| Magic Cut (fillers + dead air) | Done | `lib/edit/magicCut.ts`; unit-tested removal + re-timing |
+| Highlight finder | Done | `lib/edit/highlights.ts`; TF-IDF + delivery cues, no model download |
+| Screen / camera recorder | Done | MediaRecorder → normal import path |
+| Hover filmstrip preview | Done | reuses the import-time sprite sheets |
+| .nocap backups | Done | streamed zip via fflate, restores on any device |
+| Sound effects | Done | synthesised with ffmpeg, mixed like voice-overs |
+| Hormozi / Beast captions | Done | pop/bounce animation + keyword emoji; exported via the compositor path |
+| Audio EQ / compressor / normalise | Done | presets in `lib/audio/fx.ts` mapped to Web Audio (preview) and ffmpeg (export) |
+| LUTs, scopes, colour | Done | WebGL grader for preview, `lut3d` + `eq` on export; histogram + vectorscope preview-only |
+| Lottie / animated lower thirds | Done | dotlottie-web with deterministic `setFrame`; animated text entrances |
+| Background removal (stickers) | Done | `background-removal` pipeline (RMBG-1.4) in the ML worker |
+| Video matting (subject cut-out) | Done (offline pass) | masks at 4–15 fps stored as a compressed asset; compositor applies nearest mask; "behind the subject" layer |
+| In-browser Stable Diffusion B-roll | Not planned | 1.5 GB+ model, desktop GPU only, seconds per image; not a fit for the zero-cost mobile-friendly goal |

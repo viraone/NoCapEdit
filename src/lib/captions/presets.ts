@@ -27,6 +27,12 @@ export interface CaptionPreset {
   box?: { color: string; padX: number; padY: number; radius: number; mode: "line" | "block" };
   /** Glow (blurred copy of the text drawn behind it). */
   glow?: { color: string; blur: number };
+  /** Animated entrance of the active word. Exported through the compositor path. */
+  animation?: "pop" | "bounce";
+  /** Append keyword emoji by default. */
+  emoji?: boolean;
+  /** Suggested words per caption for this look. */
+  wordsPerCue?: number;
 }
 
 export const CAPTION_PRESETS: CaptionPreset[] = [
@@ -36,6 +42,8 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
   { id: "paper", name: "Paper", category: "social", font: "courier", weight: 700, size: 0.038, color: "#1a1a1a", accent: "#d9480f", highlight: "color", lineHeight: 1.3, box: { color: "#fffdf5", padX: 0.5, padY: 0.2, radius: 0.1, mode: "line" } },
   { id: "comic", name: "Comic", category: "social", font: "bangers", weight: 400, size: 0.056, color: "#ffe600", accent: "#ff3d00", highlight: "color", uppercase: true, letterSpacing: 0.04, lineHeight: 1.1, stroke: { color: "#000000", width: 0.14 }, shadow: { color: "rgba(0,0,0,0.9)", blur: 0, x: 0.06, y: 0.06 } },
   { id: "neon", name: "Neon", category: "social", font: "montserrat", weight: 700, size: 0.042, color: "#fbcfe8", accent: "#22d3ee", highlight: "color", lineHeight: 1.3, glow: { color: "#ec4899", blur: 0.5 }, shadow: { color: "rgba(236,72,153,0.9)", blur: 0.35, x: 0, y: 0 } },
+  { id: "hormozi", name: "Hormozi", category: "social", font: "montserrat", weight: 900, size: 0.056, color: "#ffffff", accent: "#facc15", highlight: "color", uppercase: true, lineHeight: 1.12, stroke: { color: "#000000", width: 0.18 }, shadow: { color: "rgba(0,0,0,0.85)", blur: 0, x: 0.06, y: 0.07 }, animation: "pop", emoji: true, wordsPerCue: 2 },
+  { id: "beast", name: "Beast", category: "social", font: "bangers", weight: 400, size: 0.064, color: "#ffde00", accent: "#22d3ee", highlight: "scale", uppercase: true, letterSpacing: 0.03, lineHeight: 1.1, stroke: { color: "#000000", width: 0.16 }, shadow: { color: "rgba(0,0,0,0.9)", blur: 0.05, x: 0.05, y: 0.08 }, animation: "bounce", emoji: true, wordsPerCue: 3 },
   { id: "mint", name: "Mint", category: "social", font: "inter", weight: 800, size: 0.04, color: "#ffffff", accent: "#fde68a", highlight: "color", lineHeight: 1.35, box: { color: "rgba(16,185,129,0.92)", padX: 0.55, padY: 0.25, radius: 0.5, mode: "line" } },
   // Business
   { id: "boxed", name: "Boxed", category: "business", font: "inter", weight: 700, size: 0.038, color: "#ffffff", accent: "#60a5fa", highlight: "color", lineHeight: 1.35, box: { color: "rgba(0,0,0,0.85)", padX: 0.45, padY: 0.22, radius: 0.08, mode: "line" } },

@@ -7,13 +7,34 @@ import {
   overlayCenter,
   type CaptionCue,
   type ImageOverlay,
+  type LottieOverlay,
+  type OverlayLayer,
   type SubtitleStyle,
   type TextOverlay,
   type VideoProject,
   type WordTiming,
 } from "@/lib/models/project";
+import { lottieFrame } from "@/lib/lottie/registry";
 import { fontFamily } from "./fonts";
 import { getPreset, type CaptionPreset, type HighlightMode } from "./presets";
+import { emojiFor } from "./emoji";
+
+function easeOutBack(p: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+}
+
+/** Scale of the active word for animated presets, given seconds since the word started. */
+export function activeWordScale(animation: CaptionPreset["animation"], sinceStart: number, base: number): number {
+  if (!animation || sinceStart < 0) return base;
+  if (animation === "pop") {
+    const p = Math.min(1, sinceStart / 0.18);
+    return base * (0.7 + 0.3 * easeOutBack(p));
+  }
+  const p = Math.min(1, sinceStart / 0.35);
+  return base * (1 + 0.35 * Math.sin(Math.PI * p) * (1 - p));
+}
 
 const SPEAKER_PALETTE = ["#facc15", "#38bdf8", "#f472b6", "#4ade80", "#fb923c", "#a78bfa", "#f87171", "#2dd4bf"];
 export function speakerPaletteColor(index: number): string {
@@ -227,17 +248,18 @@ function drawWordPass(
   rs: ResolvedCaptionStyle,
   activeIndex: number,
   pass: "stroke" | "fill",
+  activeScale = 1,
 ) {
   const preset = rs.preset;
   for (const line of layout.lines) {
     for (const word of line.words) {
       const active = word.index === activeIndex && rs.highlight !== null;
-      const scaled = active && rs.highlight === "scale";
+      const scaled = active && Math.abs(activeScale - 1) > 0.001;
       ctx.save();
       if (scaled) {
         const cx = word.x + word.w / 2;
         ctx.translate(cx, word.y);
-        ctx.scale(1.14, 1.14);
+        ctx.scale(activeScale, activeScale);
         ctx.translate(-cx, -word.y);
       }
       if (pass === "stroke" && preset.stroke) {
@@ -285,8 +307,10 @@ export function drawCue(
     if (rs.accent.toLowerCase() === c.toLowerCase()) rs.accent = "#ffffff";
   }
   const raw = cueDisplayText(cue, opts.showTranslated);
-  const tokens = tokenize(rs.uppercase ? raw.toUpperCase() : raw);
+  let tokens = tokenize(rs.uppercase ? raw.toUpperCase() : raw);
   if (!tokens.length) return null;
+  const emojiOn = style.emoji ?? rs.preset.emoji ?? false;
+  if (emojiOn) tokens = tokens.map((t) => `${t}${emojiFor(t) ?? ""}`);
   const anchor = cue.anchor ?? { x: style.x, y: style.y };
   const anchorPx = { x: anchor.x * frame.width, y: anchor.y * frame.height };
 
@@ -298,6 +322,8 @@ export function drawCue(
   const inside = time >= cue.start && time <= cue.end;
   const activeIndex = inside && rs.highlight ? activeWordIndex(timings, time) : -1;
   const preset = rs.preset;
+  const baseScale = rs.highlight === "scale" ? 1.14 : 1;
+  const activeScale = activeIndex >= 0 ? activeWordScale(preset.animation, time - timings[activeIndex].start, baseScale) : 1;
 
   // Background boxes
   if (preset.box) {
@@ -342,19 +368,19 @@ export function drawCue(
     ctx.shadowBlur = preset.glow.blur * rs.fontPx;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
-    drawWordPass(ctx, layout, rs, activeIndex, "fill");
-    drawWordPass(ctx, layout, rs, activeIndex, "fill");
+    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale);
+    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale);
     ctx.restore();
   }
 
   if (preset.stroke) {
     applyShadow(ctx, rs);
-    drawWordPass(ctx, layout, rs, activeIndex, "stroke");
+    drawWordPass(ctx, layout, rs, activeIndex, "stroke", activeScale);
     clearShadow(ctx);
-    drawWordPass(ctx, layout, rs, activeIndex, "fill");
+    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale);
   } else {
     applyShadow(ctx, rs);
-    drawWordPass(ctx, layout, rs, activeIndex, "fill");
+    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale);
   }
   ctx.restore();
   return layout;
@@ -431,6 +457,28 @@ export function drawTextOverlay(ctx: Ctx, ov: TextOverlay, frame: Frame, time = 
   const cx = layout.bounds.x + layout.bounds.w / 2;
   const cy = layout.bounds.y + layout.bounds.h / 2;
   ctx.globalAlpha = ov.opacity;
+  // Entrance animation over the first 0.45 s.
+  const anim = ov.animation ?? "none";
+  const p = Math.max(0, Math.min(1, (time - ov.start) / 0.45));
+  let typewriterChars: number | null = null;
+  if (anim === "pop") {
+    const s = 0.6 + 0.4 * easeOutBack(p);
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.translate(-cx, -cy);
+    ctx.globalAlpha = ov.opacity * Math.min(1, p * 3);
+  } else if (anim === "slide") {
+    ctx.translate(0, (1 - easeOutBack(Math.min(1, p)) * 1) * frame.height * 0.08);
+    ctx.globalAlpha = ov.opacity * Math.min(1, p * 2);
+  } else if (anim === "bounce") {
+    const s = 1 + 0.35 * Math.sin(Math.PI * p) * (1 - p);
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.translate(-cx, -cy);
+  } else if (anim === "typewriter") {
+    const total = layout.lines.reduce((n, l) => n + l.text.length, 0);
+    typewriterChars = Math.floor(Math.min(1, (time - ov.start) / Math.max(0.3, Math.min(2.5, total * 0.04))) * total);
+  }
   if (ov.rotation) {
     ctx.translate(cx, cy);
     ctx.rotate((ov.rotation * Math.PI) / 180);
@@ -450,7 +498,34 @@ export function drawTextOverlay(ctx: Ctx, ov: TextOverlay, frame: Frame, time = 
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
   ctx.fillStyle = ov.color;
-  for (const line of layout.lines) ctx.fillText(line.text, line.x, line.y);
+  let remaining = typewriterChars ?? Infinity;
+  for (const line of layout.lines) {
+    const text = remaining >= line.text.length ? line.text : line.text.slice(0, Math.max(0, remaining));
+    remaining -= line.text.length;
+    if (text) ctx.fillText(text, line.x, line.y);
+  }
+  ctx.restore();
+}
+
+export function lottieOverlayRect(ov: LottieOverlay, frame: Frame, time = ov.start): Rect {
+  const w = ov.width * frame.width;
+  const h = w / Math.max(0.01, ov.aspect);
+  const c = overlayCenter(ov, time);
+  return { x: c.x * frame.width - w / 2, y: c.y * frame.height - h / 2, w, h };
+}
+
+export function drawLottieOverlay(ctx: Ctx, ov: LottieOverlay, frame: Frame, time: number) {
+  const canvas = lottieFrame(ov.assetId, time, ov.start, ov.speed, ov.loop);
+  const r = lottieOverlayRect(ov, frame, time);
+  if (!canvas) return;
+  ctx.save();
+  ctx.globalAlpha = ov.opacity;
+  if (ov.rotation) {
+    ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
+    ctx.rotate((ov.rotation * Math.PI) / 180);
+    ctx.translate(-(r.x + r.w / 2), -(r.y + r.h / 2));
+  }
+  ctx.drawImage(canvas, r.x, r.y, r.w, r.h);
   ctx.restore();
 }
 
@@ -484,6 +559,8 @@ export interface LayerOptions {
   images: (assetId: string) => CanvasImageSource | undefined;
   includeCaptions?: boolean;
   includeOverlays?: boolean;
+  /** Which overlay layer to draw (default: front). */
+  layer?: OverlayLayer;
 }
 
 export function isActive(item: { start: number; end: number }, time: number): boolean {
@@ -512,12 +589,16 @@ export function drawOverlayLayer(
   opts: LayerOptions,
 ): ElementRect[] {
   const rects: ElementRect[] = [];
+  const layer = opts.layer ?? "front";
   if (opts.includeOverlays !== false) {
     for (const ov of project.overlays) {
-      if (!isActive(ov, time)) continue;
+      if (!isActive(ov, time) || (ov.layer ?? "front") !== layer) continue;
       if (ov.kind === "text") {
         drawTextOverlay(ctx, ov, frame, time);
         rects.push({ id: ov.id, kind: "overlay", rect: textOverlayRect(ctx, ov, frame, time) });
+      } else if (ov.kind === "lottie") {
+        drawLottieOverlay(ctx, ov, frame, time);
+        rects.push({ id: ov.id, kind: "overlay", rect: lottieOverlayRect(ov, frame, time) });
       } else {
         const img = opts.images(ov.assetId);
         if (img) drawImageOverlay(ctx, ov, img, frame, time);
@@ -525,6 +606,7 @@ export function drawOverlayLayer(
       }
     }
   }
+  if (layer === "behind") return rects;
   if (opts.includeCaptions !== false && project.captions.visible) {
     for (const cue of activeCues(project, time)) {
       const layout = drawCue(ctx, cue, project.subtitleStyle, frame, time, {

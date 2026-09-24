@@ -9,6 +9,9 @@ import { drawOverlayLayer, type ElementRect, type Frame } from "@/lib/captions/r
 import { computePlacement } from "@/lib/models/placement";
 import { layoutClips, locateFrame, toSourceTime, type ClipLayout } from "@/lib/models/timeline";
 import { getSharedGlRenderer, isGlTransition } from "@/lib/gl/transitions";
+import { getPreset } from "@/lib/captions/presets";
+import { preloadLotties } from "@/lib/lottie/registry";
+import { getMatte } from "@/lib/matte/matte";
 import type { EngineFrame } from "./engine";
 import { drawVideoFrame } from "./draw";
 
@@ -52,13 +55,13 @@ export class Compositor {
   }
 
   /** Draws the video layer; GLSL transitions render through WebGL when available. */
-  drawVideo(ctx: Ctx, f: EngineFrame) {
+  drawVideo(ctx: Ctx, f: EngineFrame, behind?: (ctx: Ctx) => void) {
     if (f.secondary && f.primary && isGlTransition(f.transition)) {
       const gl = getSharedGlRenderer(this.frame.width, this.frame.height);
       if (gl) {
         const [a, b] = this.scratchCanvases();
-        drawVideoFrame(a.ctx, this.frame, { ...f, primary: f.secondary, secondary: null, progress: 0, transition: "none" });
-        drawVideoFrame(b.ctx, this.frame, { ...f, secondary: null, progress: 0, transition: "none" });
+        drawVideoFrame(a.ctx, this.frame, { ...f, primary: f.secondary, secondary: null, progress: 0, transition: "none" }, behind);
+        drawVideoFrame(b.ctx, this.frame, { ...f, secondary: null, progress: 0, transition: "none" }, behind);
         try {
           const out = gl.render(f.transition, a.canvas as TexImageSource, b.canvas as TexImageSource, f.progress);
           ctx.drawImage(out, 0, 0, this.frame.width, this.frame.height);
@@ -67,20 +70,27 @@ export class Compositor {
           /* fall through to the 2D crossfade */
         }
       }
-      drawVideoFrame(ctx, this.frame, { ...f, transition: "fade" });
+      drawVideoFrame(ctx, this.frame, { ...f, transition: "fade" }, behind);
       return;
     }
-    drawVideoFrame(ctx, this.frame, f);
+    drawVideoFrame(ctx, this.frame, f, behind);
   }
 
   /** Full composite for one frame. Returns element rectangles for hit-testing. */
   composite(ctx: Ctx, project: VideoProject, f: EngineFrame, opts: CompositeOptions): ElementRect[] {
-    this.drawVideo(ctx, f);
-    return drawOverlayLayer(ctx, project, f.time, this.frame, {
+    const hasBehind = opts.includeOverlays !== false && project.overlays.some((o) => o.layer === "behind");
+    let behindRects: ElementRect[] = [];
+    this.drawVideo(
+      ctx,
+      f,
+      hasBehind ? (c) => void (behindRects = drawOverlayLayer(c, project, f.time, this.frame, { images: opts.images, includeOverlays: true, includeCaptions: false, layer: "behind" })) : undefined,
+    );
+    const front = drawOverlayLayer(ctx, project, f.time, this.frame, {
       images: opts.images,
       includeCaptions: opts.includeCaptions,
       includeOverlays: opts.includeOverlays,
     });
+    return [...behindRects, ...front];
   }
 }
 
@@ -152,6 +162,9 @@ export async function captureFrames(o: CaptureOptions): Promise<number> {
   const format = o.format ?? "image/jpeg";
   const quality = o.quality ?? 0.92;
   const total = Math.max(0, Math.round((o.to - o.from) * o.fps));
+  // Resources the synchronous renderer reads from caches must be ready up front.
+  await preloadLotties(o.project.overlays.filter((ov) => ov.kind === "lottie").map((ov) => (ov as { assetId: string }).assetId));
+  await Promise.all(o.project.clips.filter((c) => c.matte).map((c) => getMatte(c.matte!.assetId)));
   try {
     for (const l of layouts) {
       if (l.end <= o.from || l.start >= o.to) continue;
@@ -200,12 +213,15 @@ export function needsCompositor(project: VideoProject, from: number, to: number)
       const tStart = l.end - l.transitionOut;
       if (tStart < to && l.end > from) return true;
     }
-    const clip = l.clip as { reframe?: unknown };
-    if (clip.reframe && l.start < to && l.end > from) return true;
+    const clip = l.clip as { reframe?: unknown; matte?: unknown };
+    if ((clip.reframe || clip.matte) && l.start < to && l.end > from) return true;
   }
-  for (const ov of project.overlays as Array<{ start: number; end: number; track?: unknown }>) {
-    if (ov.track && ov.start < to && ov.end > from) return true;
+  for (const ov of project.overlays as Array<{ start: number; end: number; track?: unknown; kind?: string; animation?: string; layer?: string }>) {
+    if ((ov.track || ov.kind === "lottie" || (ov.animation && ov.animation !== "none") || ov.layer === "behind") && ov.start < to && ov.end > from) return true;
   }
+  // Animated caption presets change every frame, which the PNG overlay stream cannot express.
+  const preset = getPreset(project.subtitleStyle.presetId);
+  if (project.captions.visible && preset.animation && project.subtitleStyle.highlight && project.cues.some((c) => c.start < to && c.end > from)) return true;
   return false;
 }
 

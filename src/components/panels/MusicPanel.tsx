@@ -7,6 +7,8 @@ import { importAudio } from "@/lib/media/import";
 import type { MusicTrack, Voiceover } from "@/lib/models/project";
 import { putAsset } from "@/lib/storage/db";
 import { synthesizeSpeech, previewWithBrowserVoice, TTS_VOICES } from "@/lib/speech/tts";
+import { SFX_LIBRARY, ensureSfxAsset, makeSfxClip, previewSfx, sfxOnCaptions } from "@/lib/audio/sfx";
+import { Tile, TileGrid } from "@/components/ui/Tile";
 import { resetMlWorker } from "@/lib/speech/mlClient";
 import { uid } from "@/lib/utils/id";
 import { formatTime } from "@/lib/utils/time";
@@ -57,6 +59,27 @@ export function MusicPanel() {
       setVoJob(null);
     }
   };
+  const [sfxId, setSfxId] = useState(SFX_LIBRARY[0].id);
+  const [sfxVolume, setSfxVolume] = useState(0.6);
+  const [sfxError, setSfxError] = useState<string | null>(null);
+  const sfx = SFX_LIBRARY.find((s) => s.id === sfxId) ?? SFX_LIBRARY[0];
+  const addSfxAt = async (mode: "playhead" | "captions") => {
+    setSfxError(null);
+    try {
+      const { assetId, blob, created } = await ensureSfxAsset(project.id, sfx);
+      if (created || !useEditor.getState().assetUrls[assetId]) registerAsset(assetId, blob);
+      let n = 0;
+      update((p) => {
+        if (mode === "playhead") {
+          p.voiceovers.push(makeSfxClip(sfx, assetId, useEditor.getState().currentTime, sfxVolume));
+          n = 1;
+        } else n = sfxOnCaptions(p, sfx, assetId, sfxVolume);
+      });
+      useEditor.getState().setNotice(mode === "playhead" ? `Added ${sfx.name} at the playhead.` : `Added ${sfx.name} to ${n} caption${n === 1 ? "" : "s"}.`);
+    } catch (e) {
+      setSfxError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const editVo = (id: string, fn: (v: Voiceover) => void, history = true) =>
     update(
       (p) => {
@@ -95,6 +118,41 @@ export function MusicPanel() {
         </FileDrop>
         {error && <p className="text-[11px] text-sys-red">{error}</p>}
       </PanelSection>
+      <PanelSection title="Sound effects">
+        <TileGrid cols={4}>
+          {SFX_LIBRARY.map((s) => (
+            <Tile
+              key={s.id}
+              icon={<Volume2 size={15} />}
+              label={s.name}
+              active={sfxId === s.id}
+              onClick={() => {
+                setSfxId(s.id);
+                previewSfx(s);
+              }}
+              title="Click to preview"
+            />
+          ))}
+        </TileGrid>
+        <Slider label="Effect volume" value={sfxVolume} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={setSfxVolume} />
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="secondary" size="sm" onClick={() => addSfxAt("playhead")} disabled={!project.clips.length}>
+            Add at playhead
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => addSfxAt("captions")} disabled={!project.cues.length} title="One effect at the start of every caption">
+            Add on every caption
+          </Button>
+        </div>
+        {sfxError && <p className="text-[11px] text-sys-red">{sfxError}</p>}
+        {project.voiceovers.some((v) => v.kind === "sfx") && (
+          <div className="flex items-center justify-between text-[11px] text-label-2">
+            <span>{project.voiceovers.filter((v) => v.kind === "sfx").length} effects on the timeline</span>
+            <Button variant="ghost" size="xs" className="text-sys-red" onClick={() => update((p) => void (p.voiceovers = p.voiceovers.filter((v) => v.kind !== "sfx")))}>
+              <Trash2 size={11} /> Remove all
+            </Button>
+          </div>
+        )}
+      </PanelSection>
       <PanelSection title="Voice-over (offline TTS)">
         <textarea className={textareaClass} rows={3} placeholder="Type the narration to synthesise…" value={voText} onChange={(e) => setVoText(e.target.value)} disabled={!!voJob} />
         <Field label="Voice / language" hint="MMS-TTS runs on this device via Transformers.js; the first use downloads the voice (~40 MB).">
@@ -132,9 +190,9 @@ export function MusicPanel() {
           </div>
         )}
         {voError && <p className="text-[11px] text-sys-red">{voError}</p>}
-        {project.voiceovers.length > 0 && (
+        {project.voiceovers.some((v) => v.kind !== "sfx") && (
           <ul className="space-y-1.5">
-            {project.voiceovers.map((vo) => (
+            {project.voiceovers.filter((v) => v.kind !== "sfx").map((vo) => (
               <li key={vo.id} className={cx("rounded-md border border-sys-gray4 p-2", selection?.id === vo.id && "border-sys-blue")}>
                 <div className="flex items-center gap-1.5">
                   <button type="button" className="rounded p-0.5 text-label-2 hover:bg-sys-gray4 hover:text-white" onClick={() => useEditor.getState().seek(vo.start)} title="Jump to voice-over">

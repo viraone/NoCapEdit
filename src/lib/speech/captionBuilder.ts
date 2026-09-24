@@ -2,20 +2,20 @@ import type { CaptionCue, WordTiming } from "@/lib/models/project";
 import { uid } from "@/lib/utils/id";
 
 /** Grouping rules for turning recognised words into subtitle cues. */
-export const CAPTION_RULES = {
+export interface CaptionRules {
   /** Maximum words per cue. */
-  maxWords: 4,
+  maxWords: number;
   /** Maximum cue length in seconds. */
-  maxDuration: 2.4,
+  maxDuration: number;
   /** A pause longer than this (seconds) ends the current cue. */
-  pauseThreshold: 0.6,
+  pauseThreshold: number;
   /** Seconds kept on screen after the final word. */
-  tail: 0.25,
+  tail: number;
   /** Minimum cue duration in seconds. */
-  minDuration: 0.5,
-} as const;
+  minDuration: number;
+}
 
-export type CaptionRules = typeof CAPTION_RULES;
+export const CAPTION_RULES: CaptionRules = { maxWords: 4, maxDuration: 2.4, pauseThreshold: 0.6, tail: 0.25, minDuration: 0.5 };
 
 function cleanWords(words: WordTiming[]): WordTiming[] {
   return words

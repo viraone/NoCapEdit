@@ -9,7 +9,8 @@ import { formatTime } from "@/lib/utils/time";
 import { clamp } from "@/lib/utils/math";
 import { cx } from "@/lib/utils/cx";
 import { Button } from "@/components/ui/Button";
-import { Filmstrip } from "./Filmstrip";
+import { Filmstrip, loadThumbs, type Loaded } from "./Filmstrip";
+import { toSourceTime } from "@/lib/models/timeline";
 import { AudioWaveform } from "./AudioWaveform";
 
 const RULER_H = 24;
@@ -215,6 +216,38 @@ function ClipBlock({ layout, pxPerSec, selected, active }: { layout: ClipLayout;
   );
 }
 
+/** Floating frame preview while hovering the video lane. */
+function HoverPreview({ x, time, layout }: { x: number; time: number; layout: ClipLayout }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [thumbs, setThumbs] = useState<Loaded | null>(null);
+  useEffect(() => {
+    let alive = true;
+    loadThumbs(layout.clip.assetId).then((t) => alive && setThumbs(t));
+    return () => {
+      alive = false;
+    };
+  }, [layout.clip.assetId]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !thumbs) return;
+    const { img, rec } = thumbs;
+    const w = 160;
+    const h = Math.round((rec.frameHeight / rec.frameWidth) * w);
+    canvas.width = w;
+    canvas.height = h;
+    const st = toSourceTime(layout, time);
+    const idx = Math.max(0, Math.min(rec.count - 1, Math.floor((st / Math.max(0.001, rec.duration)) * rec.count)));
+    canvas.getContext("2d")?.drawImage(img, idx * rec.frameWidth, 0, rec.frameWidth, rec.frameHeight, 0, 0, w, h);
+  }, [thumbs, time, layout]);
+  if (!thumbs) return null;
+  return (
+    <div className="pointer-events-none absolute z-30 -translate-x-1/2 overflow-hidden rounded-lg border border-sys-gray3 bg-black shadow-xl" style={{ left: x, bottom: "100%", marginBottom: 6 }}>
+      <canvas ref={canvasRef} className="block" />
+      <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[10px] tabular-nums text-white">{formatTime(time)}</span>
+    </div>
+  );
+}
+
 export function TimelineDock() {
   const project = useEditor((s) => s.project)!;
   const zoom = useEditor((s) => s.timelineZoom);
@@ -254,6 +287,7 @@ export function TimelineDock() {
   const lanesH = RULER_H + CUE_H + VIDEO_H + MUSIC_H;
   const fit = () => setZoom(duration > 0 ? (viewW - 80) / duration : 80);
   const scrubbing = useRef(false);
+  const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout } | null>(null);
   const timeAt = (clientX: number) => {
     const el = scrollRef.current!;
     const r = el.getBoundingClientRect();
@@ -307,7 +341,25 @@ export function TimelineDock() {
           ref={scrollRef}
           className="relative flex-1 overflow-x-auto overflow-y-hidden"
           onPointerDown={onBackgroundDown}
-          onPointerMove={(e) => scrubbing.current && seek(timeAt(e.clientX))}
+          onPointerMove={(e) => {
+            if (scrubbing.current) seek(timeAt(e.clientX));
+            const el = e.currentTarget;
+            const r = el.getBoundingClientRect();
+            const y = e.clientY - r.top;
+            const inVideoLane = y >= RULER_H + CUE_H && y <= RULER_H + CUE_H + VIDEO_H;
+            if (!inVideoLane || e.pointerType === "touch") {
+              if (hover) setHover(null);
+              return;
+            }
+            const t = (e.clientX - r.left + el.scrollLeft) / pxPerSec;
+            const l = layouts.find((l) => t >= l.start && t < l.end);
+            if (!l) {
+              if (hover) setHover(null);
+              return;
+            }
+            setHover({ x: t * pxPerSec, time: t, layout: l });
+          }}
+          onPointerLeave={() => setHover(null)}
           onPointerUp={(e) => {
             scrubbing.current = false;
             try {
@@ -343,6 +395,7 @@ export function TimelineDock() {
               ))}
             </div>
             <div className="relative border-b border-sys-gray5/70" style={{ height: VIDEO_H }}>
+              {hover && <HoverPreview x={hover.x} time={hover.time} layout={hover.layout} />}
               {layouts.map((layout) => (
                 <ClipBlock key={layout.clip.id} layout={layout} pxPerSec={pxPerSec} selected={selection?.kind === "clip" && selection.id === layout.clip.id} active={activeClipId === layout.clip.id} />
               ))}
@@ -360,7 +413,7 @@ export function TimelineDock() {
                     setTool("music");
                   }}
                 >
-                  <span className="truncate">🎙 {vo.name}</span>
+                  <span className="truncate">{vo.kind === "sfx" ? "🔔" : "🎙"} {vo.name}</span>
                 </div>
               ))}
               {music && (

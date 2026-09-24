@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { Upload, ArrowUp, ArrowDown, Scissors, Copy, Trash2, Film, Broom } from "lucide-react";
+import { Upload, ArrowUp, ArrowDown, Scissors, Copy, Trash2, Film, Broom, Video } from "lucide-react";
+import { Recorder, isRecordingSupported } from "@/components/record/Recorder";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
 import { useImportClips } from "./useImportClips";
@@ -21,6 +22,7 @@ export function ClipsPanel() {
   const { update, select, seek, setTool, setNotice } = useEditor.getState();
   const { onFiles, status, error } = useImportClips();
   const [cleanupNote, setCleanupNote] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
 
   const move = (id: string, dir: -1 | 1) => update((p) => void moveClip(p, id, dir));
   const splitAtPlayhead = () => {
@@ -68,6 +70,15 @@ export function ClipsPanel() {
           </div>
         )}
         {error && <p className="text-[11px] text-sys-red">{error}</p>}
+        {isRecordingSupported() && (
+          <Button variant="secondary" size="sm" className="w-full" onClick={() => setRecording(true)} disabled={!!status}>
+            <Video size={13} /> Record screen or camera
+          </Button>
+        )}
+        <Recorder open={recording} onClose={() => setRecording(false)} onRecorded={(file) => {
+          setRecording(false);
+          onFiles([file]);
+        }} />
       </PanelSection>
       <PanelSection
         title="Sequence"

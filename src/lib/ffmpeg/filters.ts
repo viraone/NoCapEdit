@@ -6,6 +6,8 @@ import type { ClipLayout } from "@/lib/models/timeline";
 import type { Placement } from "@/lib/models/placement";
 import { getGlTransition, isGlTransition } from "@/lib/gl/transitions";
 import { hdrToSdrChain } from "@/lib/ffmpegEngine";
+import { audioFx } from "@/lib/audio/fx";
+import { isNeutralLook } from "@/lib/models/project";
 
 /** Maps a transition id to an ffmpeg xfade name (GPU shaders fall back to the nearest native effect). */
 export function xfadeName(type: string): string {
@@ -23,6 +25,20 @@ export interface ClipInputPlan {
   audioInputIndex?: number | null;
   /** Tone-map a 10-bit HDR source to SDR. */
   hdr?: boolean;
+  /** Path of the clip's .cube LUT inside the worker FS, when it has one. */
+  lutPath?: string | null;
+}
+
+/** `eq` (and optional `lut3d`) filters for a clip's colour grade. */
+export function lookFilters(c: ClipInputPlan): string[] {
+  const look = c.layout.clip.look;
+  if (isNeutralLook(look)) return [];
+  const out: string[] = [];
+  if (look?.lutAssetId && c.lutPath) out.push(`lut3d=file=${c.lutPath}:interp=trilinear`);
+  if (look && (Math.abs(look.brightness) > 1e-3 || Math.abs(look.contrast - 1) > 1e-3 || Math.abs(look.saturation - 1) > 1e-3)) {
+    out.push(`eq=brightness=${num(look.brightness, 3)}:contrast=${num(look.contrast, 3)}:saturation=${num(look.saturation, 3)}`);
+  }
+  return out;
 }
 
 export interface MusicPlan {
@@ -131,7 +147,8 @@ function videoChain(plan: ExportPlan, c: ClipInputPlan, i: number): string {
   const { clip } = c.layout;
   const dur = num(c.layout.duration);
   const hdr = c.hdr ? `${hdrToSdrChain()},` : "";
-  const head = `[${c.inputIndex}:v]${hdr}setpts=(PTS-STARTPTS)/${num(clip.speed, 6)},fps=${plan.fps}`;
+  const grade = lookFilters(c).map((f) => `${f},`).join("");
+  const head = `[${c.inputIndex}:v]${hdr}${grade}setpts=(PTS-STARTPTS)/${num(clip.speed, 6)},fps=${plan.fps}`;
   const tail = `format=yuv420p,trim=duration=${dur},setpts=PTS-STARTPTS[v${i}]`;
   const crop = cropRegion(c.placement, c.source, { width: plan.width, height: plan.height });
   if (crop) {
@@ -158,6 +175,7 @@ function audioChain(c: ClipInputPlan, i: number): string {
     `aresample=${AUDIO_RATE}`,
     ...speedFilters(clip.speed, clip.preservePitch),
     `volume=${num(clip.volume, 3)}`,
+    ...audioFx(clip.audioFx).ffmpeg,
     AFORMAT,
     `atrim=duration=${dur}`,
     `asetpts=PTS-STARTPTS`,

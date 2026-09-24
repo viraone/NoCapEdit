@@ -295,6 +295,17 @@ async function runExport(
             audioInputIndex = idx++;
             clipAudio.push(ctx.inputPath(audioName));
           } else clipAudio.push(null);
+          let lutPath: string | null = null;
+          if (l.clip.look?.lutAssetId) {
+            const lutBlob = await assets.getBlob(l.clip.look.lutAssetId);
+            if (lutBlob) {
+              lutPath = `/lut_${l.clip.look.lutAssetId}.cube`;
+              if (!ctx.temp.includes(lutPath)) {
+                await ctx.ffmpeg.writeFile(lutPath, new Uint8Array(await lutBlob.arrayBuffer()));
+                ctx.temp.push(lutPath);
+              }
+            }
+          }
           clipPlans.push({
             inputIndex,
             layout: l,
@@ -303,6 +314,7 @@ async function runExport(
             hasAudio,
             audioInputIndex,
             hdr,
+            lutPath,
           });
           clipPaths.push(ctx.inputPath(nameOf.get(l.clip.assetId)!));
         }

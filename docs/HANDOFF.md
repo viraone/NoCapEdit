@@ -104,6 +104,13 @@ src/lib/
   gl/transitions.ts         WebGL2 GLSL transition engine (10 shaders)
   tracking/templateTracker.ts  NCC motion tracker; autoReframe.ts MediaPipe face → pan keyframes
   audio/enhance.ts          RNNoise / spectral denoise via ffmpeg → replacement WAV
+  audio/fx.ts, audio/sfx.ts audio presets (Web Audio + ffmpeg halves), synthesised sound effects
+  edit/magicCut.ts          filler-word / dead-air removal with caption and overlay re-timing
+  edit/highlights.ts        TF-IDF + delivery-cue highlight finder
+  color/cube.ts, gl/colorGrade.ts   .cube LUT parser and WebGL grader (mirrors lut3d + eq on export)
+  lottie/registry.ts        dotLottie instances rendered per frame for overlays and export
+  matte/matte.ts            RMBG background removal for stickers and offline video matting masks
+  storage/backup.ts         .nocap streamed zip export / import
   stock/providers.ts        Pexels / Pixabay search + download
   storage/db.ts             IndexedDB stores: projects, assets, peaks, thumbs, projectThumbs
   media/                    import flows, probing, filmstrip thumbnails, asset events
@@ -181,6 +188,8 @@ without re-running `npm test` (native parity) and the e2e.
 | 4K/60 fps, bitrate control, H.265, HDR tone-map, disk streaming | Implemented; HDR and disk sink untested with real files |
 | Translation (browser API / Marian), speaker diarization, TTS voice-overs | Implemented, wrapped in graceful failure; not runtime-tested |
 | Noise removal, motion tracking, auto-reframe, stock search | Implemented; not runtime-tested end to end |
+| Magic Cut, highlight finder, recorder, hover preview, .nocap backups, sound effects, viral caption styles | Implemented; Magic Cut and highlights unit-tested, the rest manually wired |
+| Audio presets, LUT/colour grading, scopes, Lottie overlays, text animations, background removal / matting | Implemented; preview paths exercised, export via the compositor path, no automated coverage yet |
 | Eye-contact correction, stem separation, 10-bit output | Not implemented (see `docs/ROADMAP.md`) |
 
 ## 10. UI / design system

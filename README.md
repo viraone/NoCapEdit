@@ -28,6 +28,22 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
 - Noise removal per clip with ffmpeg's RNNoise (`arnndn`) and spectral (`afftdn`)
   denoisers; the cleaned track replaces the clip audio in preview and export.
 - Undo/redo, autosave to IndexedDB, project manager with thumbnails, storage usage.
+- **Magic Cut**: one click removes filler words (from Whisper word timings) and dead
+  air (from the waveform), re-timing captions, overlays and voice-overs.
+- **Highlight finder**: TF-IDF salience plus delivery cues suggests the best 15/30/60 s
+  window; "Keep only this" trims the reel to it.
+- Screen / camera / screen+mic **recorder** (MediaRecorder) straight into the timeline;
+  hover **filmstrip preview** on the timeline; **.nocap backups** (streamed zip of
+  project + media, restorable on any device).
+- **Sound effects** (synthesised, royalty-free) placed at the playhead or on every
+  caption; **audio presets** (Voice, Podcast, Loud, Music) with matching Web Audio
+  preview and ffmpeg export chains.
+- **Colour**: brightness / contrast / saturation and `.cube` 3D LUTs (WebGL preview,
+  `lut3d` + `eq` export), histogram and vectorscope.
+- **Lottie** animations (.lottie / .json) as overlays, animated text entrances (pop,
+  typewriter, slide, bounce), and a "behind the subject" layer.
+- **Background removal**: RMBG-1.4 on-device for stickers, and an offline matting
+  pass that cuts the speaker out of a clip so text or stickers can sit behind them.
 
 **Captions**
 - Whisper (tiny → large-v3-turbo, `_timestamped` ONNX builds) with word-level
@@ -35,8 +51,10 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
   dictation.
 - Caption builder rules: max 4 words, max 2.4 s, pause > 0.6 s ends a cue,
   0.25 s tail, 0.5 s minimum.
-- 18 style presets (Social / Business / Retro) with per-word accent highlight
-  (colour, box, scale, underline), size, position, width, colours, letter case.
+- 20 style presets (Social / Business / Retro, including Hormozi and Beast looks with
+  pop/bounce word animation and keyword emoji) with per-word accent highlight
+  (colour, box, scale, underline), size, position, width, colours, letter case,
+  and a words-per-caption setting with re-grouping.
 - Speaker identification (pyannote segmentation + WeSpeaker embeddings, clustered
   on-device); cues never cross a speaker change and can be coloured per speaker.
 - Translation with the browser's built-in Translation API (Chrome) or Marian

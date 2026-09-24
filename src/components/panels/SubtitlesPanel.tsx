@@ -8,7 +8,11 @@ import { getAsset } from "@/lib/storage/db";
 import { getSpeechAudio } from "@/lib/speech/audioCache";
 import { layoutClips } from "@/lib/models/timeline";
 import type { CaptionCue, WordTiming } from "@/lib/models/project";
-import { buildCues, mergeCues, splitCue, sortCues } from "@/lib/speech/captionBuilder";
+import { buildCues, mergeCues, splitCue, sortCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
+import { findHighlights, type Highlight } from "@/lib/edit/highlights";
+import { keepOnly } from "@/lib/edit/magicCut";
+import { getPreset } from "@/lib/captions/presets";
+import { Sparkle, Wand } from "lucide-react";
 import { WHISPER_MODELS, DEFAULT_WHISPER_MODEL, sliceSamples, wordsToProjectTime, type DevicePreference } from "@/lib/speech/transcriber";
 import { transcribeWithSpeakers, buildSpeakerCues, type SpeakerSegment } from "@/lib/transcriptionEngine";
 import { toProjectTime } from "@/lib/models/timeline";
@@ -18,6 +22,7 @@ import { isWebSpeechAvailable, startLiveDictation, type LiveDictationController 
 import { LANGUAGES, WHISPER_LANGUAGE_OPTIONS } from "@/lib/speech/languages";
 import { parseSrt } from "@/lib/captions/srt";
 import { uid } from "@/lib/utils/id";
+import { formatTime } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
@@ -61,13 +66,17 @@ export function SubtitlesPanel() {
     const t = s.currentTime;
     return s.project?.cues.find((c) => t >= c.start && t < c.end)?.id ?? null;
   });
-  const { update, select, seek } = useEditor.getState();
+  const { update, select, seek, setNotice: pushNotice } = useEditor.getState();
 
   const [model, setModel] = useState(DEFAULT_WHISPER_MODEL);
   const [language, setLanguage] = useState(project.captions.sourceLanguage || "auto");
   const [device, setDevice] = useState<DevicePreference>("auto");
   const [diarize, setDiarize] = useState(false);
   const [maxSpeakers, setMaxSpeakers] = useState(3);
+  const [wordsPerCue, setWordsPerCue] = useState<number>(getPreset(project.subtitleStyle.presetId).wordsPerCue ?? CAPTION_RULES.maxWords);
+  const rules = { ...CAPTION_RULES, maxWords: wordsPerCue };
+  const [highlightLen, setHighlightLen] = useState(30);
+  const [highlights, setHighlights] = useState<Highlight[] | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -134,7 +143,7 @@ export function SubtitlesPanel() {
         }
         if (result.diarizationError) diarizationNote = ` Speaker detection failed: ${result.diarizationError}`;
       }
-      const cues = diarize ? buildSpeakerCues(words, segments.length ? segments : null) : buildCues(words);
+      const cues = diarize ? buildSpeakerCues(words, segments.length ? segments : null, rules) : buildCues(words, rules);
       update((p) => {
         p.cues = cues;
         p.captions.sourceLanguage = language;
@@ -217,6 +226,19 @@ export function SubtitlesPanel() {
     }
   };
 
+  const regroup = () => {
+    const words = sortCues(project.cues).flatMap((c) => c.words ?? []);
+    if (!words.length) {
+      setError("Re-grouping needs word timings; generate captions first.");
+      return;
+    }
+    const segments = project.cues.filter((c) => c.speaker !== undefined).map((c) => ({ start: c.start, end: c.end, speaker: c.speaker! }));
+    update((p) => void (p.cues = segments.length ? buildSpeakerCues(words, segments, rules) : buildCues(words, rules)));
+    pushNotice(`Re-grouped into ${wordsPerCue}-word captions.`);
+  };
+
+  const runHighlights = () => setHighlights(findHighlights(project.cues, highlightLen, 3));
+
   const importSrt = async (file: File) => {
     const cues = parseSrt(await file.text());
     if (!cues.length) {
@@ -296,6 +318,20 @@ export function SubtitlesPanel() {
           </Select>
         </Field>
         <p className="text-[11px] text-label-3">{WHISPER_MODELS.find((m) => m.id === model)?.note}</p>
+        <Field label="Words per caption" hint="Viral styles like Hormozi read best with 1–2 words; Re-group applies it to existing captions.">
+          <div className="flex gap-2">
+            <Select value={String(wordsPerCue)} onChange={(e) => setWordsPerCue(Number(e.target.value))} disabled={busy}>
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+            <Button variant="outline" size="md" onClick={regroup} disabled={busy || !project.cues.length} title="Re-group existing captions">
+              Re-group
+            </Button>
+          </div>
+        </Field>
         <Toggle checked={diarize} onChange={setDiarize} label="Identify speakers" description="pyannote + WeSpeaker on-device; adds a minute or two" disabled={busy} />
         {diarize && (
           <Field label="Max speakers">
@@ -339,6 +375,46 @@ export function SubtitlesPanel() {
             Clear all
           </button>
         </div>
+      </PanelSection>
+      <PanelSection title="Highlights">
+        <div className="flex gap-2">
+          <Select value={String(highlightLen)} onChange={(e) => setHighlightLen(Number(e.target.value))}>
+            <option value="15">15 s clip</option>
+            <option value="30">30 s clip</option>
+            <option value="60">60 s clip</option>
+          </Select>
+          <Button variant="secondary" size="md" onClick={runHighlights} disabled={!project.cues.length}>
+            <Sparkle size={14} /> Find
+          </Button>
+        </div>
+        {highlights && highlights.length === 0 && <p className="text-[11px] text-label-3">Nothing stood out; try a longer clip length.</p>}
+        {highlights?.map((h, i) => (
+          <div key={i} className="space-y-1.5 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2">
+            <div className="flex items-center justify-between text-[11px] text-label-2">
+              <span className="tabular-nums">
+                {formatTime(h.start)} – {formatTime(h.end)} · {Math.round(h.end - h.start)} s
+              </span>
+              <span>{h.reasons.slice(0, 2).join(" · ")}</span>
+            </div>
+            <p className="line-clamp-3 text-[12px] leading-snug">{h.text}</p>
+            <div className="flex gap-1.5">
+              <Button variant="ghost" size="xs" onClick={() => seek(h.start)}>
+                <Play size={11} /> Jump
+              </Button>
+              <Button
+                variant="secondary"
+                size="xs"
+                onClick={() => {
+                  update((p) => void keepOnly(p, h.start, h.end));
+                  setHighlights(null);
+                  pushNotice(`Trimmed the reel to ${Math.round(h.end - h.start)} s.`);
+                }}
+              >
+                <Wand size={11} /> Keep only this
+              </Button>
+            </div>
+          </div>
+        ))}
       </PanelSection>
       <PanelSection title="Translate">
         <div className="grid grid-cols-2 gap-2">

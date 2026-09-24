@@ -2,7 +2,7 @@
 import { Plus, Trash2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
-import { createTextOverlay, type FontKey, type TextOverlay } from "@/lib/models/project";
+import { createTextOverlay, type FontKey, type TextOverlay, type TextAnimation } from "@/lib/models/project";
 import { projectDuration } from "@/lib/models/timeline";
 import { FONT_KEYS, FONT_LABELS, fontFamily } from "@/lib/captions/fonts";
 import { formatTime } from "@/lib/utils/time";
@@ -116,6 +116,16 @@ export function TextPanel() {
             <ColorInput label="Text colour" value={selected.color} onChange={(v) => edit((o) => void (o.color = v))} />
             <Toggle checked={!!selected.background} onChange={(v) => edit((o) => void (o.background = v ? "#ef4444" : null))} label="Background" />
             {selected.background && <ColorInput label="Background colour" value={selected.background} onChange={(v) => edit((o) => void (o.background = v))} />}
+            <Field label="Entrance animation" hint="Animated text exports through the frame-by-frame compositor.">
+              <Select value={selected.animation ?? "none"} onChange={(e) => edit((o) => void (o.animation = e.target.value as TextAnimation))}>
+                <option value="none">None</option>
+                <option value="pop">Pop in</option>
+                <option value="typewriter">Typewriter</option>
+                <option value="slide">Slide up</option>
+                <option value="bounce">Bounce</option>
+              </Select>
+            </Field>
+            <Toggle checked={selected.layer === "behind"} onChange={(v) => edit((o) => void (o.layer = v ? "behind" : "front"))} label="Behind the subject" description="Needs a subject cut-out on the clip (Trim → Subject cut-out)" />
             <Slider label="Opacity" value={selected.opacity} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((o) => void (o.opacity = v), false)} {...tx} />
             <Slider label="Rotation" value={selected.rotation} min={-45} max={45} step={0.5} format={(v) => `${v.toFixed(1)}°`} onChange={(v) => edit((o) => void (o.rotation = v), false)} {...tx} />
           </PanelSection>
