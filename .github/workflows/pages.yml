@@ -35,6 +35,33 @@ jobs:
         with:
           path: out
 
+  # Browser smoke test of the on-device ML and editor fixes (QA audit 2026-09-24):
+  # sticker background removal and subject cut-out (WASM fallback on CI),
+  # LUT grading, split hotkeys, drag reordering, double-click editing and the
+  # console/static-file checks. Reports separately and does not gate the deploy.
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: node e2e/qa.mjs --only=pages,lut,keys,dnd,dblclick,matte --gpu=off
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-results
+          path: e2e/results
+          if-no-files-found: ignore
+
   deploy:
     needs: build
     runs-on: ubuntu-latest

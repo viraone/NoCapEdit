@@ -13,7 +13,7 @@ with WebAssembly / WebGL / WebGPU:
 - video decode, compositing and H.264/H.265 encode (ffmpeg.wasm in a Web Worker)
 - speech-to-text with word timings (Whisper via Transformers.js, WebGPU or WASM)
 - speaker diarization, translation, text-to-speech, background removal
-  (Transformers.js models: pyannote + WeSpeaker, Marian, MMS-TTS, RMBG-1.4)
+  (Transformers.js models: pyannote + WeSpeaker, Marian, MMS-TTS, MODNet)
 - noise removal and audio presets (ffmpeg `arnndn`/`afftdn`/`acompressor`/`loudnorm`),
   face detection for auto-reframe (MediaPipe), colour grading (WebGL + `lut3d`/`eq`)
 - all persistence in IndexedDB (project JSON + media Blobs), plus `.nocap` backups
@@ -105,7 +105,7 @@ src/lib/
   captions/renderer.ts        caption/overlay renderer (word animation, emoji, text entrances, Lottie)
   captions/presets.ts         20 caption styles; emoji.ts keyword map; fonts.ts registry; srt.ts
   speech/captionBuilder.ts    word → cue grouping rules
-  speech/ml.worker.ts         Transformers.js worker: Whisper, Marian, pyannote+WeSpeaker, MMS-TTS, RMBG
+  speech/ml.worker.ts         Transformers.js worker: Whisper, Marian, pyannote+WeSpeaker, MMS-TTS, MODNet
   speech/mlClient.ts          request/response plumbing, cancellation
   speech/transcriber.ts, translator.ts, webSpeech.ts, tts.ts, languages.ts
   transcriptionEngine.ts      transcription + diarization + WebVTT/SRT (spec deliverable)
@@ -125,7 +125,7 @@ src/lib/
   color/cube.ts, gl/colorGrade.ts   .cube LUT parser + WebGL grader (mirrors lut3d + eq)
   gl/transitions.ts           WebGL2 GLSL transition engine (10 shaders)
   lottie/registry.ts          dotLottie instances rendered per frame for overlays and export
-  matte/matte.ts              RMBG background removal for stickers; offline video matting masks
+  matte/matte.ts              MODNet background removal for stickers; offline video matting masks
   tracking/templateTracker.ts NCC motion tracker; autoReframe.ts MediaPipe face → pan keyframes
   stock/providers.ts          Pexels / Pixabay search + download
   storage/db.ts               IndexedDB stores: projects, assets, peaks, thumbs, projectThumbs
@@ -183,15 +183,21 @@ any of them without re-running `npm test` (native parity) and the e2e.
 
 - **Threaded ffmpeg core dies on any non-zero exit** (`Aborted()` then the next exec
   hangs). Probe with `-i f -frames:v 1 -frames:a 1 -f null -`; `FFmpegEngine.exec`
-  recycles the worker on failure; a 40 s log-silence watchdog throws `FFmpegHungError`
-  and the exporter restarts single-threaded (`preferSingleThread`). Headless Chromium
-  needed this fallback; desktop Chrome may not.
+  recycles the worker on failure.
+- **Threaded core needs thread caps.** Its pthread pool holds 32 workers and a
+  thread beyond that can never start while the class worker is blocked in `exec`,
+  so `-threads auto` deadlocked every export on many-core machines (the audit saw a
+  40 s stall on 100 % of exports). `exec` now inserts `threadPlan()` caps. Watchdogs
+  run on both cores (40 s / 180 s), a hang resumes from the stalled segment on a
+  fresh engine, and a threaded hang persists `reelflow.singleThread=1`.
 - **`Aborted()` at the end of every command is normal** for this core build.
 - **fMP4 splicing:** the muxer zeroes fragment `tfdt` regardless of `-output_ts_offset`
   or `setpts`; offsets are patched into `tfdt` at splice time (`mp4.ts`). Segmented
-  renders use `-bf 0`, a final `fps=` filter, `-avoid_negative_ts disabled`, and trim
-  one AAC frame (1024 samples) from every non-final segment's audio so the next
-  segment's priming frame fits without overlap or drift.
+  renders use `-bf 0`, a final `fps=` filter, `-avoid_negative_ts disabled`,
+  `+delay_moov` (so segment 0's moov carries the AAC priming edit list), cuts
+  snapped to `segmentGrid(fps)`, and trim one AAC frame (1024 samples, sample-exact)
+  from every non-final segment's audio so the next segment's priming frame fits
+  without overlap or drift. Verified at 0 ms A/V offset across splices.
 - **`-t` is absolute** on output timestamps; the graph's `trim`/`atrim` bound segments.
 - **Inputs are mounted with WORKERFS** (no copy into the wasm heap). Outputs are read
   and deleted per segment.
@@ -217,7 +223,7 @@ any of them without re-running `npm test` (native parity) and the e2e.
 | Magic Cut, highlight finder | Done, unit-tested; UI wired |
 | Recorder, hover preview, .nocap backups, sound effects, viral caption styles | Done, manually wired, no automated coverage |
 | Audio presets, LUT/colour grading, scopes, Lottie overlays, text animations | Done; preview paths exercised, export via the compositor path, no automated coverage |
-| Background removal (stickers) and video matting | Done; relies on `briaai/RMBG-1.4` via the `background-removal` pipeline (~45 MB download); WASM is slow (seconds per frame), WebGPU recommended |
+| Background removal (stickers) and video matting | Done; `Xenova/modnet` via the `background-removal` pipeline (25 MB fp32 on WebGPU, 7 MB q8 on WASM, ~0.5 s per frame on WASM); portrait-trained, so arbitrary-object stickers cut out less cleanly than RMBG-1.4 did. RMBG-1.4 declares an unregistered model type and fails to load in Transformers.js 4. Covered by `e2e/qa.mjs --only=matte` (CI smoke job) |
 | Export: compositor path (GPU transitions, tracked overlays, reframe) | Implemented, not covered by automated tests |
 | 4K/60 fps, bitrate control, H.265, HDR tone-map, disk streaming | Implemented; HDR and disk sink untested with real files |
 | Translation (browser API / Marian), speaker diarization, TTS voice-overs | Implemented, wrapped in graceful failure; not runtime-tested |
@@ -248,12 +254,12 @@ from the console on failure.
 1. Run the stretch features against real footage (matting, Lottie, LUTs, audio
    presets, diarization, TTS, reframe, noise removal, disk streaming) and fix API
    drift in the ML worker if any; add e2e coverage for the compositor export path.
-2. Add a first-run explainer for model downloads (Whisper 45–600 MB, RMBG 45 MB).
+2. Add a first-run explainer for model downloads (Whisper 45–600 MB, MODNet 7–25 MB).
 3. Persist export settings and last-used models per user.
 4. Video matting quality: consider a dedicated video-matting ONNX model (RVM) via
    onnxruntime-web for temporal stability and speed.
-5. Re-check the ffmpeg.wasm threaded core in current desktop Chrome; if it works
-   reliably there, the watchdog fallback only matters for edge environments.
+5. (Resolved 2026-09-24) The threaded core works once thread caps are applied;
+   the watchdog fallback now only matters for edge environments.
 
 ## 13. Timeline of the work (for context)
 

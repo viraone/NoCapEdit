@@ -30,6 +30,8 @@ import { Toggle } from "@/components/ui/Toggle";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { useMlDevice } from "./useMlDevice";
+import { mlDeviceLabel } from "@/lib/speech/mlDevice";
 
 const SPEEDS: { value: number; label: string; icon: React.ReactNode }[] = [
   { value: 0.5, label: "0.5×", icon: <Snail size={16} /> },
@@ -56,6 +58,7 @@ export function TrimPanel() {
   const [enhanceMode, setEnhanceMode] = useState<EnhanceMode>("rnnoise");
   const [job, setJob] = useState<{ kind: "enhance" | "reframe" | "matte"; message: string; progress: number | null } | null>(null);
   const [matteFps, setMatteFps] = useState(8);
+  const matteDevice = useMlDevice("matte");
   const [jobError, setJobError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [mcFillers, setMcFillers] = useState(true);
@@ -464,7 +467,7 @@ export function TrimPanel() {
         ) : (
           job?.kind !== "matte" && (
             <>
-              <Field label="Mask rate" hint="Higher is smoother but slower; RMBG-1.4 runs on this device (about 0.2–0.5 s per frame on WebGPU).">
+              <Field label="Mask rate" hint={`Higher is smoother but slower; MODNet runs on this device (${mlDeviceLabel(matteDevice)}${matteDevice ? ", last run" : ""}), about 0.1–0.5 s per frame on WebGPU.`}>
                 <Select value={String(matteFps)} onChange={(e) => setMatteFps(Number(e.target.value))}>
                   <option value="4">4 masks / s (fast)</option>
                   <option value="8">8 masks / s</option>

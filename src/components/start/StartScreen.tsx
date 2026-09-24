@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck, Video, Archive, PackageOpen } from "lucide-react";
-import { Recorder, isRecordingSupported } from "@/components/record/Recorder";
+import { Recorder, useRecordingSupported } from "@/components/record/Recorder";
 import { exportBackup, importBackup } from "@/lib/storage/backup";
 import { requestDiskSink, createBlobSink } from "@/lib/ffmpeg/sinks";
 import { downloadBlob, safeFilename } from "@/lib/utils/download";
@@ -60,6 +60,7 @@ export function StartScreen() {
   const [confirmDelete, setConfirmDelete] = useState<VideoProject | null>(null);
   const [recording, setRecording] = useState(false);
   const backupInputRef = useRef<HTMLInputElement>(null);
+  const canRecord = useRecordingSupported();
 
   const backup = async (p: VideoProject) => {
     setError(null);
@@ -185,7 +186,7 @@ export function StartScreen() {
           <Button variant="secondary" onClick={() => backupInputRef.current?.click()} disabled={!!busy} title="Restore a .nocap backup">
             <PackageOpen size={16} /> Import backup
           </Button>
-          {isRecordingSupported() && (
+          {canRecord && (
             <Button variant="secondary" onClick={() => setRecording(true)} disabled={!!busy}>
               <Video size={16} /> Record
             </Button>
@@ -209,7 +210,7 @@ export function StartScreen() {
           )}
           {error && <p className="text-xs text-sys-red">{error}</p>}
         </FileDrop>
-        <div className="rounded-lg border border-sys-gray4 bg-sys-gray5 p-4 text-xs text-label-2">
+        <div className="card p-4 text-xs text-label-2">
           <p className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
             <ShieldCheck size={16} className="text-sys-green" /> Zero-cost, on-device pipeline
           </p>
@@ -232,13 +233,13 @@ export function StartScreen() {
       <section className="mt-10">
         <h2 className="mb-3 text-sm font-semibold text-label-2">Your projects</h2>
         {projects.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-sys-gray4 p-8 text-center text-sm text-label-3">No projects yet. Drop a video above or create a new project.</p>
+          <p className="card border-dashed p-8 text-center text-sm text-label-3">No projects yet. Drop a video above or create a new project.</p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {projects.map((p) => {
               const fmt = getFormat(p.formatId);
               return (
-                <div key={p.id} className="group overflow-hidden rounded-xl border border-sys-gray4 bg-sys-gray5 transition-colors hover:border-sys-gray2">
+                <div key={p.id} className="card group overflow-hidden transition-colors hover:border-sys-gray2">
                   <button type="button" onClick={() => openProject(p.id)} className="block w-full">
                     <div className="relative aspect-[4/3] w-full overflow-hidden bg-sys-gray6">
                       {thumbs[p.id] ? (
@@ -292,10 +293,8 @@ export function StartScreen() {
                   key={f.id}
                   type="button"
                   onClick={() => setFormatId(f.id)}
-                  className={cx(
-                    "flex items-center gap-3 rounded-lg border px-3 py-2 text-left",
-                    formatId === f.id ? "border-sys-blue bg-brand-500/10" : "border-sys-gray4 hover:border-sys-gray2",
-                  )}
+                  className="tile flex-row justify-start gap-3 px-3 py-2 text-left"
+                  data-active={formatId === f.id ? "true" : "false"}
                 >
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center">
                     <span className="block rounded-sm border border-sys-gray2 bg-sys-gray4" style={{ width: f.width >= f.height ? 32 : (32 * f.width) / f.height, height: f.height >= f.width ? 32 : (32 * f.height) / f.width }} />

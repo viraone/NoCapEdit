@@ -4,6 +4,8 @@ import { Lightbulb, GripHorizontal } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
 import { ensureFontsLoaded } from "@/lib/captions/fonts";
+import { splitClipAt } from "@/lib/models/clipOps";
+import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
 import { ToolRail } from "@/components/panels/ToolRail";
 import { ClipsPanel } from "@/components/panels/ClipsPanel";
@@ -45,6 +47,8 @@ export function EditorShell() {
     engine.onTime = (t) => useEditor.getState().setTime(t);
     engine.onPlayingChange = (p) => useEditor.getState().setPlaying(p);
     ensureFontsLoaded();
+    // With reelflow.debug=1 the store and engine are reachable from test scripts.
+    if (debugFlag("debug")) (window as unknown as { __nocap?: unknown }).__nocap = { useEditor, engine };
     return () => {
       engine.onTime = null;
       engine.onPlayingChange = null;
@@ -60,9 +64,21 @@ export function EditorShell() {
       if (isTypingTarget(e.target)) return;
       const s = useEditor.getState();
       const mod = e.metaKey || e.ctrlKey;
+      // Same action as the "Split at playhead" button (Clips / Trim panels).
+      const splitAtPlayhead = () => {
+        let ok = false;
+        s.update((p) => void (ok = splitClipAt(p, s.currentTime) !== null));
+        s.setNotice(ok ? "Split the clip at the playhead." : "Move the playhead inside a clip to split it.");
+      };
       if (e.code === "Space") {
         e.preventDefault();
         engine.toggle();
+      } else if (e.key.toLowerCase() === "s" && !mod && !e.altKey) {
+        e.preventDefault();
+        splitAtPlayhead();
+      } else if (mod && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        splitAtPlayhead();
       } else if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) s.redo();

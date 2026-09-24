@@ -31,6 +31,24 @@ export function debugFlag(name: "debug" | "singleThread"): boolean {
   }
 }
 
+/**
+ * Remembers that the multi-threaded core stalled on this device, so later
+ * sessions go straight to the single-threaded core instead of waiting for the
+ * watchdog again. The same key is the manual `reelflow.singleThread` switch.
+ */
+export function setSingleThreadPreference(on: boolean): void {
+  try {
+    if (on) localStorage.setItem("reelflow.singleThread", "1");
+    else localStorage.removeItem("reelflow.singleThread");
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function singleThreadPreferred(): boolean {
+  return debugFlag("singleThread");
+}
+
 async function exists(url: string): Promise<boolean> {
   try {
     const res = await fetch(url, { method: "HEAD" });

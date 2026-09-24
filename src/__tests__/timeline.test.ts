@@ -53,3 +53,20 @@ describe("placement", () => {
     expect(p.dx).toBeCloseTo((1080 - p.dw) / 2, 5);
   });
 });
+
+describe("reorderClip", () => {
+  it("moves a clip to a new position in the sequence", async () => {
+    const { reorderClip } = await import("@/lib/models/clipOps");
+    const { createProject } = await import("@/lib/models/project");
+    const p = createProject({ name: "t" });
+    p.clips = [clip(1, { id: "a" }), clip(1, { id: "b" }), clip(1, { id: "c" }), clip(1, { id: "d" })];
+    expect(reorderClip(p, "d", 0)).toBe(true);
+    expect(p.clips.map((c) => c.id)).toEqual(["d", "a", "b", "c"]);
+    expect(reorderClip(p, "d", 2)).toBe(true);
+    expect(p.clips.map((c) => c.id)).toEqual(["a", "b", "d", "c"]);
+    expect(reorderClip(p, "a", 0)).toBe(false);
+    expect(reorderClip(p, "zzz", 0)).toBe(false);
+    expect(reorderClip(p, "a", 99)).toBe(true);
+    expect(p.clips.map((c) => c.id)).toEqual(["b", "d", "c", "a"]);
+  });
+});

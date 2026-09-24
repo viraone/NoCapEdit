@@ -47,6 +47,7 @@ export function VideoCanvas() {
   const update = useEditor((s) => s.update);
   const select = useEditor((s) => s.select);
   const setTool = useEditor((s) => s.setTool);
+  const requestEdit = useEditor((s) => s.requestEdit);
   const beginTransaction = useEditor((s) => s.beginTransaction);
   const endTransaction = useEditor((s) => s.endTransaction);
 
@@ -285,11 +286,8 @@ export function VideoCanvas() {
       engine.toggle();
       return;
     }
-    if (hit.kind === "cue") setTool("subtitles");
-    else {
-      const ov = projectRef.current.overlays.find((o) => o.id === hit.id);
-      setTool(ov?.kind === "image" ? "picture" : "text");
-    }
+    // Opens the element's panel and focuses its content field ("double-click to edit").
+    requestEdit({ kind: hit.kind === "cue" ? "cue" : "overlay", id: hit.id });
   };
 
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {

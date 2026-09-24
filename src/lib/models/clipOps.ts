@@ -11,6 +11,17 @@ export function moveClip(p: VideoProject, id: string, dir: -1 | 1): boolean {
   return true;
 }
 
+/** Moves a clip to position `toIndex` in the sequence (index after the clip is taken out). */
+export function reorderClip(p: VideoProject, id: string, toIndex: number): boolean {
+  const from = p.clips.findIndex((c) => c.id === id);
+  if (from < 0) return false;
+  const to = Math.max(0, Math.min(p.clips.length - 1, Math.round(toIndex)));
+  if (to === from) return false;
+  const [clip] = p.clips.splice(from, 1);
+  p.clips.splice(to, 0, clip);
+  return true;
+}
+
 export function removeClip(p: VideoProject, id: string) {
   p.clips = p.clips.filter((c) => c.id !== id);
 }

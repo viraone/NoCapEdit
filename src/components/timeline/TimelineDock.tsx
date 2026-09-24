@@ -5,6 +5,7 @@ import { TransportBar } from "@/components/canvas/TransportBar";
 import { useEditor } from "@/store/editorStore";
 import { layoutClips, type ClipLayout } from "@/lib/models/timeline";
 import type { CaptionCue } from "@/lib/models/project";
+import { reorderClip } from "@/lib/models/clipOps";
 import { formatTime } from "@/lib/utils/time";
 import { clamp } from "@/lib/utils/math";
 import { cx } from "@/lib/utils/cx";
@@ -18,6 +19,15 @@ const CUE_H = 34;
 const VIDEO_H = 76;
 const MUSIC_H = 28;
 const EDGE = 7;
+/** Pointer travel before a press on a clip body becomes a reorder drag. */
+const DRAG_THRESHOLD = 8;
+
+/** Insertion slot for a pointer at project time t: the number of clips whose middle lies before it. */
+function insertionIndex(layouts: ClipLayout[], t: number): number {
+  let k = 0;
+  for (const l of layouts) if ((l.start + l.end) / 2 < t) k++;
+  return k;
+}
 
 function rulerLabel(t: number, fine: boolean): string {
   if (fine) return formatTime(t, true);
@@ -147,33 +157,68 @@ function CueBlock({ cue, pxPerSec, selected, active, showTranslated }: { cue: Ca
   );
 }
 
-function ClipBlock({ layout, pxPerSec, selected, active }: { layout: ClipLayout; pxPerSec: number; selected: boolean; active: boolean }) {
+function ClipBlock({
+  layout,
+  layouts,
+  pxPerSec,
+  selected,
+  active,
+  onDropIndicator,
+}: {
+  layout: ClipLayout;
+  layouts: ClipLayout[];
+  pxPerSec: number;
+  selected: boolean;
+  active: boolean;
+  /** x (px) of the insertion slot while a reorder drag is in progress, null when none. */
+  onDropIndicator: (x: number | null) => void;
+}) {
   const { update, beginTransaction, endTransaction, select, setTool } = useEditor.getState();
   const { clip } = layout;
   const width = Math.max(6, layout.duration * pxPerSec);
-  const drag = useRef<{ mode: "l" | "r" | "none"; startX: number; inPoint: number; outPoint: number } | null>(null);
+  const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  /** Project time under the pointer, measured against the lane so scrolling is accounted for. */
+  const laneTime = (e: React.PointerEvent<HTMLDivElement>) => {
+    const lane = e.currentTarget.parentElement!;
+    return (e.clientX - lane.getBoundingClientRect().left) / pxPerSec;
+  };
+  const slotX = (k: number) => (k < layouts.length ? layouts[k].start : layouts[layouts.length - 1].end) * pxPerSec;
   return (
     <div
       className={cx(
-        "absolute top-1 h-[68px] cursor-pointer overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
+        "absolute top-1 h-[68px] overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
+        dragging ? "cursor-grabbing opacity-60" : "cursor-grab",
         selected || active ? "border-sys-blue" : "border-sys-gray4",
       )}
       style={{ left: layout.start * pxPerSec, width }}
+      data-clip={clip.id}
       onPointerDown={(e) => {
         e.stopPropagation();
         const r = e.currentTarget.getBoundingClientRect();
         const lx = e.clientX - r.left;
         const mode = lx < EDGE ? "l" : lx > r.width - EDGE ? "r" : "none";
         select({ kind: "clip", id: clip.id });
-        drag.current = { mode, startX: e.clientX, inPoint: clip.inPoint, outPoint: clip.outPoint };
-        if (mode !== "none") {
-          beginTransaction();
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }
+        drag.current = { mode, startX: e.clientX, inPoint: clip.inPoint, outPoint: clip.outPoint, slot: null };
+        e.currentTarget.setPointerCapture(e.pointerId);
+        if (mode !== "none") beginTransaction();
       }}
       onPointerMove={(e) => {
         const d = drag.current;
-        if (!d || d.mode === "none") return;
+        if (!d) return;
+        if (d.mode === "none") {
+          if (Math.abs(e.clientX - d.startX) < DRAG_THRESHOLD) return;
+          // Past the threshold a press on the body becomes a reorder drag (one undo step).
+          d.mode = "reorder";
+          beginTransaction();
+          setDragging(true);
+        }
+        if (d.mode === "reorder") {
+          const k = insertionIndex(layouts, laneTime(e));
+          d.slot = k;
+          onDropIndicator(slotX(k));
+          return;
+        }
         const dt = ((e.clientX - d.startX) / pxPerSec) * clip.speed;
         update(
           (p) => {
@@ -188,10 +233,31 @@ function ClipBlock({ layout, pxPerSec, selected, active }: { layout: ClipLayout;
       onPointerUp={(e) => {
         const d = drag.current;
         drag.current = null;
-        if (d && d.mode !== "none") {
-          endTransaction();
+        try {
           e.currentTarget.releasePointerCapture(e.pointerId);
+        } catch {
+          /* not captured */
         }
+        if (!d || d.mode === "none") return;
+        if (d.mode === "reorder") {
+          setDragging(false);
+          onDropIndicator(null);
+          if (d.slot !== null) {
+            // Slot k counts the dragged clip itself when it sits before the slot.
+            const to = d.slot > layout.index ? d.slot - 1 : d.slot;
+            update((p) => void reorderClip(p, clip.id, to));
+          }
+        }
+        endTransaction();
+      }}
+      onPointerCancel={() => {
+        const d = drag.current;
+        drag.current = null;
+        if (d?.mode === "reorder") {
+          setDragging(false);
+          onDropIndicator(null);
+        }
+        if (d && d.mode !== "none") endTransaction();
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();
@@ -288,6 +354,7 @@ export function TimelineDock() {
   const fit = () => setZoom(duration > 0 ? (viewW - 80) / duration : 80);
   const scrubbing = useRef(false);
   const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout } | null>(null);
+  const [dropX, setDropX] = useState<number | null>(null);
   const timeAt = (clientX: number) => {
     const el = scrollRef.current!;
     const r = el.getBoundingClientRect();
@@ -395,10 +462,19 @@ export function TimelineDock() {
               ))}
             </div>
             <div className="relative border-b border-sys-gray5/70" style={{ height: VIDEO_H }}>
-              {hover && <HoverPreview x={hover.x} time={hover.time} layout={hover.layout} />}
+              {hover && dropX === null && <HoverPreview x={hover.x} time={hover.time} layout={hover.layout} />}
               {layouts.map((layout) => (
-                <ClipBlock key={layout.clip.id} layout={layout} pxPerSec={pxPerSec} selected={selection?.kind === "clip" && selection.id === layout.clip.id} active={activeClipId === layout.clip.id} />
+                <ClipBlock
+                  key={layout.clip.id}
+                  layout={layout}
+                  layouts={layouts}
+                  pxPerSec={pxPerSec}
+                  selected={selection?.kind === "clip" && selection.id === layout.clip.id}
+                  active={activeClipId === layout.clip.id}
+                  onDropIndicator={setDropX}
+                />
               ))}
+              {dropX !== null && <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-sys-blue shadow-[0_0_6px_rgba(10,132,255,0.9)]" data-drop-indicator style={{ left: dropX }} />}
             </div>
             <div className="relative" style={{ height: MUSIC_H }}>
               {project.voiceovers.map((vo) => (

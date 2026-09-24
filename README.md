@@ -42,7 +42,7 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
   `lut3d` + `eq` export), histogram and vectorscope.
 - **Lottie** animations (.lottie / .json) as overlays, animated text entrances (pop,
   typewriter, slide, bounce), and a "behind the subject" layer.
-- **Background removal**: RMBG-1.4 on-device for stickers, and an offline matting
+- **Background removal**: MODNet on-device for stickers, and an offline matting
   pass that cuts the speaker out of a clip so text or stickers can sit behind them.
 
 **Captions**

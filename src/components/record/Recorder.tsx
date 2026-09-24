@@ -3,7 +3,7 @@
  * In-browser screen / camera recorder (getDisplayMedia, getUserMedia,
  * MediaRecorder). The recording becomes a normal imported clip.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Monitor, Camera, Mic, Circle, Square } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +19,13 @@ function pickMimeType(): string | undefined {
 
 export function isRecordingSupported(): boolean {
   return typeof navigator !== "undefined" && !!navigator.mediaDevices && typeof MediaRecorder !== "undefined";
+}
+
+const noSubscribe = () => () => {};
+
+/** Client-only capability: the server snapshot is false, so pre-rendered HTML matches the first client render. */
+export function useRecordingSupported(): boolean {
+  return useSyncExternalStore(noSubscribe, isRecordingSupported, () => false);
 }
 
 export function Recorder({ open, onClose, onRecorded }: { open: boolean; onClose: () => void; onRecorded: (file: File) => void }) {

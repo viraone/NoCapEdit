@@ -7,6 +7,7 @@ import { zlibSync, unzlibSync } from "fflate";
 import type { Clip, ClipMatte } from "@/lib/models/project";
 import { getAsset, putAsset } from "@/lib/storage/db";
 import { mlRequest, type MlProgress } from "@/lib/speech/mlClient";
+import { rememberMlDevice, type MlDevice } from "@/lib/speech/mlDevice";
 import { uid } from "@/lib/utils/id";
 
 export interface MatteFrames {
@@ -56,9 +57,19 @@ export async function getMatte(assetId: string): Promise<MatteFrames | null> {
   return m;
 }
 
+export interface MaskResult {
+  alpha: Uint8Array;
+  width: number;
+  height: number;
+  /** Compute backend the model ran on. */
+  device: MlDevice;
+}
+
 /** Alpha mask (0..255, width×height) for one image via the worker. */
-export function maskForImage(blob: Blob, onProgress?: (p: MlProgress) => void, signal?: AbortSignal): Promise<{ alpha: Uint8Array; width: number; height: number }> {
-  return mlRequest((id) => ({ type: "matte", id, image: blob }), onProgress, signal);
+export async function maskForImage(blob: Blob, onProgress?: (p: MlProgress) => void, signal?: AbortSignal): Promise<MaskResult> {
+  const out = await mlRequest<MaskResult>((id) => ({ type: "matte", id, image: blob }), onProgress, signal);
+  if (out.device) rememberMlDevice("matte", out.device);
+  return out;
 }
 
 /** Removes the background of a still image; returns a PNG with alpha. */

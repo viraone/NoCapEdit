@@ -248,7 +248,10 @@ export function buildFilterGraph(plan: ExportPlan): { graph: string; vout: strin
     parts.push(`${chain.join(",")}[vo${k}]`);
     mixInputs.push(`vo${k}`);
   });
-  const audioTail = plan.audioTailTrim && plan.audioTailTrim > 0 ? `atrim=duration=${num(Math.max(0.01, plan.duration - plan.audioTailTrim))}` : "anull";
+  // The tail trim is expressed in whole samples: a duration rounded to a few
+  // decimals leaves the AAC track one or two samples long, which shows up as
+  // an overlap at the next splice.
+  const audioTail = plan.audioTailTrim && plan.audioTailTrim > 0 ? `atrim=end_sample=${Math.round(Math.max(0.01, plan.duration - plan.audioTailTrim) * AUDIO_RATE)}` : "anull";
   if (mixInputs.length === 1) parts.push(`[${a}]${audioTail}[aout]`);
   else parts.push(`${mixInputs.map((l) => `[${l}]`).join("")}amix=inputs=${mixInputs.length}:duration=first:dropout_transition=0:normalize=0,${audioTail}[aout]`);
 

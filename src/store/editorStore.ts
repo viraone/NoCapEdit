@@ -30,6 +30,8 @@ export interface EditorState {
   canvasZoom: CanvasZoom;
   /** One-line status shown under the top bar (auto-dismissed). */
   notice: string | null;
+  /** Set by a canvas double-click: the panel for this element should focus its content field. */
+  editRequest: (Selection & { nonce: number }) | null;
 
   loadProject(id: string): Promise<boolean>;
   unload(): void;
@@ -46,6 +48,8 @@ export interface EditorState {
   setTimelineZoom(z: number): void;
   setCanvasZoom(z: CanvasZoom): void;
   setNotice(text: string | null): void;
+  /** Selects the element, switches to its panel and asks that panel to focus its editor. */
+  requestEdit(sel: Selection): void;
   registerAsset(assetId: string, blob: Blob): string;
   releaseAsset(assetId: string): void;
 }
@@ -87,6 +91,7 @@ export const useEditor = create<EditorState>()(
     timelineZoom: 80,
     canvasZoom: "fit",
     notice: null,
+    editRequest: null,
 
     async loadProject(id) {
       get().unload();
@@ -111,7 +116,7 @@ export const useEditor = create<EditorState>()(
     unload() {
       for (const url of Object.values(get().assetUrls)) URL.revokeObjectURL(url);
       engine.dispose();
-      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false });
+      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null });
     },
 
     update(fn, opts = {}) {
@@ -175,6 +180,15 @@ export const useEditor = create<EditorState>()(
       set({ notice: text });
       if (noticeTimer) clearTimeout(noticeTimer);
       if (text) noticeTimer = setTimeout(() => set({ notice: null }), 6000);
+    },
+    requestEdit(sel) {
+      const project = get().project;
+      let tool: ToolId = "subtitles";
+      if (sel.kind === "overlay") {
+        const kind = project?.overlays.find((o) => o.id === sel.id)?.kind;
+        tool = kind === "image" || kind === "lottie" ? "picture" : "text";
+      } else if (sel.kind === "clip") tool = "trim";
+      set({ selection: sel, tool, editRequest: { ...sel, nonce: Date.now() } });
     },
 
     registerAsset(assetId, blob) {

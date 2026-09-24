@@ -17,7 +17,7 @@
  */
 import type { FFFSType, FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
-import { loadFFmpeg, resetFFmpeg, supportsMultithread, type FFmpegInfo } from "./ffmpeg/loader";
+import { loadFFmpeg, resetFFmpeg, setSingleThreadPreference, singleThreadPreferred, supportsMultithread, debugFlag, type FFmpegInfo } from "./ffmpeg/loader";
 import { parseTrackTiming, renumberFragments, shiftFragments, stripInitSegment, stripTrailingIndex, type TrackTiming } from "./ffmpeg/mp4";
 import type { OutputSink } from "./ffmpeg/sinks";
 
@@ -90,7 +90,11 @@ export function encoderArgs(s: EncodeSettings, opts: { fragmented: boolean; tsOf
     // Every segment starts at t=0; the splicer shifts fragment decode times.
     // The default "make non-negative" policy stretches the first frame by one
     // audio frame, which would show up as a hiccup at every splice point.
-    args.push("-movflags", "frag_keyframe+empty_moov+default_base_moof", "-avoid_negative_ts", "disabled");
+    // delay_moov holds the moov back until the first fragment is cut so it can
+    // carry the audio edit list (AAC priming, 1024 samples); with empty_moov
+    // alone the moov is written before any packet and no edit list is possible,
+    // which made the priming samples play as 21 ms of audio lag.
+    args.push("-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov", "-avoid_negative_ts", "disabled");
   } else {
     args.push("-movflags", "+faststart");
   }
@@ -196,6 +200,8 @@ export interface RenderProgress {
   message: string;
   segment?: number;
   segments?: number;
+  /** The engine actually running this render (known once loading is done). */
+  engine?: FFmpegInfo;
 }
 
 export interface RenderStats {
@@ -207,18 +213,98 @@ export interface RenderStats {
 
 const abortError = () => new DOMException("Render cancelled", "AbortError");
 
-/** Thrown when the threaded core stops producing output; callers retry single-threaded. */
+/**
+ * Thrown when a core stops producing output. `multithreaded` says which core
+ * hung: callers retry single-threaded after a threaded hang and give up after
+ * a single-threaded one.
+ */
 export class FFmpegHungError extends Error {
-  constructor(message = "The multi-threaded video engine stopped responding.") {
-    super(message);
+  readonly multithreaded: boolean;
+  constructor(multithreaded: boolean, message?: string) {
+    super(message ?? (multithreaded ? "The multi-threaded video engine stopped responding." : "The video engine stopped responding."));
     this.name = "FFmpegHungError";
+    this.multithreaded = multithreaded;
   }
 }
 
 /** Seconds of log silence after which a threaded exec is considered hung. */
 export const WATCHDOG_SECONDS = 40;
+/**
+ * Silence threshold for the single-threaded core. Much longer, because a slow
+ * preset at 4K legitimately logs nothing until x264/x265 fills its lookahead.
+ */
+export const SINGLE_THREAD_WATCHDOG_SECONDS = 180;
 
 const watchdogChecks: ReturnType<typeof setInterval>[] = [];
+
+// ---------------------------------------------------------------------------
+// Thread budget for the multi-threaded core
+// ---------------------------------------------------------------------------
+
+/**
+ * @ffmpeg/core-mt pre-spawns a fixed pool of pthread workers (32 in 0.12.x).
+ * With `-threads auto` ffmpeg asks for far more on a many-core machine (x264
+ * alone wants 1.5x the cores, every decoder and filter graph wants a full set),
+ * and a thread beyond the pool can never start: the class worker is blocked
+ * inside the synchronous exec, so the new worker's "loaded" message is never
+ * processed and the command deadlocks silently. Every command run on the
+ * threaded core therefore carries explicit, budgeted caps.
+ */
+export const MT_THREAD_POOL = 32;
+/** Planned threads per command; the rest of the pool is headroom for x264's lookahead thread and similar helpers. */
+export const MT_THREAD_BUDGET = 24;
+
+export interface ThreadPlan {
+  /** Frame threads per decoder (one decoder per input). */
+  decoder: number;
+  /** Encoder threads (x264 / x265). */
+  encoder: number;
+  /** Filter graph threads (-filter_threads and -filter_complex_threads). */
+  filter: number;
+}
+
+export function threadPlan(inputs: number, cores: number): ThreadPlan {
+  const c = Math.max(1, Math.floor(cores || 4));
+  const n = Math.max(1, inputs);
+  let filter = c >= 8 ? 2 : 1;
+  let encoder = Math.min(8, Math.max(2, c));
+  let decoder = c >= 4 ? 2 : 1;
+  const total = () => n * decoder + encoder + 2 * filter;
+  if (total() > MT_THREAD_BUDGET) decoder = 1;
+  if (total() > MT_THREAD_BUDGET) filter = 1;
+  while (total() > MT_THREAD_BUDGET && encoder > 2) encoder--;
+  return { decoder, encoder, filter };
+}
+
+export function countInputs(args: string[]): number {
+  return args.filter((a) => a === "-i").length;
+}
+
+/**
+ * Inserts the caps into a command line: `-threads d` before every `-i` that
+ * has no explicit thread option, `-threads e` before the output (the last
+ * token) and the global filter caps up front.
+ */
+export function withThreadCaps(args: string[], plan: ThreadPlan): string[] {
+  const out: string[] = ["-filter_threads", String(plan.filter), "-filter_complex_threads", String(plan.filter)];
+  let explicit = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "-threads" || a.startsWith("-threads:")) explicit = true;
+    if (a === "-i") {
+      if (!explicit) out.push("-threads", String(plan.decoder));
+      explicit = false;
+    }
+    const isOutput = i === args.length - 1 && i > 0 && (a === "-" || !a.startsWith("-")) && args[i - 1] !== "-i";
+    if (isOutput && !explicit) out.push("-threads", String(plan.encoder));
+    out.push(a);
+  }
+  return out;
+}
+
+function hardwareThreads(): number {
+  return typeof navigator !== "undefined" && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4;
+}
 
 export class FFmpegEngine {
   private ffmpeg: FFmpeg | null = null;
@@ -226,8 +312,8 @@ export class FFmpegEngine {
   private logs: string[] = [];
   private capture: ((line: string) => void) | null = null;
   private lastLogAt = 0;
-  /** Set after a hang: every later load uses the single-threaded core. */
-  preferSingleThread = false;
+  /** Set after a hang (and remembered in localStorage): every later load uses the single-threaded core. */
+  preferSingleThread = singleThreadPreferred();
   private logHandler = ({ message }: { message: string }) => {
     this.logs.push(message);
     if (this.logs.length > 500) this.logs.shift();
@@ -302,25 +388,30 @@ export class FFmpegEngine {
         : null;
     let code = -1;
     let hung = false;
+    const multithreaded = !!this.info?.multithreaded;
+    // The threaded core needs explicit thread caps (see threadPlan); the
+    // single-threaded core ignores them, so it gets the command untouched.
+    const finalArgs = multithreaded ? withThreadCaps(args, threadPlan(countInputs(args), hardwareThreads())) : args;
+    if (debugFlag("debug")) console.debug("[ffmpeg] exec", { multithreaded, args: finalArgs.join(" ") });
     this.lastLogAt = performance.now();
-    // Watchdog: the threaded core can deadlock in some browsers; ffmpeg normally
-    // logs at least once a second while working, so long silence means a hang.
-    const watchdog = this.info?.multithreaded
-      ? setInterval(() => {
-          if (performance.now() - this.lastLogAt > WATCHDOG_SECONDS * 1000) {
-            hung = true;
-            this.cancel();
-          }
-        }, 2000)
-      : null;
+    // Watchdog: ffmpeg logs at least every second or so while working, so long
+    // silence means the worker is dead or deadlocked. The single-threaded core
+    // gets a much longer leash (slow presets are quiet while filling lookahead).
+    const limit = (multithreaded ? WATCHDOG_SECONDS : SINGLE_THREAD_WATCHDOG_SECONDS) * 1000;
+    const watchdog = setInterval(() => {
+      if (performance.now() - this.lastLogAt > limit) {
+        hung = true;
+        this.cancel();
+      }
+    }, 2000);
     try {
       code = await Promise.race([
-        ffmpeg.exec(args),
+        ffmpeg.exec(finalArgs),
         new Promise<number>((_, reject) => {
           const check = setInterval(() => {
             if (hung) {
               clearInterval(check);
-              reject(new FFmpegHungError());
+              reject(new FFmpegHungError(multithreaded));
             }
           }, 500);
           watchdogChecks.push(check);
@@ -328,15 +419,22 @@ export class FFmpegEngine {
       ]);
       return code;
     } catch (e) {
-      if (hung) throw new FFmpegHungError();
+      if (hung) {
+        if (multithreaded) {
+          // Never wait for this watchdog again on this device.
+          this.preferSingleThread = true;
+          setSingleThreadPreference(true);
+        }
+        throw new FFmpegHungError(multithreaded);
+      }
       throw e;
     } finally {
-      if (watchdog) clearInterval(watchdog);
+      clearInterval(watchdog);
       for (const c of watchdogChecks.splice(0)) clearInterval(c);
       this.capture = null;
       // A failed command makes the threaded core call abort(); its worker pool is
       // then unusable, so recycle the instance for the next call.
-      if (code !== 0 && this.info?.multithreaded) this.cancel();
+      if (code !== 0 && multithreaded) this.cancel();
     }
   }
 
@@ -344,11 +442,13 @@ export class FFmpegEngine {
    * Reads container/stream information by parsing ffmpeg's input dump. The
    * command decodes a single frame into the null muxer so it exits with 0:
    * an erroring command (e.g. `-i file` alone) aborts the threaded core.
+   * A single decoder thread is plenty for one frame and keeps the probe far
+   * inside the threaded core's pool.
    */
   async probe(path: string): Promise<MediaInfo> {
     const lines: string[] = [];
     // Goes through exec() so the hang watchdog covers probing too.
-    await this.exec(["-hide_banner", "-i", path, "-frames:v", "1", "-frames:a", "1", "-f", "null", "-"], undefined, (line) => lines.push(line));
+    await this.exec(["-hide_banner", "-threads", "1", "-i", path, "-frames:v", "1", "-frames:a", "1", "-f", "null", "-"], undefined, (line) => lines.push(line));
     return parseProbeLog(lines);
   }
 
@@ -372,13 +472,13 @@ export class FFmpegEngine {
       if (signal?.aborted) throw abortError();
     };
     onProgress({ stage: "loading", progress: 0, message: "Loading video engine" });
-    const info = await this.load((message) => onProgress({ stage: "loading", progress: 0, message }));
+    let info = await this.load((message) => onProgress({ stage: "loading", progress: 0, message }));
     check();
     const onAbort = () => this.cancel();
     signal?.addEventListener("abort", onAbort, { once: true });
 
-    onProgress({ stage: "preparing", progress: 0, message: "Preparing source files" });
-    const mounted = await this.mountInputs(job.inputs);
+    onProgress({ stage: "preparing", progress: 0, message: "Preparing source files", engine: info });
+    let mounted = await this.mountInputs(job.inputs);
     let nextSeq = 1;
     let tracks: Map<number, TrackTiming> | null = null;
     let ok = false;
@@ -387,38 +487,26 @@ export class FFmpegEngine {
       check();
       for (const seg of job.segments) {
         check();
-        const output = `seg_${seg.index}.mp4`;
-        const ctx: SegmentContext = { ffmpeg: this.instance, inputPath: mounted.inputPath, output, temp: [] };
         const label = job.segments.length > 1 ? ` (part ${seg.index + 1}/${job.segments.length})` : "";
-        try {
-          onProgress({ stage: "preparing", progress: seg.start / job.duration, message: `Preparing${label}`, segment: seg.index, segments: job.segments.length });
-          await seg.prepare?.(ctx);
-          check();
-          const args = seg.args(ctx);
-          const segLen = seg.end - seg.start;
-          onProgress({ stage: "encoding", progress: seg.start / job.duration, message: `Encoding${label}`, segment: seg.index, segments: job.segments.length });
-          const code = await this.exec(args, (t) => {
-            const p = Math.min(0.999, (seg.start + Math.min(segLen, t)) / job.duration);
-            onProgress({ stage: "encoding", progress: p, message: `Encoding ${Math.round(p * 100)}%${label}`, segment: seg.index, segments: job.segments.length });
-          });
-          check();
-          if (code !== 0) throw new Error(`ffmpeg exited with code ${code}${label}.\n${this.recentLogs()}`);
-          onProgress({ stage: "writing", progress: seg.end / job.duration, message: `Writing${label}` });
-          let data = (await this.instance.readFile(output)) as Uint8Array;
-          if (job.fragmented) {
-            if (seg.index === 0) {
-              data = stripTrailingIndex(data);
-              tracks = parseTrackTiming(data);
-            } else {
-              data = stripInitSegment(data);
-              if (tracks) shiftFragments(data, seg.start, tracks);
-            }
-            nextSeq = renumberFragments(data, nextSeq);
+        let resumed = false;
+        for (;;) {
+          try {
+            const result = await this.renderSegment(job, seg, mounted.inputPath, nextSeq, tracks, label, onProgress, check);
+            nextSeq = result.nextSeq;
+            tracks = result.tracks;
+            break;
+          } catch (e) {
+            // A dead worker (watchdog) loses its FS, so the segment is prepared
+            // again on a fresh engine. Everything already written to the sink is
+            // kept: the render resumes from this part instead of starting over.
+            if (!(e instanceof FFmpegHungError) || resumed || signal?.aborted) throw e;
+            resumed = true;
+            onProgress({ stage: "loading", progress: seg.start / job.duration, message: `Video engine stalled; restarting${e.multithreaded ? " single-threaded" : ""} from part ${seg.index + 1}` });
+            info = await this.load((message) => onProgress({ stage: "loading", progress: seg.start / job.duration, message }));
+            check();
+            mounted = await this.mountInputs(job.inputs);
+            onProgress({ stage: "preparing", progress: seg.start / job.duration, message: `Preparing${label}`, engine: info });
           }
-          await job.sink.write(data);
-        } finally {
-          await this.instance.deleteFile(output).catch(() => undefined);
-          for (const t of ctx.temp) await this.instance.deleteFile(t).catch(() => undefined);
         }
       }
       ok = true;
@@ -432,6 +520,53 @@ export class FFmpegEngine {
     }
     onProgress({ stage: "done", progress: 1, message: "Done" });
     return { seconds: (performance.now() - started) / 1000, bytes: job.sink.bytes, segments: job.segments.length, info };
+  }
+
+  private async renderSegment(
+    job: RenderJob,
+    seg: RenderSegmentJob,
+    inputPath: (name: string) => string,
+    nextSeq: number,
+    tracks: Map<number, TrackTiming> | null,
+    label: string,
+    onProgress: (p: RenderProgress) => void,
+    check: () => void,
+  ): Promise<{ nextSeq: number; tracks: Map<number, TrackTiming> | null }> {
+    const output = `seg_${seg.index}.mp4`;
+    const ctx: SegmentContext = { ffmpeg: this.instance, inputPath, output, temp: [] };
+    try {
+      onProgress({ stage: "preparing", progress: seg.start / job.duration, message: `Preparing${label}`, segment: seg.index, segments: job.segments.length });
+      await seg.prepare?.(ctx);
+      check();
+      const args = seg.args(ctx);
+      const segLen = seg.end - seg.start;
+      onProgress({ stage: "encoding", progress: seg.start / job.duration, message: `Encoding${label}`, segment: seg.index, segments: job.segments.length });
+      const code = await this.exec(args, (t) => {
+        const p = Math.min(0.999, (seg.start + Math.min(segLen, t)) / job.duration);
+        onProgress({ stage: "encoding", progress: p, message: `Encoding ${Math.round(p * 100)}%${label}`, segment: seg.index, segments: job.segments.length });
+      });
+      check();
+      if (code !== 0) throw new Error(`ffmpeg exited with code ${code}${label}.\n${this.recentLogs()}`);
+      onProgress({ stage: "writing", progress: seg.end / job.duration, message: `Writing${label}` });
+      let data = (await this.instance.readFile(output)) as Uint8Array;
+      if (job.fragmented) {
+        if (seg.index === 0) {
+          data = stripTrailingIndex(data);
+          tracks = parseTrackTiming(data);
+        } else {
+          data = stripInitSegment(data);
+          if (tracks) shiftFragments(data, seg.start, tracks);
+        }
+        nextSeq = renumberFragments(data, nextSeq);
+      }
+      await job.sink.write(data);
+      return { nextSeq, tracks };
+    } finally {
+      if (this.ffmpeg) {
+        await this.instance.deleteFile(output).catch(() => undefined);
+        for (const t of ctx.temp) await this.instance.deleteFile(t).catch(() => undefined);
+      }
+    }
   }
 
   /** Terminates the worker; the next call to load() starts fresh. */

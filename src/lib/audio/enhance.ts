@@ -29,7 +29,9 @@ export async function enhanceAudio(blob: Blob, opts: EnhanceOptions): Promise<{ 
   try {
     return await runEnhance(blob, opts);
   } catch (e) {
-    if (!(e instanceof FFmpegHungError) || ffmpegEngine.preferSingleThread) throw e;
+    // A threaded hang is retried once on the single-threaded core (exec() has
+    // already remembered the preference); a single-threaded hang is fatal.
+    if (!(e instanceof FFmpegHungError) || !e.multithreaded) throw e;
     ffmpegEngine.preferSingleThread = true;
     ffmpegEngine.cancel();
     return runEnhance(blob, opts);

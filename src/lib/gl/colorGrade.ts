@@ -97,7 +97,19 @@ export class ColorGrader {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_3D, this.lutTex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    // texImage3D refuses to run with FLIP_Y or PREMULTIPLY_ALPHA enabled (the
+    // 2D frame upload turns FLIP_Y on), so both are pinned off for this upload.
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB8, lut.size, lut.size, lut.size, 0, gl.RGB, gl.UNSIGNED_BYTE, lut.data);
+    if (process.env.NODE_ENV !== "production") {
+      const err = gl.getError();
+      if (err !== gl.NO_ERROR) {
+        const message = `ColorGrader: texImage3D failed with WebGL error ${err} (LUT ${lut.size}³)`;
+        console.error(message);
+        throw new Error(message);
+      }
+    }
     this.lutKey = lut;
   }
 
@@ -110,11 +122,13 @@ export class ColorGrader {
       this.canvas.width = width;
       this.canvas.height = height;
     }
+    if (p.lut) this.uploadLut(p.lut);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.imgTex);
+    // Per-upload pixel-store state: FLIP_Y only for the 2D frame, never global.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    if (p.lut) this.uploadLut(p.lut);
     gl.viewport(0, 0, width, height);
     gl.useProgram(this.program);
     gl.uniform1f(this.u.uUseLut, p.lut ? 1 : 0);

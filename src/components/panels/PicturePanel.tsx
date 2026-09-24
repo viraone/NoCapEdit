@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Upload, Trash2, Image as ImageIcon, Sparkles, Square, Clapperboard } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
@@ -21,6 +21,8 @@ import { Field } from "@/components/ui/Field";
 import { Slider } from "@/components/ui/Slider";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { TrackControls } from "./TrackControls";
+import { useMlDevice } from "./useMlDevice";
+import { mlDeviceLabel } from "@/lib/speech/mlDevice";
 
 export function PicturePanel() {
   const project = useProject();
@@ -35,6 +37,16 @@ export function PicturePanel() {
   const lottieInputRef = useRef<HTMLInputElement>(null);
   const [bgJob, setBgJob] = useState<{ message: string; progress: number | null } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const matteDevice = useMlDevice("matte");
+  const editRequest = useEditor((s) => s.editRequest);
+  const listRef = useRef<HTMLUListElement>(null);
+  // Double-click on the canvas: bring the sticker's row into view and focus it.
+  useEffect(() => {
+    if (!editRequest || editRequest.kind !== "overlay") return;
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-overlay="${editRequest.id}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+    row?.focus();
+  }, [editRequest]);
 
   const addLottie = async (file: File) => {
     setError(null);
@@ -132,11 +144,12 @@ export function PicturePanel() {
         {images.length === 0 ? (
           <EmptyState icon={<ImageIcon size={20} />} title="No images yet" />
         ) : (
-          <ul className="space-y-1">
+          <ul ref={listRef} className="space-y-1">
             {images.map((img) => (
               <li key={img.id}>
                 <button
                   type="button"
+                  data-overlay={img.id}
                   onClick={() => {
                     select({ kind: "overlay", id: img.id });
                     seek(img.start);
@@ -184,9 +197,15 @@ export function PicturePanel() {
                   </Button>
                 </div>
               ) : (
-                <Button variant="secondary" size="sm" className="w-full" onClick={removeBackground} title="RMBG-1.4 on this device; the first run downloads the model (~45 MB)">
-                  <Sparkles size={13} /> Remove background
-                </Button>
+                <>
+                  <Button variant="secondary" size="sm" className="w-full" onClick={removeBackground} title="MODNet on this device; the first run downloads the model (about 25 MB on WebGPU, 7 MB on WASM)">
+                    <Sparkles size={13} /> Remove background
+                  </Button>
+                  <p className="text-[11px] text-label-3">
+                    Runs on {mlDeviceLabel(matteDevice)}
+                    {matteDevice ? " (last run)" : ""}; works best on people and pets.
+                  </p>
+                </>
               ))}
           </PanelSection>
           <PanelSection title="Timing">

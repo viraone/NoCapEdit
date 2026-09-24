@@ -5,7 +5,7 @@ import { join, extname } from "node:path";
 
 const root = process.argv[2];
 const port = Number(process.argv[3] ?? 4173);
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".rnnn": "application/octet-stream", ".txt": "text/plain" };
+const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".rnnn": "application/octet-stream", ".txt": "text/plain", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json", ".mp4": "video/mp4", ".cube": "text/plain" };
 
 createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");

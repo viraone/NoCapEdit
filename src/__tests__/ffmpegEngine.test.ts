@@ -42,3 +42,51 @@ describe("encoderArgs", () => {
     expect(hdrToSdrChain()).toContain("tonemap=tonemap=hable");
   });
 });
+
+describe("multi-threaded core thread caps", () => {
+  it("keeps the planned thread count inside the pthread pool budget", async () => {
+    const { threadPlan, MT_THREAD_BUDGET } = await import("@/lib/ffmpegEngine");
+    for (const cores of [2, 4, 8, 18, 64]) {
+      for (const inputs of [1, 3, 6, 12, 20]) {
+        const p = threadPlan(inputs, cores);
+        expect(inputs * p.decoder + p.encoder + 2 * p.filter).toBeLessThanOrEqual(MT_THREAD_BUDGET);
+        expect(p.encoder).toBeGreaterThanOrEqual(2);
+        expect(p.decoder).toBeGreaterThanOrEqual(1);
+      }
+    }
+    expect(threadPlan(1, 18)).toEqual({ decoder: 2, encoder: 8, filter: 2 });
+    expect(threadPlan(1, 4)).toEqual({ decoder: 2, encoder: 4, filter: 1 });
+  });
+
+  it("caps every decoder, the encoder and the filter graphs", async () => {
+    const { withThreadCaps, countInputs } = await import("@/lib/ffmpegEngine");
+    const args = ["-hide_banner", "-y", "-ss", "2", "-t", "4", "-i", "/in/clip0.mp4", "-i", "/in/music.mp3", "-filter_complex", "[0:v]fps=30[v]", "-map", "[v]", "-c:v", "libx264", "out.mp4"];
+    expect(countInputs(args)).toBe(2);
+    const out = withThreadCaps(args, { decoder: 2, encoder: 8, filter: 2 });
+    expect(out.slice(0, 4)).toEqual(["-filter_threads", "2", "-filter_complex_threads", "2"]);
+    expect(out.join(" ")).toContain("-t 4 -threads 2 -i /in/clip0.mp4 -threads 2 -i /in/music.mp3");
+    expect(out.slice(-3)).toEqual(["-threads", "8", "out.mp4"]);
+  });
+
+  it("respects explicit thread options and the null muxer output", async () => {
+    const { withThreadCaps } = await import("@/lib/ffmpegEngine");
+    const probe = withThreadCaps(["-hide_banner", "-threads", "1", "-i", "/in/a.mp4", "-frames:v", "1", "-f", "null", "-"], { decoder: 2, encoder: 8, filter: 2 });
+    expect(probe.join(" ")).toContain("-threads 1 -i /in/a.mp4");
+    expect(probe.join(" ")).not.toContain("-threads 2");
+    expect(probe.slice(-3)).toEqual(["-threads", "8", "-"]);
+    const version = withThreadCaps(["-version"], { decoder: 2, encoder: 8, filter: 2 });
+    expect(version).toEqual(["-filter_threads", "2", "-filter_complex_threads", "2", "-version"]);
+  });
+
+  it("marks which core hung", async () => {
+    const { FFmpegHungError } = await import("@/lib/ffmpegEngine");
+    expect(new FFmpegHungError(true).multithreaded).toBe(true);
+    expect(new FFmpegHungError(false).message).toContain("stopped responding");
+  });
+
+  it("writes the edit list with delay_moov for fragmented output", () => {
+    const base = { width: 1280, height: 720, fps: 30, codec: "h264" as const, preset: "veryfast" as const, rateControl: { mode: "crf" as const, crf: 23 }, audioBitrateKbps: 160, gopSeconds: 2, hdr: "auto" as const };
+    const args = encoderArgs(base, { fragmented: true, tsOffset: 0, duration: 10 }).join(" ");
+    expect(args).toContain("-movflags frag_keyframe+empty_moov+default_base_moof+delay_moov -avoid_negative_ts disabled");
+  });
+});

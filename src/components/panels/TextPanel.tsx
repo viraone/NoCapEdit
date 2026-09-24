@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useRef } from "react";
 import { Plus, Trash2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
@@ -25,6 +26,17 @@ export function TextPanel() {
   const duration = projectDuration(project.clips);
   const texts = project.overlays.filter((o): o is TextOverlay => o.kind === "text");
   const selected = selection?.kind === "overlay" ? texts.find((t) => t.id === selection.id) ?? null : null;
+  const editRequest = useEditor((s) => s.editRequest);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const selectedId = selected?.id ?? null;
+  // Double-click on the canvas: put the caret in the text with everything selected.
+  useEffect(() => {
+    if (!editRequest || editRequest.kind !== "overlay" || editRequest.id !== selectedId) return;
+    const el = textRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [editRequest, selectedId]);
 
   const add = (variant: "title" | "banner") => {
     const t = useEditor.getState().currentTime;
@@ -88,7 +100,7 @@ export function TextPanel() {
       {selected && (
         <>
           <PanelSection title="Content" right={<Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => remove(selected.id)} title="Delete"><Trash2 size={13} /></Button>}>
-            <textarea className={textareaClass} value={selected.text} onChange={(e) => edit((o) => void (o.text = e.target.value), false)} onBlur={() => edit(() => undefined)} rows={2} />
+            <textarea ref={textRef} data-content-editor="text" className={textareaClass} value={selected.text} onChange={(e) => edit((o) => void (o.text = e.target.value), false)} onBlur={() => edit(() => undefined)} rows={2} />
             <Field label="Font">
               <Select value={selected.fontFamily} onChange={(e) => edit((o) => void (o.fontFamily = e.target.value as FontKey))} style={{ fontFamily: fontFamily(selected.fontFamily) }}>
                 {FONT_KEYS.map((k) => (

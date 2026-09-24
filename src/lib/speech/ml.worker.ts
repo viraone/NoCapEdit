@@ -5,6 +5,7 @@
  * WebGPU when available, otherwise on WASM. Nothing leaves the device.
  */
 import { pipeline, env, WhisperTextStreamer, AutoProcessor, AutoModel, AutoModelForAudioFrameClassification, RawImage } from "@huggingface/transformers";
+import { cluster, mergeSmallClusters } from "./diarizeCluster";
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -70,21 +71,60 @@ async function detectDevice(pref: "auto" | Device): Promise<Device> {
   }
 }
 
+type DownloadEvent = { status?: string; file?: string; progress?: number; loaded?: number; total?: number };
+
+/**
+ * Turns Transformers.js download events into one progress value. Files are
+ * weighted by size when known, so a 25 MB ONNX file dominates the bar instead
+ * of a handful of finished JSON files freezing it at a stale percentage.
+ */
 function downloadProgress(id: number, stage: string) {
-  const seen = new Map<string, number>();
-  return (p: { status?: string; file?: string; progress?: number; loaded?: number; total?: number }) => {
+  const seen = new Map<string, { loaded: number; total: number; pct: number }>();
+  return (p: DownloadEvent) => {
     if (p.status === "progress" && p.file) {
-      seen.set(p.file, p.progress ?? 0);
+      seen.set(p.file, { loaded: p.loaded ?? 0, total: p.total ?? 0, pct: p.progress ?? 0 });
       const files = [...seen.values()];
-      const avg = files.reduce((a, b) => a + b, 0) / files.length / 100;
+      const sized = files.filter((f) => f.total > 0);
+      const overall = sized.length === files.length ? sized.reduce((a, f) => a + f.loaded, 0) / Math.max(1, sized.reduce((a, f) => a + f.total, 0)) : files.reduce((a, f) => a + f.pct, 0) / files.length / 100;
       const mb = p.total ? ` (${Math.round((p.total / 1_048_576) * 10) / 10} MB)` : "";
-      post({ type: "progress", id, stage, message: `Downloading ${p.file}${mb}`, progress: avg });
+      post({ type: "progress", id, stage, message: `Downloading ${p.file}${mb}`, progress: Math.min(0.999, overall) });
     } else if (p.status === "ready") {
       post({ type: "progress", id, stage, message: "Model ready", progress: 1 });
     } else if (p.status === "initiate" && p.file) {
       post({ type: "progress", id, stage, message: `Fetching ${p.file}`, progress: null });
     }
   };
+}
+
+/** Seconds of silence (no download event, no completion) after which a model load is reported as stalled. */
+const LOAD_WATCHDOG_SECONDS = 60;
+
+/**
+ * Runs a model load under a watchdog: if nothing happens for LOAD_WATCHDOG_SECONDS
+ * the promise rejects with a visible error instead of leaving the panel stuck.
+ * Progress events reset the timer, so slow downloads are not cut off.
+ */
+async function withLoadWatchdog<T>(id: number, stage: string, load: (progress: (p: DownloadEvent) => void) => Promise<T>): Promise<T> {
+  const report = downloadProgress(id, stage);
+  let lastEventAt = performance.now();
+  const onProgress = (p: DownloadEvent) => {
+    lastEventAt = performance.now();
+    report(p);
+  };
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const watchdog = new Promise<never>((_, reject) => {
+    timer = setInterval(() => {
+      if (performance.now() - lastEventAt > LOAD_WATCHDOG_SECONDS * 1000) {
+        clearInterval(timer);
+        reject(new Error(`Loading the model stalled: no progress for ${LOAD_WATCHDOG_SECONDS} s. Check the connection and try again.`));
+      }
+    }, 2000);
+  });
+  try {
+    return await Promise.race([load(onProgress), watchdog]);
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 async function getAsr(model: string, device: Device, id: number): Promise<AsrPipe> {
@@ -234,46 +274,6 @@ type Model = ((inputs: Record<string, unknown>) => Promise<Record<string, { data
 let segModels: { processor: SegProcessor; model: Model } | null = null;
 let embModels: { processor: (audio: Float32Array) => Promise<Record<string, unknown>>; model: Model } | null = null;
 
-function cosineDistance(a: Float32Array, b: Float32Array): number {
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  return 1 - dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-9);
-}
-
-/** Average-linkage agglomerative clustering on cosine distance. */
-function cluster(embeddings: Float32Array[], threshold: number, maxClusters: number): number[] {
-  const n = embeddings.length;
-  let clusters: number[][] = embeddings.map((_, i) => [i]);
-  const dist = (a: number[], b: number[]) => {
-    let s = 0;
-    for (const i of a) for (const j of b) s += cosineDistance(embeddings[i], embeddings[j]);
-    return s / (a.length * b.length);
-  };
-  while (clusters.length > 1) {
-    let best = { d: Infinity, a: -1, b: -1 };
-    for (let a = 0; a < clusters.length; a++)
-      for (let b = a + 1; b < clusters.length; b++) {
-        const d = dist(clusters[a], clusters[b]);
-        if (d < best.d) best = { d, a, b };
-      }
-    if (best.d > threshold && clusters.length <= maxClusters) break;
-    const merged = [...clusters[best.a], ...clusters[best.b]];
-    clusters = clusters.filter((_, i) => i !== best.a && i !== best.b);
-    clusters.push(merged);
-  }
-  // Order speakers by first appearance.
-  clusters.sort((a, b) => Math.min(...a) - Math.min(...b));
-  const labels = new Array<number>(n).fill(0);
-  clusters.forEach((c, label) => c.forEach((i) => (labels[i] = label)));
-  return labels;
-}
-
 async function diarize(req: Extract<MlRequest, { type: "diarize" }>) {
   const progress = downloadProgress(req.id, "download");
   if (!segModels) {
@@ -327,7 +327,9 @@ async function diarize(req: Extract<MlRequest, { type: "diarize" }>) {
     const tensor = out.embeddings ?? out.last_hidden_state ?? Object.values(out)[0];
     embeddings.push(new Float32Array(tensor.data));
   }
-  const labels = cluster(embeddings, 0.62, Math.max(1, req.maxSpeakers));
+  // Clusters owning under a second of speech are artefacts (one odd-sounding
+  // turn of a real speaker), so they are folded into the nearest speaker.
+  const labels = mergeSmallClusters(cluster(embeddings, 0.62, Math.max(1, req.maxSpeakers)), embeddings, usable.map((t) => t.end - t.start), 1);
   const segments: DiarizeSegment[] = usable.map((t, i) => ({ start: t.start, end: t.end, speaker: labels[i] }));
   segments.sort((a, b) => a.start - b.start);
   const compact: DiarizeSegment[] = [];
@@ -360,26 +362,57 @@ async function tts(req: Extract<MlRequest, { type: "tts" }>) {
 }
 
 // ---------------------------------------------------------------------------
-// Background removal (RMBG-1.4) → alpha mask.
+// Background removal → alpha mask. MODNet (Xenova/modnet) is one of the
+// checkpoints the v4 `background-removal` pipeline accepts natively; RMBG-1.4
+// declares an unregistered model type and no longer loads in Transformers.js 4.
 // ---------------------------------------------------------------------------
 
-type MattePipe = ((img: unknown) => Promise<Array<{ data: Uint8Array; width: number; height: number; channels: number }>>) & { dispose: () => Promise<void> };
-let mattePipe: MattePipe | null = null;
+export const MATTE_MODEL = "Xenova/modnet";
+
+interface MatteImage {
+  data: Uint8Array | Uint8ClampedArray;
+  width: number;
+  height: number;
+  channels: number;
+}
+type MattePipe = ((img: unknown) => Promise<MatteImage | MatteImage[]>) & { dispose: () => Promise<void> };
+let matteState: { device: Device; pipe: MattePipe } | null = null;
+let matteLoading: Promise<{ device: Device; pipe: MattePipe }> | null = null;
+
+async function getMatte(id: number): Promise<{ device: Device; pipe: MattePipe }> {
+  if (matteState) return matteState;
+  if (!matteLoading) {
+    matteLoading = (async () => {
+      const device = await detectDevice("auto");
+      post({ type: "progress", id, stage: "load", message: `Loading background-removal model on ${device}`, progress: null });
+      const pipe = (await withLoadWatchdog(id, "download", (progress_callback) =>
+        pipeline("background-removal", MATTE_MODEL, { device, dtype: device === "webgpu" ? "fp32" : "q8", progress_callback } as never),
+      )) as unknown as MattePipe;
+      return { device, pipe };
+    })();
+  }
+  try {
+    matteState = await matteLoading;
+    return matteState;
+  } catch (e) {
+    // A stalled or failed load must not poison later attempts.
+    matteLoading = null;
+    throw e;
+  }
+}
 
 async function matte(req: Extract<MlRequest, { type: "matte" }>) {
-  if (!mattePipe) {
-    const device = await detectDevice("auto");
-    post({ type: "progress", id: req.id, stage: "load", message: `Loading background-removal model on ${device}`, progress: null });
-    mattePipe = (await pipeline("background-removal", "briaai/RMBG-1.4", { device, dtype: device === "webgpu" ? "fp32" : "q8", progress_callback: downloadProgress(req.id, "download") } as never)) as unknown as MattePipe;
-  }
+  const { device, pipe } = await getMatte(req.id);
   const image = await RawImage.fromBlob(req.image);
-  const [out] = await mattePipe(image);
+  post({ type: "progress", id: req.id, stage: "matte", message: `Removing the background on ${device}`, progress: null });
+  const result = await pipe(image);
+  const out = Array.isArray(result) ? result[0] : result;
   const { width, height, channels, data } = out;
   const alpha = new Uint8Array(width * height);
   if (channels === 4) for (let i = 0, j = 3; i < alpha.length; i++, j += 4) alpha[i] = data[j];
   else if (channels === 1) alpha.set(data.subarray(0, alpha.length));
   else for (let i = 0; i < alpha.length; i++) alpha[i] = data[i * channels];
-  scope.postMessage({ type: "result", id: req.id, payload: { alpha, width, height } }, [alpha.buffer]);
+  scope.postMessage({ type: "result", id: req.id, payload: { alpha, width, height, device } }, [alpha.buffer]);
 }
 
 scope.onmessage = async (event: MessageEvent<MlRequest>) => {

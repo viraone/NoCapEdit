@@ -1,11 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ALL_FONT_CLASSES } from "@/lib/fonts";
+import { withBase } from "@/lib/basePath";
 
 export const metadata: Metadata = {
   title: "NoCap Edit",
   description: "Browser-native editor that turns raw recordings into captioned, platform-shaped vertical clips. Everything runs on your device.",
   applicationName: "NoCap Edit",
+  icons: {
+    icon: [
+      { url: withBase("/favicon.ico"), sizes: "16x16 32x32 48x48" },
+      { url: withBase("/icon-192.png"), sizes: "192x192", type: "image/png" },
+    ],
+    apple: withBase("/apple-touch-icon.png"),
+  },
+  manifest: withBase("/manifest.webmanifest"),
 };
 
 export const viewport: Viewport = {

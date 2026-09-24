@@ -11,6 +11,7 @@ import type { Frame } from "@/lib/captions/renderer";
 import { computePlacement } from "@/lib/models/placement";
 import { clamp } from "@/lib/utils/math";
 import { withBase } from "@/lib/basePath";
+import { seekFrame } from "@/lib/media/seekFrame";
 
 export const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
 const WASM_BASE = withBase("/mediapipe/wasm");
@@ -33,21 +34,6 @@ export interface ReframeOptions {
   fps?: number;
   onProgress?: (message: string, progress: number | null) => void;
   signal?: AbortSignal;
-}
-
-function seek(video: HTMLVideoElement, time: number): Promise<void> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      video.removeEventListener("seeked", finish);
-      resolve();
-    };
-    video.addEventListener("seeked", finish);
-    setTimeout(finish, 1500);
-    video.currentTime = time;
-  });
 }
 
 async function loadDetector(onProgress?: ReframeOptions["onProgress"]) {
@@ -79,11 +65,17 @@ export async function detectSubjectPath(o: ReframeOptions): Promise<SubjectSampl
   const samples: SubjectSample[] = [];
   const { inPoint, outPoint } = o.clip;
   const total = Math.max(1, Math.ceil((outPoint - inPoint) * fps));
+  let skipped = 0;
   try {
     for (let i = 0; i <= total; i++) {
       if (o.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
       const t = Math.min(outPoint, inPoint + i / fps);
-      await seek(video, t);
+      // A seek that times out leaves the previous frame on screen; detecting
+      // on it would pin the subject to a stale position, so the sample is skipped.
+      if (!(await seekFrame(video, t))) {
+        skipped++;
+        continue;
+      }
       const result = detector.detect(video);
       const best = result.detections
         .map((d) => d.boundingBox)
@@ -97,7 +89,7 @@ export async function detectSubjectPath(o: ReframeOptions): Promise<SubjectSampl
           size: best.width / video.videoWidth,
         });
       }
-      o.onProgress?.(`Scanning ${Math.round(t - inPoint)}s / ${Math.round(outPoint - inPoint)}s · ${samples.length} detections`, i / total);
+      o.onProgress?.(`Scanning ${Math.round(t - inPoint)}s / ${Math.round(outPoint - inPoint)}s · ${samples.length} detections${skipped ? ` · ${skipped} skipped` : ""}`, i / total);
     }
   } finally {
     detector.close();

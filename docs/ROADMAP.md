@@ -29,6 +29,6 @@ deliberately left as a plan, with the reason.
 | Audio EQ / compressor / normalise | Done | presets in `lib/audio/fx.ts` mapped to Web Audio (preview) and ffmpeg (export) |
 | LUTs, scopes, colour | Done | WebGL grader for preview, `lut3d` + `eq` on export; histogram + vectorscope preview-only |
 | Lottie / animated lower thirds | Done | dotlottie-web with deterministic `setFrame`; animated text entrances |
-| Background removal (stickers) | Done | `background-removal` pipeline (RMBG-1.4) in the ML worker |
+| Background removal (stickers) | Done | `background-removal` pipeline (`Xenova/modnet`, 25 MB fp32 on WebGPU / 7 MB q8 on WASM) in the ML worker; RMBG-1.4 no longer loads in Transformers.js 4 |
 | Video matting (subject cut-out) | Done (offline pass) | masks at 4–15 fps stored as a compressed asset; compositor applies nearest mask; "behind the subject" layer |
 | In-browser Stable Diffusion B-roll | Not planned | 1.5 GB+ model, desktop GPU only, seconds per image; not a fit for the zero-cost mobile-friendly goal |

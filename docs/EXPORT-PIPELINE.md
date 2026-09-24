@@ -16,28 +16,35 @@ Every one of them was found the hard way; keep them when refactoring.
 ## Segments and streaming
 
 `planSegments()` cuts the timeline into ~20 s pieces, never inside a transition
-(a margin keeps `xfade` fed). Each piece is a self-contained render whose output
-is a fragmented MP4 (`frag_keyframe+empty_moov+default_base_moof`). The engine
-splices them into one file while streaming to the sink:
+(a margin keeps `xfade` fed). Cuts snap to `segmentGrid(fps)`, the smallest
+period that is a whole number of video frames *and* of 1024-sample AAC frames
+(0.533 s at 30/60 fps), so every segment's audio track ends exactly on a frame
+boundary. Each piece is a self-contained render whose output is a fragmented
+MP4 (`frag_keyframe+empty_moov+default_base_moof+delay_moov`; `delay_moov`
+holds the moov until the first fragment so it can carry the audio edit list).
+The engine splices them into one file while streaming to the sink:
 
 1. Segment 0 keeps `ftyp`+`moov` (with `mvex`), trailing `mfra` is dropped.
 2. Later segments drop `ftyp`/`moov`/`sidx`/`mfra`; only `moof`+`mdat` remain.
 3. `mfhd` sequence numbers are renumbered continuously.
 4. **Fragment decode times are rewritten.** The mov muxer normalises every file
-   to start at decode time 0 and encodes the real start in an edit list that
-   lives in `moov`, so `-output_ts_offset`, `setpts` shifts and friends all end
-   up as tfdt 0. `shiftFragments()` adds `start × timescale` to every `tfdt`
-   using the timescales read from segment 0's `moov` (`parseTrackTiming`).
+   to start at decode time 0, so `-output_ts_offset`, `setpts` shifts and friends
+   all end up as tfdt 0. `shiftFragments()` adds `start × timescale` to every
+   `tfdt` using the timescales read from segment 0's `moov` (`parseTrackTiming`).
+   Segment 0's edit list (audio `media_time` 1024 = the AAC priming) stays in
+   the retained `moov` and applies to the whole spliced track.
 5. Video: `-bf 0` for segmented renders so decode order has no delay at seams,
    a final `fps=` filter regularises timestamps after `xfade`/`overlay`, and
    `-avoid_negative_ts disabled` stops the muxer from stretching the first frame
    by one audio frame.
-6. Audio: each AAC segment carries 1024 samples of encoder priming at its head.
-   Segment 0's edit list hides its own; later segments have no edit list, so
-   the exporter shortens every non-final segment's audio by exactly one AAC
-   frame (`audioTailTrim`) and the priming frame of the next segment fills the
-   gap. Result: monotonic timestamps, no drift, a 21 ms near-silent dip at each
-   seam that is inaudible in speech content.
+6. Audio: each AAC segment carries 1024 samples of encoder priming at its head,
+   hidden by the retained edit list. The exporter shortens every non-final
+   segment's audio by exactly one AAC frame (`atrim=end_sample`, `audioTailTrim`)
+   and the priming frame of the next segment fills the gap. Result: contiguous
+   `tfdt` on both tracks, 0 ms A/V offset at every seam (measured with the
+   flash/click fixture), and a 21 ms near-silent dip at each seam that is
+   inaudible in speech content. Without `delay_moov` the priming played as
+   content and audio lagged by 21–26 ms in segmented exports.
 
 `src/__tests__/nativeParity.test.ts` runs the generated commands through the
 native ffmpeg binary and validates the spliced file (duration, clean decode,
@@ -49,17 +56,28 @@ packet continuity). Run it whenever the graph or the encoder flags change.
   runtime calls `abort()` and the next `exec` hangs after printing the stream
   mapping. Probing therefore uses `-i file -frames:v 1 -frames:a 1 -f null -`
   (exit 0), and `FFmpegEngine.exec` recycles the worker after a failure.
-- Some environments (headless Chromium with SwiftShader was one) deadlock the
-  threaded core on the first decode. A watchdog (`WATCHDOG_SECONDS` of log
-  silence) throws `FFmpegHungError`; the exporter switches to the single-threaded
-  core (`preferSingleThread`), resets the sink and restarts the whole export.
+- **The threaded core deadlocks when a command needs more pthreads than the
+  pre-spawned pool (32).** `-threads auto` on a many-core machine asks for far
+  more (x264 alone wants 1.5× the cores, every decoder and filter graph a full
+  set); the extra worker can never finish loading because the class worker is
+  blocked inside the synchronous exec, so the command hangs after "Stream
+  mapping". `FFmpegEngine.exec` therefore inserts a budgeted `threadPlan()`
+  (`-threads` per input, for the encoder, and `-filter_threads`) into every
+  command on the threaded core. With the caps the probe returns in ~40 ms and a
+  720p encode runs ~3× faster than single-threaded.
+- Watchdogs cover both cores (`WATCHDOG_SECONDS` = 40 s threaded, 180 s
+  single-threaded, the latter because slow presets are quiet while filling
+  lookahead). A hang throws `FFmpegHungError`; `render()` reloads the engine and
+  resumes from the segment that stalled (earlier segments stay in the sink), and
+  a threaded hang also persists `reelflow.singleThread=1` so later sessions skip
+  the wait. The Export panel shows the engine actually used.
 - "Aborted()" in the ffmpeg log is normal at the end of every command: the core
   implements `exit()` with a thrown abort that the wrapper swallows.
 - The class worker and both cores are served same-origin from `public/ffmpeg`
   (copied by `scripts/copy-ffmpeg.mjs`); the loader falls back to unpkg when the
   32 MB wasm is missing (Cloudflare Pages' 25 MiB file limit).
-- Inputs are mounted with WORKERFS (no copy into the wasm heap); outputs are
-  read back per segment and deleted immediately.
+- Inputs are mounted with WORKERFS (no copy into the wasm heap) on both cores;
+  outputs are read back per segment and deleted immediately.
 
 ## Debugging
 

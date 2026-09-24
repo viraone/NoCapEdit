@@ -39,15 +39,24 @@ interface Job {
   partial?: string;
 }
 
-function CueText({ value, onCommit, placeholder, className }: { value: string; onCommit: (v: string) => void; placeholder?: string; className?: string }) {
+function CueText({ value, onCommit, placeholder, className, focusNonce }: { value: string; onCommit: (v: string) => void; placeholder?: string; className?: string; focusNonce?: number }) {
   const [text, setText] = useState(value);
   const [prevValue, setPrevValue] = useState(value);
   if (prevValue !== value) {
     setPrevValue(value);
     setText(value);
   }
+  const ref = useRef<HTMLInputElement>(null);
+  // A canvas double-click asks for the caret here with the text selected.
+  useEffect(() => {
+    if (!focusNonce) return;
+    ref.current?.focus();
+    ref.current?.select();
+  }, [focusNonce]);
   return (
     <input
+      ref={ref}
+      data-content-editor="cue"
       className={cx(inputClass, "h-7 text-[13px]", className)}
       value={text}
       placeholder={placeholder}
@@ -62,6 +71,7 @@ function CueText({ value, onCommit, placeholder, className }: { value: string; o
 export function SubtitlesPanel() {
   const project = useProject();
   const selection = useEditor((s) => s.selection);
+  const editRequest = useEditor((s) => s.editRequest);
   const activeCueId = useEditor((s) => {
     const t = s.currentTime;
     return s.project?.cues.find((c) => t >= c.start && t < c.end)?.id ?? null;
@@ -492,7 +502,7 @@ export function SubtitlesPanel() {
                       </button>
                     </span>
                   </div>
-                  <CueText value={cue.text} onCommit={(v) => editCue(cue.id, (c) => void (c.text = v))} />
+                  <CueText value={cue.text} onCommit={(v) => editCue(cue.id, (c) => void (c.text = v))} focusNonce={editRequest?.kind === "cue" && editRequest.id === cue.id ? editRequest.nonce : undefined} />
                   {project.captions.showTranslated && (
                     <CueText className="mt-1 text-label-2" value={cue.translatedText ?? ""} placeholder="Translation" onCommit={(v) => editCue(cue.id, (c) => void (c.translatedText = v))} />
                   )}

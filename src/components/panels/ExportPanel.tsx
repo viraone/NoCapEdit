@@ -1,15 +1,15 @@
 "use client";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Download, Square, CheckCircle2, FileText, Cpu, HardDrive, Sparkles } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
 import { getFormat } from "@/lib/models/formats";
 import { projectDuration } from "@/lib/models/timeline";
 import { getAsset } from "@/lib/storage/db";
-import { exportProject, DEFAULT_EXPORT_OPTIONS, outputFrame, type ExportOptions, type ExportProgress, type ExportResult } from "@/lib/ffmpeg/exporter";
+import { exportProject, plannedSegments, DEFAULT_EXPORT_OPTIONS, outputFrame, type ExportOptions, type ExportProgress, type ExportResult } from "@/lib/ffmpeg/exporter";
 import { requestDiskSink, supportsDiskStreaming, type OutputSink } from "@/lib/ffmpeg/sinks";
-import { supportsMultithread } from "@/lib/ffmpeg/loader";
-import { RESOLUTION_PRESETS, type X264Preset } from "@/lib/ffmpegEngine";
+import { setSingleThreadPreference, singleThreadPreferred, supportsMultithread, type FFmpegInfo } from "@/lib/ffmpeg/loader";
+import { ffmpegEngine, RESOLUTION_PRESETS, type X264Preset } from "@/lib/ffmpegEngine";
 import { GlTransitionRenderer } from "@/lib/gl/transitions";
 import { needsCompositor } from "@/lib/playback/compositor";
 import { downloadBlob, safeFilename } from "@/lib/utils/download";
@@ -50,15 +50,33 @@ const PRESET_CHOICES: { id: X264Preset; label: string }[] = [
   { id: "slow", label: "Best quality (slow)" },
 ];
 
+// Browser capabilities only exist on the client. Each is read through
+// useSyncExternalStore with a server snapshot of false, so the pre-rendered
+// HTML and the first client render agree (no hydration mismatch) and the real
+// value appears right after hydration.
+const noSubscribe = () => () => {};
+let webglSupport: boolean | null = null;
+const readWebgl = () => (webglSupport ??= GlTransitionRenderer.isSupported());
+const no = () => false;
+
 export function ExportPanel() {
   const project = useProject();
   const assetUrls = useEditor((s) => s.assetUrls);
   const [opts, setOpts] = useState<ExportOptions>(DEFAULT_EXPORT_OPTIONS);
-  const [toDisk, setToDisk] = useState(supportsDiskStreaming());
+  const disk = useSyncExternalStore(noSubscribe, supportsDiskStreaming, no);
+  const multithread = useSyncExternalStore(noSubscribe, supportsMultithread, no);
+  /** The threaded core stalled on this device before; every export is single-threaded now. */
+  const singleThreadForced = useSyncExternalStore(noSubscribe, singleThreadPreferred, no);
+  const webgl = useSyncExternalStore(noSubscribe, readWebgl, no);
+  const [toDiskChoice, setToDiskChoice] = useState<boolean | null>(null);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [result, setResult] = useState<ExportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The engine that actually ran (or is running) the latest export. */
+  const [engine, setEngine] = useState<FFmpegInfo | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const toDisk = toDiskChoice ?? disk;
+  const setToDisk = setToDiskChoice;
 
   const format = getFormat(project.formatId);
   const duration = projectDuration(project.clips);
@@ -66,7 +84,14 @@ export function ExportPanel() {
   const base = safeFilename(project.name);
   const hasTranslation = project.cues.some((c) => c.translatedText);
   const compositorNeeded = needsCompositor(project, 0, duration);
-  const webgl = typeof window !== "undefined" && GlTransitionRenderer.isSupported();
+  const planned = useMemo(() => plannedSegments(project, { segmentSeconds: opts.segmentSeconds, fps: opts.fps }), [project, opts.segmentSeconds, opts.fps]);
+  const segmentSummary = planned.length > 1 ? `${planned.length} segments` : "single pass";
+  const retryMultithread = () => {
+    setSingleThreadPreference(false);
+    ffmpegEngine.preferSingleThread = false;
+    ffmpegEngine.cancel();
+    setEngine(null);
+  };
 
   const run = async () => {
     setError(null);
@@ -85,6 +110,7 @@ export function ExportPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     setProgress({ stage: "preparing", progress: 0, message: "Starting" });
+    setEngine(null);
     try {
       const imageIds = project.overlays.filter((o) => o.kind === "image").map((o) => (o as { assetId: string }).assetId);
       const images = await loadImages([...new Set(imageIds)]);
@@ -92,10 +118,14 @@ export function ExportPanel() {
         project,
         { getBlob: async (id) => (await getAsset(id))?.blob, getImage: (id) => images.get(id), urls: assetUrls },
         opts,
-        setProgress,
+        (p) => {
+          setProgress(p);
+          if (p.engine) setEngine(p.engine);
+        },
         controller.signal,
         sink ?? undefined,
       );
+      setEngine(res.info);
       setResult(res);
       if (res.video) downloadBlob(res.video, res.fileName);
       if (res.srt) downloadBlob(res.srt, `${base}.srt`);
@@ -190,10 +220,20 @@ export function ExportPanel() {
           checked={toDisk}
           onChange={setToDisk}
           label="Stream to a file on disk"
-          description={supportsDiskStreaming() ? "Uses the File System Access API; needed for long 4K renders" : "Not supported by this browser; the file downloads when done"}
-          disabled={running || !supportsDiskStreaming()}
+          description={disk ? "Uses the File System Access API; needed for long 4K renders" : "Not supported by this browser; the file downloads when done"}
+          disabled={running || !disk}
         />
-        <Field label="Segment length" hint="Each segment is encoded, then written out before the next starts, so memory stays flat.">
+        <Field
+          label="Segment length"
+          right={segmentSummary}
+          hint={
+            planned.length > 1
+              ? `This export renders ${planned.length} segments; each is encoded, then written out before the next starts, so memory stays flat.`
+              : opts.segmentSeconds > 0
+                ? `This export is shorter than 1.5 segments, so it renders in a single pass (a short tail is merged into the previous segment).`
+                : "The whole video is encoded in one pass; fine for short videos."
+          }
+        >
           <Select value={String(opts.segmentSeconds)} onChange={(e) => set({ segmentSeconds: Number(e.target.value) })} disabled={running}>
             <option value="0">Single pass (short videos)</option>
             <option value="10">10 s segments</option>
@@ -208,17 +248,40 @@ export function ExportPanel() {
             <option value="compositor">Canvas compositor (frame by frame)</option>
           </Select>
         </Field>
+        {(opts.renderMode === "compositor" || (opts.renderMode === "auto" && compositorNeeded)) && (
+          <Field label="Compositor frames" hint="Frames are handed to the encoder as images. JPEG is fast; PNG keeps every pixel exact at the cost of a slower, larger render.">
+            <Select value={opts.intermediate} onChange={(e) => set({ intermediate: e.target.value as ExportOptions["intermediate"] })} disabled={running}>
+              <option value="jpeg">JPEG (fast)</option>
+              <option value="png">PNG, lossless (slower)</option>
+            </Select>
+          </Field>
+        )}
       </PanelSection>
       <PanelSection>
         <div className="space-y-1 text-[11px] text-label-3">
           <p className="flex items-center gap-1.5">
-            <Cpu size={12} /> {supportsMultithread() ? "Multi-threaded encoder available" : "Single-threaded encoder (page is not cross-origin isolated)"}
+            <Cpu size={12} />
+            {engine
+              ? `${running ? "Encoding with" : "Last export used"} the ${engine.multithreaded ? "multi-threaded" : "single-threaded"} engine`
+              : singleThreadForced
+                ? "Single-threaded engine (the multi-threaded engine stalled on this device before)"
+                : multithread
+                  ? "Multi-threaded engine available"
+                  : "Single-threaded engine (page is not cross-origin isolated)"}
           </p>
+          {singleThreadForced && (
+            <p className="flex items-center gap-1.5 text-sys-orange">
+              Multi-threaded engine unavailable on this device.
+              <button type="button" className="underline hover:text-white" onClick={retryMultithread} disabled={running}>
+                Try it again
+              </button>
+            </p>
+          )}
           <p className="flex items-center gap-1.5">
             <Sparkles size={12} /> {webgl ? "WebGL2 transitions available" : "WebGL2 unavailable: GPU transitions fall back to xfade"}
           </p>
           <p className="flex items-center gap-1.5">
-            <HardDrive size={12} /> {formatTime(duration)} of video · {frame.width}×{frame.height} @ {opts.fps} fps
+            <HardDrive size={12} /> {formatTime(duration)} of video · {frame.width}×{frame.height} @ {opts.fps} fps · {segmentSummary}
           </p>
         </div>
         {!running ? (

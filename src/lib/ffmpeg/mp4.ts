@@ -92,10 +92,13 @@ export function countFragments(data: Uint8Array): number {
 }
 
 // ---------------------------------------------------------------------------
-// Timestamp shifting for spliced segments. The mov muxer starts every file at
-// decode time 0 and encodes the real start (and encoder priming/B-frame delay)
-// in an edit list that lives in `moov`, which later segments lose. We therefore
-// rewrite each fragment's tfdt: new = old + start * timescale - editOffset.
+// Timestamp shifting for spliced segments. The mov muxer starts every segment
+// at decode time 0; the retained moov of the first segment carries the edit
+// list (AAC priming of 1024 samples, written thanks to delay_moov), and that
+// edit list applies to the whole spliced track. Every segment's own priming
+// frame sits at the head of its media timeline exactly like the first one, so
+// a fragment only needs new = old + start * timescale to line up: the edit
+// list then places its content at `start` on the presentation timeline.
 // ---------------------------------------------------------------------------
 
 export interface TrackTiming {
@@ -158,10 +161,12 @@ export function parseTrackTiming(init: Uint8Array): Map<number, TrackTiming> {
 }
 
 /**
- * Shifts every fragment's baseMediaDecodeTime in place by `seconds`.
- * Video fragments also subtract the edit-list delay so presentation stays
- * aligned; audio keeps its priming frame (the exporter shortens the previous
- * segment's audio by one frame so the priming slots in without overlap).
+ * Shifts every fragment's baseMediaDecodeTime in place by `seconds` (rounded
+ * to whole track units). Audio keeps its priming frame: the exporter shortens
+ * the previous segment's audio by one AAC frame so it slots in without
+ * overlap, and the first segment's edit list hides it on playback. Segment
+ * starts snap to whole AAC and video frames (see segments.ts) so the rounding
+ * here is exact and the decode timeline stays contiguous.
  */
 export function shiftFragments(data: Uint8Array, seconds: number, tracks: Map<number, TrackTiming>): void {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -175,7 +180,7 @@ export function shiftFragments(data: Uint8Array, seconds: number, tracks: Map<nu
         if (child.type === "tfdt") {
           const timing = tracks.get(trackId);
           if (!timing) continue;
-          const delta = Math.round(seconds * timing.timescale) - (timing.kind === "vide" ? timing.editOffset : 0);
+          const delta = Math.round(seconds * timing.timescale);
           const p = child.start + child.headerSize;
           const version = data[p];
           if (version === 1) {

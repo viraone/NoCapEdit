@@ -39,7 +39,7 @@ import {
 } from "@/lib/ffmpegEngine";
 import type { FFmpegInfo } from "./loader";
 import { AAC_PRIMING_SECONDS, buildFilterGraph, buildInputArgs, type ClipInputPlan, type ExportFiles, type ExportPlan, type MusicPlan, type VoiceoverPlan } from "./filters";
-import { planSegments } from "./segments";
+import { planSegments, segmentGrid } from "./segments";
 import { createBlobSink, type OutputSink } from "./sinks";
 
 export type ExportResolution = "native" | "720" | "1080" | "1440" | "2160";
@@ -58,6 +58,8 @@ export interface ExportOptions {
   /** Target length of each streamed segment (0 = single pass). */
   segmentSeconds: number;
   renderMode: "auto" | "filters" | "compositor";
+  /** Frame format handed to ffmpeg on the compositor path: JPEG (q 0.93, fast) or lossless PNG. */
+  intermediate: "jpeg" | "png";
 }
 
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
@@ -73,6 +75,7 @@ export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
   sidecars: true,
   segmentSeconds: 20,
   renderMode: "auto",
+  intermediate: "jpeg",
 };
 
 export type ExportStage = "loading" | "preparing" | "overlays" | "frames" | "encoding" | "writing" | "finalizing" | "done";
@@ -81,6 +84,8 @@ export interface ExportProgress {
   stage: ExportStage;
   progress: number;
   message: string;
+  /** The ffmpeg engine actually running the export, once it is loaded. */
+  engine?: FFmpegInfo;
 }
 
 export interface ExportResult {
@@ -197,14 +202,21 @@ export async function exportProject(
   try {
     return await runExport(project, assets, options, onProgress, signal, sink);
   } catch (e) {
-    if (!(e instanceof FFmpegHungError) || ffmpegEngine.preferSingleThread || signal?.aborted) throw e;
-    // The threaded core deadlocked: switch to the single-threaded core and start over.
+    // Hangs inside a segment resume on a fresh engine in ffmpegEngine.render();
+    // this catches a hang before the first segment (probing) on the threaded
+    // core, where nothing has been written yet and a clean restart is cheapest.
+    if (!(e instanceof FFmpegHungError) || !e.multithreaded || signal?.aborted) throw e;
     ffmpegEngine.preferSingleThread = true;
     ffmpegEngine.cancel();
     await sink?.reset();
     onProgress({ stage: "loading", progress: 0, message: "Multi-threaded engine stalled; restarting single-threaded" });
     return runExport(project, assets, options, onProgress, signal, sink);
   }
+}
+
+/** The segments an export will render, using the same plan as the exporter (for the panel summary). */
+export function plannedSegments(project: VideoProject, opts: Pick<ExportOptions, "segmentSeconds" | "fps">) {
+  return planSegments(project.clips, opts.segmentSeconds, { grid: segmentGrid(opts.fps) });
 }
 
 async function runExport(
@@ -263,7 +275,8 @@ async function runExport(
   const hasLayer = (opts.includeOverlays && project.overlays.length > 0) || (opts.includeCaptions && project.captions.visible && project.cues.length > 0);
   if (hasLayer) await ensureFontsLoaded();
 
-  const segments = planSegments(project.clips, opts.segmentSeconds);
+  // Cuts sit on whole video and AAC frames so spliced fragments stay contiguous.
+  const segments = plannedSegments(project, opts);
   const fragmented = segments.length > 1;
   const probes = new Map<string, MediaInfo>();
   let overlayFrames = 0;
@@ -329,6 +342,7 @@ async function runExport(
           const dir = `/fr${seg.index}`;
           await ctx.ffmpeg.createDir(dir).catch(() => undefined);
           onProgress({ stage: "frames", progress: seg.start / duration, message: `Rendering frames${label}` });
+          const ext = opts.intermediate === "png" ? "png" : "jpg";
           const n = await captureFrames({
             project: renderProject,
             urls: assets.urls,
@@ -339,11 +353,11 @@ async function runExport(
             images: assets.getImage,
             includeCaptions: opts.includeCaptions,
             includeOverlays: opts.includeOverlays,
-            format: "image/jpeg",
+            format: opts.intermediate === "png" ? "image/png" : "image/jpeg",
             quality: 0.93,
             signal,
             onFrame: async (data, i) => {
-              const p = `${dir}/f${pad(i)}.jpg`;
+              const p = `${dir}/f${pad(i)}.${ext}`;
               await ctx.ffmpeg.writeFile(p, data);
               ctx.temp.push(p);
             },
@@ -351,7 +365,7 @@ async function runExport(
               onProgress({ stage: "frames", progress: (seg.start + (done / Math.max(1, total)) * segLen) / duration, message: `Rendering frames ${done}/${total}${label}` }),
           });
           capturedFrames += n;
-          framesPattern = `${dir}/f%05d.jpg`;
+          framesPattern = `${dir}/f%05d.${ext}`;
         } else if (hasLayer) {
           overlayInput = idx++;
           const dir = `/ov${seg.index}`;
@@ -469,7 +483,7 @@ async function runExport(
     job,
     (p) => {
       const stage: ExportStage = p.stage === "loading" ? "loading" : p.stage === "preparing" ? "preparing" : p.stage === "encoding" ? "encoding" : p.stage === "writing" ? "writing" : "done";
-      if (p.stage !== "done") onProgress({ stage, progress: p.progress, message: p.message });
+      if (p.stage !== "done") onProgress({ stage, progress: p.progress, message: p.message, ...(p.engine ? { engine: p.engine } : {}) });
     },
     signal,
   );
