@@ -19,10 +19,11 @@ export async function importVideo(
   file: File,
   projectId: string,
   onStatus?: (message: string) => void,
+  /** Pre-allocated id, so the caller can protect the asset before it is written. */
+  assetId: string = uid("asset"),
 ): Promise<ImportedVideo> {
   onStatus?.(`Reading ${file.name}`);
   const info = await probeVideo(file);
-  const assetId = uid("asset");
   await putAsset({ id: assetId, projectId, name: file.name, type: file.type, size: file.size, blob: file, createdAt: Date.now() });
 
   onStatus?.("Analysing audio and frames");

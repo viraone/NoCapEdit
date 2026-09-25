@@ -81,6 +81,10 @@ export function encoderArgs(s: EncodeSettings, opts: { fragmented: boolean; tsOf
     if (s.rateControl.mode === "crf") args.push("-crf", String(s.rateControl.crf));
     else args.push("-b:v", `${s.rateControl.kbps}k`, "-maxrate", `${s.rateControl.maxrateKbps ?? Math.round(s.rateControl.kbps * 1.5)}k`, "-bufsize", `${s.rateControl.kbps * 2}k`);
     args.push("-g", String(gop), "-keyint_min", String(gop), "-sc_threshold", "0");
+    // One lookahead thread: with 6+ encoder threads the faster presets start a
+    // second one, which traps ("function signature mismatch") in @ffmpeg/core-mt
+    // 0.12.10. Inert on the single-threaded core.
+    args.push("-x264-params", "lookahead-threads=1");
     // No B-frames for spliced segments: decode order then has no delay at the seams.
     if (opts.fragmented) args.push("-bf", "0");
   }
@@ -426,6 +430,17 @@ export class FFmpegEngine {
           setSingleThreadPreference(true);
         }
         throw new FFmpegHungError(multithreaded);
+      }
+      // A trap inside the worker arrives as a string, not an Error (the
+      // library's own terminate/not-loaded errors are Error instances).
+      if (!(e instanceof Error)) {
+        if (multithreaded) {
+          // Retry on the single-threaded core for this session only; the
+          // localStorage flag means "stalled before" and stays untouched.
+          this.preferSingleThread = true;
+          throw new FFmpegHungError(true, "The multi-threaded video engine crashed; retrying single-threaded.");
+        }
+        throw new Error(`The video engine crashed: ${String(e)}\n${this.recentLogs()}`);
       }
       throw e;
     } finally {

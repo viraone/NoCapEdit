@@ -38,6 +38,14 @@ describe("encoderArgs", () => {
     expect(args).toContain("-crf 20");
     expect(args).toContain("-movflags +faststart");
   });
+  it("caps x264 at one lookahead thread and leaves x265 alone", () => {
+    for (const fragmented of [true, false]) {
+      const x264 = encoderArgs({ ...base, preset: "veryfast" }, { fragmented, tsOffset: 0, duration: 5 }).join(" ");
+      expect(x264).toContain("-x264-params lookahead-threads=1");
+    }
+    const x265 = encoderArgs({ ...base, codec: "h265" }, { fragmented: false, tsOffset: 0, duration: 5 }).join(" ");
+    expect(x265).not.toContain("-x264-params");
+  });
   it("tone-maps through zscale", () => {
     expect(hdrToSdrChain()).toContain("tonemap=tonemap=hable");
   });

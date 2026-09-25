@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEditor, flushSave } from "@/store/editorStore";
+import { useEditor, flushSave, attachUnloadFlush } from "@/store/editorStore";
 import { ensureCrossOriginIsolation } from "@/lib/coi";
 import { EditorShell } from "./EditorShell";
 
@@ -22,7 +22,9 @@ export function EditorPage() {
       return;
     }
     loadProject(id);
+    const detach = attachUnloadFlush();
     return () => {
+      detach();
       flushSave().finally(() => useEditor.getState().unload());
     };
   }, [id, loadProject, router]);

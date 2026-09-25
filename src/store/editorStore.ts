@@ -35,6 +35,10 @@ export interface EditorState {
   notice: string | null;
   /** Set by a canvas double-click: the panel for this element should focus its content field. */
   editRequest: (Selection & { nonce: number }) | null;
+  /** Progress line of the video import running in this editor (shared by the top bar and the Clips panel), null when idle. */
+  importStatus: string | null;
+  /** Assets already written to IndexedDB by an import whose clip has not joined the project yet. */
+  pendingAssetIds: string[];
 
   loadProject(id: string): Promise<boolean>;
   unload(): void;
@@ -56,6 +60,9 @@ export interface EditorState {
   requestEdit(sel: Selection): void;
   registerAsset(assetId: string, blob: Blob): string;
   releaseAsset(assetId: string): void;
+  setImportStatus(status: string | null): void;
+  markAssetPending(assetId: string): void;
+  unmarkAssetPending(assetId: string): void;
 }
 
 const MAX_HISTORY = 60;
@@ -97,6 +104,8 @@ export const useEditor = create<EditorState>()(
     canvasZoom: "fit",
     notice: null,
     editRequest: null,
+    importStatus: null,
+    pendingAssetIds: [],
 
     async loadProject(id) {
       get().unload();
@@ -121,7 +130,7 @@ export const useEditor = create<EditorState>()(
     unload() {
       for (const url of Object.values(get().assetUrls)) URL.revokeObjectURL(url);
       engine.dispose();
-      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null });
+      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, importStatus: null, pendingAssetIds: [] });
     },
 
     update(fn, opts = {}) {
@@ -207,6 +216,10 @@ export const useEditor = create<EditorState>()(
       set((s) => ({ assetUrls: { ...s.assetUrls, [assetId]: url } }));
       return url;
     },
+    setImportStatus: (importStatus) => set({ importStatus }),
+    markAssetPending: (assetId) => set((s) => ({ pendingAssetIds: [...s.pendingAssetIds, assetId] })),
+    unmarkAssetPending: (assetId) => set((s) => ({ pendingAssetIds: s.pendingAssetIds.filter((id) => id !== assetId) })),
+
     releaseAsset(assetId) {
       const url = get().assetUrls[assetId];
       if (url) URL.revokeObjectURL(url);
@@ -221,11 +234,36 @@ export const useEditor = create<EditorState>()(
 
 /** Flushes a pending autosave immediately (used before leaving the editor). */
 export async function flushSave() {
+  const pending = !!saveTimer || useEditor.getState().saveState !== "saved";
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
+  if (!pending) return;
   const project = useEditor.getState().project;
-  if (project) await saveProject(project);
-  useEditor.setState({ saveState: "saved" });
+  try {
+    if (project) await saveProject(project);
+    useEditor.setState({ saveState: "saved" });
+  } catch (e) {
+    console.error("Autosave failed", e);
+    useEditor.setState({ saveState: "dirty" });
+  }
+}
+
+/**
+ * Writes a pending autosave when the page is hidden or unloaded (reload, tab
+ * close, quitting the browser); React effect cleanups do not run then, so
+ * without this the last half-second of edits is lost. Returns a detach function.
+ */
+export function attachUnloadFlush(): () => void {
+  const onHide = () => void flushSave();
+  const onVisibility = () => {
+    if (document.visibilityState === "hidden") void flushSave();
+  };
+  window.addEventListener("pagehide", onHide);
+  document.addEventListener("visibilitychange", onVisibility);
+  return () => {
+    window.removeEventListener("pagehide", onHide);
+    document.removeEventListener("visibilitychange", onVisibility);
+  };
 }

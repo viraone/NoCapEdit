@@ -64,6 +64,7 @@ export interface Reframe {
   label?: string;
 }
 
+/** Any new asset reference on Clip, Overlay, Voiceover or MusicTrack must also be handled in remapAssetIds. */
 export interface Clip {
   id: string;
   /** Key of the source video Blob in IndexedDB. */
@@ -347,6 +348,43 @@ export function defaultSubtitleStyle(): SubtitleStyle {
     speakerColors: false,
     emoji: null,
   };
+}
+
+/**
+ * Returns a copy of the project with fn applied to every asset reference: clip
+ * video, replacement audio, LUT and matte, image and Lottie overlays,
+ * voice-overs and sound effects, and music. The single place that knows where
+ * assets are referenced; collectAssetIds, cleanup, backup restore and project
+ * duplication all go through it.
+ */
+export function remapAssetIds(project: VideoProject, fn: (id: string) => string): VideoProject {
+  return {
+    ...project,
+    clips: project.clips.map((c) => ({
+      ...c,
+      assetId: fn(c.assetId),
+      ...(c.audioAssetId ? { audioAssetId: fn(c.audioAssetId) } : {}),
+      ...(c.look?.lutAssetId ? { look: { ...c.look, lutAssetId: fn(c.look.lutAssetId) } } : {}),
+      ...(c.matte ? { matte: { ...c.matte, assetId: fn(c.matte.assetId) } } : {}),
+    })),
+    overlays: project.overlays.map((o) => ("assetId" in o ? { ...o, assetId: fn(o.assetId) } : o)),
+    voiceovers: project.voiceovers.map((v) => ({ ...v, assetId: fn(v.assetId) })),
+    music: project.music ? { ...project.music, assetId: fn(project.music.assetId) } : project.music,
+  };
+}
+
+/** Every asset id the project references. */
+export function collectAssetIds(project: VideoProject): Set<string> {
+  const ids = new Set<string>();
+  remapAssetIds(project, (id) => (ids.add(id), id));
+  return ids;
+}
+
+/** Stored assets of a project that nothing references and no import in flight is about to use. */
+export function unusedAssetIds(assetIds: string[], project: VideoProject, pending: Iterable<string> = []): string[] {
+  const keep = collectAssetIds(project);
+  for (const id of pending) keep.add(id);
+  return assetIds.filter((id) => !keep.has(id));
 }
 
 export function createClip(init: Pick<Clip, "assetId" | "name" | "duration" | "width" | "height" | "hasAudio">): Clip {

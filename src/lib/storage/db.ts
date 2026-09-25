@@ -4,7 +4,7 @@
  * device. There is no server.
  */
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import { normalizeProject, type VideoProject } from "@/lib/models/project";
+import { normalizeProject, remapAssetIds, type VideoProject } from "@/lib/models/project";
 
 export interface AssetRecord {
   id: string;
@@ -51,6 +51,9 @@ const DB_VERSION = 1;
 
 let dbPromise: Promise<IDBPDatabase<ReelFlowDB>> | null = null;
 
+/** The open connection once getDb() has resolved, so a save can start synchronously (e.g. during pagehide). */
+let openDb: Awaited<ReturnType<typeof openDB<ReelFlowDB>>> | null = null;
+
 function getDb() {
   if (!dbPromise) {
     dbPromise = openDB<ReelFlowDB>(DB_NAME, DB_VERSION, {
@@ -64,6 +67,7 @@ function getDb() {
         db.createObjectStore("projectThumbs", { keyPath: "projectId" });
       },
     });
+    dbPromise.then((db) => (openDb = db)).catch(() => undefined);
   }
   return dbPromise;
 }
@@ -83,7 +87,9 @@ export async function getProject(id: string): Promise<VideoProject | undefined> 
 }
 
 export async function saveProject(project: VideoProject): Promise<void> {
-  const db = await getDb();
+  // With the connection already open, the put is issued before this function
+  // yields, so it is queued even when the page is being torn down.
+  const db = openDb ?? (await getDb());
   await db.put("projects", project);
 }
 
@@ -112,16 +118,10 @@ export async function duplicateProject(id: string, newId: string, name: string):
   const idMap = new Map<string, string>();
   for (const a of assets) idMap.set(a.id, `${a.id}_${newId.slice(-6)}`);
   const remap = (assetId: string) => idMap.get(assetId) ?? assetId;
-  const copy: VideoProject = {
-    ...structuredClone(project),
-    id: newId,
-    name,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-  copy.clips = copy.clips.map((c) => ({ ...c, assetId: remap(c.assetId) }));
-  copy.overlays = copy.overlays.map((o) => (o.kind === "image" ? { ...o, assetId: remap(o.assetId) } : o));
-  if (copy.music) copy.music = { ...copy.music, assetId: remap(copy.music.assetId) };
+  const copy: VideoProject = remapAssetIds(
+    { ...structuredClone(project), id: newId, name, createdAt: Date.now(), updatedAt: Date.now() },
+    remap,
+  );
 
   const tx = db.transaction(["projects", "assets", "peaks", "thumbs", "projectThumbs"], "readwrite");
   await tx.objectStore("projects").put(copy);

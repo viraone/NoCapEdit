@@ -6,6 +6,7 @@ import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
 import { useImportClips } from "./useImportClips";
 import { layoutClips } from "@/lib/models/timeline";
+import { unusedAssetIds } from "@/lib/models/project";
 import { duplicateClip, moveClip, removeClip, splitClipAt } from "@/lib/models/clipOps";
 import { deleteAsset, listProjectAssets } from "@/lib/storage/db";
 import { formatTime } from "@/lib/utils/time";
@@ -38,15 +39,17 @@ export function ClipsPanel() {
   };
 
   const cleanup = async () => {
-    const used = new Set<string>([...project.clips.map((c) => c.assetId), ...project.overlays.filter((o) => o.kind === "image").map((o) => (o as { assetId: string }).assetId), ...(project.music ? [project.music.assetId] : [])]);
+    if (useEditor.getState().importStatus) return;
     const assets = await listProjectAssets(project.id);
+    // Read the project after the await: the render-time copy can be stale by now.
+    const { project: now, pendingAssetIds } = useEditor.getState();
+    if (!now || now.id !== project.id) return;
+    const unused = unusedAssetIds(assets.map((a) => a.id), now, pendingAssetIds);
     let n = 0;
-    for (const a of assets) {
-      if (!used.has(a.id)) {
-        await deleteAsset(a.id);
-        useEditor.getState().releaseAsset(a.id);
-        n++;
-      }
+    for (const id of unused) {
+      await deleteAsset(id);
+      useEditor.getState().releaseAsset(id);
+      n++;
     }
     useEditor.setState({ past: [], future: [] });
     setCleanupNote(n ? `Removed ${n} unused file${n === 1 ? "" : "s"}` : "Nothing to clean up");
@@ -141,7 +144,7 @@ export function ClipsPanel() {
       </PanelSection>
       <StockSection onImport={onFiles} disabled={!!status} />
       <PanelSection>
-        <Button variant="outline" size="sm" className="w-full" onClick={cleanup} title="Delete imported files that no clip, sticker or music uses anymore">
+        <Button variant="outline" size="sm" className="w-full" onClick={cleanup} disabled={!!status} title="Delete imported files that nothing in the project uses anymore">
           <Broom size={13} /> Clean up unused media
         </Button>
         {cleanupNote && <p className="text-[11px] text-label-2">{cleanupNote}</p>}

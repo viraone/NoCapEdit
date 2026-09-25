@@ -4,7 +4,7 @@
  * Streams in both directions so multi-GB projects never sit in memory twice.
  */
 import { Zip, ZipPassThrough, ZipDeflate, Unzip, UnzipInflate, UnzipPassThrough, strToU8, strFromU8 } from "fflate";
-import { normalizeProject, type VideoProject } from "@/lib/models/project";
+import { normalizeProject, remapAssetIds, type VideoProject } from "@/lib/models/project";
 import { getProject, listProjectAssets, putAsset, saveProject, getAsset, putPeaks, putThumbs } from "./db";
 import { uid } from "@/lib/utils/id";
 import { decodeAudio, peaksFromSamples } from "@/lib/ffmpeg/waveform";
@@ -99,15 +99,12 @@ export async function importBackup(file: File, onProgress?: (message: string) =>
   if (m.version > BACKUP_VERSION) throw new Error("This backup was made by a newer version of NoCap Edit.");
 
   const raw = JSON.parse(projectJson) as VideoProject;
-  const project = normalizeProject({ ...raw, id: newId, name: raw.name, updatedAt: Date.now() });
+  let project = normalizeProject({ ...raw, id: newId, name: raw.name, updatedAt: Date.now() });
   // Remap asset ids that already exist on this device.
   const idMap = new Map<string, string>();
   for (const a of m.assets) idMap.set(a.id, (await getAsset(a.id)) ? uid("asset") : a.id);
   const remap = (id: string) => idMap.get(id) ?? id;
-  project.clips = project.clips.map((c) => ({ ...c, assetId: remap(c.assetId), audioAssetId: c.audioAssetId ? remap(c.audioAssetId) : c.audioAssetId }));
-  project.overlays = project.overlays.map((o) => (o.kind === "image" ? { ...o, assetId: remap(o.assetId) } : o));
-  project.voiceovers = project.voiceovers.map((v) => ({ ...v, assetId: remap(v.assetId) }));
-  if (project.music) project.music = { ...project.music, assetId: remap(project.music.assetId) };
+  project = remapAssetIds(project, remap);
 
   const videoAssets: { id: string; blob: Blob }[] = [];
   for (const a of m.assets) {

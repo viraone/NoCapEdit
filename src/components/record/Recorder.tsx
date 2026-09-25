@@ -39,8 +39,15 @@ export function Recorder({ open, onClose, onRecorded }: { open: boolean; onClose
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  /** Every raw capture stream of the current attempt (camera, screen, mic); the recorded stream can be a mix of them. */
+  const sourcesRef = useRef<MediaStream[]>([]);
+  /** Bumped by cleanup(): a start() whose permission prompt resolves after that is stale and must release what it got. */
+  const attemptRef = useRef(0);
 
   const cleanup = () => {
+    attemptRef.current++;
+    sourcesRef.current.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+    sourcesRef.current = [];
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -50,6 +57,17 @@ export function Recorder({ open, onClose, onRecorded }: { open: boolean; onClose
     if (videoRef.current) videoRef.current.srcObject = null;
   };
 
+  // A dialog closed mid-preparing or after an error reopens clean.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (!open) {
+      setStatus("idle");
+      setSeconds(0);
+      setError(null);
+    }
+  }
+
   useEffect(() => {
     if (!open) cleanup();
     return cleanup;
@@ -58,21 +76,34 @@ export function Recorder({ open, onClose, onRecorded }: { open: boolean; onClose
   const start = async () => {
     setError(null);
     setStatus("preparing");
+    const attempt = attemptRef.current;
+    // Records a stream the moment it arrives, so cleanup() can always stop it.
+    // Returns false when the dialog was closed (or restarted) while we waited.
+    const keep = (s: MediaStream) => {
+      if (attemptRef.current !== attempt) {
+        s.getTracks().forEach((t) => t.stop());
+        return false;
+      }
+      sourcesRef.current.push(s);
+      return true;
+    };
     try {
       let stream: MediaStream;
       if (mode === "camera") {
         stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, audio: true });
+        if (!keep(stream)) return;
       } else {
         const display = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
+        if (!keep(display)) return;
         if (mode === "screen-mic") {
           const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+          if (!keep(mic)) return;
           const ctx = new AudioContext();
           audioCtxRef.current = ctx;
           const dest = ctx.createMediaStreamDestination();
           if (display.getAudioTracks().length) ctx.createMediaStreamSource(new MediaStream(display.getAudioTracks())).connect(dest);
           ctx.createMediaStreamSource(mic).connect(dest);
           stream = new MediaStream([...display.getVideoTracks(), ...dest.stream.getAudioTracks()]);
-          mic.getAudioTracks().forEach((t) => display.addTrack(t));
         } else stream = display;
         display.getVideoTracks()[0]?.addEventListener("ended", () => stop());
       }
@@ -102,6 +133,8 @@ export function Recorder({ open, onClose, onRecorded }: { open: boolean; onClose
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     } catch (e) {
+      // A prompt answered after the dialog closed is not this dialog's error.
+      if (attemptRef.current !== attempt) return;
       cleanup();
       setStatus("idle");
       setError(e instanceof Error ? (e.name === "NotAllowedError" ? "Permission was denied." : e.message) : String(e));
