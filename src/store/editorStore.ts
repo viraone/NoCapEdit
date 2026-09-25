@@ -43,8 +43,10 @@ export interface EditorState {
   loadProject(id: string): Promise<boolean>;
   unload(): void;
   update(fn: (draft: VideoProject) => void | VideoProject, opts?: { history?: boolean }): void;
-  beginTransaction(): void;
-  endTransaction(): void;
+  /** Opens an undo transaction; false when one is already open (the caller then does not own it). */
+  beginTransaction(): boolean;
+  /** Closes the transaction; true when it recorded an undo step. */
+  endTransaction(): boolean;
   undo(): void;
   redo(): void;
   setTool(tool: ToolId): void;
@@ -66,6 +68,18 @@ export interface EditorState {
 }
 
 const MAX_HISTORY = 60;
+
+/** Structural equality over the plain JSON values a project is made of. */
+export function sameProject(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => sameProject(v, b[i]));
+  const ka = Object.keys(a as object);
+  const kb = Object.keys(b as object);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && sameProject((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
 
 /**
  * Synchronous safety copy of an unsaved project, written when the page is
@@ -183,6 +197,10 @@ export const useEditor = create<EditorState>()(
       if (!project) return;
       const draft = structuredClone(project);
       const next = (fn(draft) ?? draft) as VideoProject;
+      // A refused or no-op edit (split outside a clip, zoom at its limit, an
+      // already active preset...) records no undo step, keeps redo and does
+      // not autosave. Pointer-move updates skip the compare for speed.
+      if (opts.history !== false && sameProject(project, next)) return;
       next.updatedAt = Date.now();
       const record = opts.history !== false && !txSnapshot;
       set({
@@ -196,17 +214,22 @@ export const useEditor = create<EditorState>()(
     beginTransaction() {
       const { project, txSnapshot } = get();
       // Project objects are never mutated in place, so the reference is a snapshot.
-      if (project && !txSnapshot) set({ txSnapshot: project });
+      if (project && !txSnapshot) {
+        set({ txSnapshot: project });
+        return true;
+      }
+      return false;
     },
 
     endTransaction() {
       const { txSnapshot, past, project } = get();
-      if (!txSnapshot) return;
+      if (!txSnapshot) return false;
       if (project === txSnapshot) {
         set({ txSnapshot: null });
-        return;
+        return false;
       }
       set({ txSnapshot: null, past: [...past.slice(-(MAX_HISTORY - 1)), txSnapshot], future: [] });
+      return true;
     },
 
     undo() {

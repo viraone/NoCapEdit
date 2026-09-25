@@ -34,10 +34,14 @@ export function duplicateClip(p: VideoProject, id: string): string | null {
   return copy.id;
 }
 
-/** Splits the clip under `time` into two; returns the new (second) clip id. */
+/**
+ * Splits the clip under `time` into two; returns the new (second) clip id.
+ * Refused inside a transition overlap (two clips run there) and within 0.1 s
+ * of a clip edge.
+ */
 export function splitClipAt(p: VideoProject, time: number): string | null {
   const loc = locateFrame(layoutClips(p.clips), time);
-  if (!loc) return null;
+  if (!loc || loc.secondary) return null;
   const layout = loc.primary;
   if (time <= layout.start + 0.1 || time >= layout.end - 0.1) return null;
   const s = toSourceTime(layout, time);
@@ -58,19 +62,26 @@ export function cutBefore(p: VideoProject, time: number): boolean {
   const c = p.clips.find((c) => c.id === loc.primary.clip.id);
   if (!c) return false;
   const s = toSourceTime(loc.primary, time);
-  if (s >= c.outPoint - 0.1) return false;
+  // Nothing before the playhead, or too little would be left.
+  if (s <= c.inPoint + 1e-6 || s >= c.outPoint - 0.1) return false;
   c.inPoint = s;
   return true;
 }
 
-/** Removes everything after the playhead from the clip that contains it. */
+/**
+ * Removes everything after the playhead from the clip that contains it. Inside
+ * a transition overlap that is the outgoing clip, whose tail runs past the
+ * playhead; the incoming clip is left alone.
+ */
 export function cutAfter(p: VideoProject, time: number): boolean {
   const loc = locateFrame(layoutClips(p.clips), time);
   if (!loc) return false;
-  const c = p.clips.find((c) => c.id === loc.primary.clip.id);
+  const layout = loc.secondary ?? loc.primary;
+  const c = p.clips.find((c) => c.id === layout.clip.id);
   if (!c) return false;
-  const s = toSourceTime(loc.primary, time);
-  if (s <= c.inPoint + 0.1) return false;
+  const s = toSourceTime(layout, time);
+  // Nothing after the playhead, or too little would be left.
+  if (s >= c.outPoint - 1e-6 || s <= c.inPoint + 0.1) return false;
   c.outPoint = s;
   return true;
 }

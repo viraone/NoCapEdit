@@ -29,6 +29,14 @@ export function TextPanel() {
   const editRequest = useEditor((s) => s.editRequest);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const selectedId = selected?.id ?? null;
+  const textTx = useRef(false);
+  const closeTextTx = () => {
+    if (!textTx.current) return;
+    textTx.current = false;
+    tx.onDragEnd();
+  };
+  // A selection change or unmount that skips the blur must not leave the transaction open.
+  useEffect(() => closeTextTx, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
   // Double-click on the canvas: put the caret in the text with everything selected.
   useEffect(() => {
     if (!editRequest || editRequest.kind !== "overlay" || editRequest.id !== selectedId) return;
@@ -100,7 +108,18 @@ export function TextPanel() {
       {selected && (
         <>
           <PanelSection title="Content" right={<Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => remove(selected.id)} title="Delete"><Trash2 size={13} /></Button>}>
-            <textarea ref={textRef} data-content-editor="text" className={textareaClass} value={selected.text} onChange={(e) => edit((o) => void (o.text = e.target.value), false)} onBlur={() => edit(() => undefined)} rows={2} />
+            <textarea
+              ref={textRef}
+              data-content-editor="text"
+              className={textareaClass}
+              value={selected.text}
+              onChange={(e) => edit((o) => void (o.text = e.target.value), false)}
+              // Typing is one undo step: the transaction opens on focus and
+              // closes on blur (nothing is recorded when the text is unchanged).
+              onFocus={() => void (textTx.current = tx.onDragStart() !== false)}
+              onBlur={closeTextTx}
+              rows={2}
+            />
             <Field label="Font">
               <Select value={selected.fontFamily} onChange={(e) => edit((o) => void (o.fontFamily = e.target.value as FontKey))} style={{ fontFamily: fontFamily(selected.fontFamily) }}>
                 {FONT_KEYS.map((k) => (

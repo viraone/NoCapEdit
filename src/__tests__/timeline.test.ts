@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createClip } from "@/lib/models/project";
 import { layoutClips, locateFrame, projectDuration, toProjectTime, toSourceTime } from "@/lib/models/timeline";
 import { computePlacement } from "@/lib/models/placement";
+import * as clipOpsModule from "@/lib/models/clipOps";
+import { createProject } from "@/lib/models/project";
 
 const clip = (duration: number, extra: Partial<ReturnType<typeof createClip>> = {}) => ({
   ...createClip({ assetId: "a", name: "c", duration, width: 1920, height: 1080, hasAudio: true }),
@@ -68,5 +70,40 @@ describe("reorderClip", () => {
     expect(reorderClip(p, "zzz", 0)).toBe(false);
     expect(reorderClip(p, "a", 99)).toBe(true);
     expect(p.clips.map((c) => c.id)).toEqual(["b", "d", "c", "a"]);
+  });
+});
+
+
+describe("clip cuts and splits at edges and inside transitions", () => {
+  const { cutAfter, cutBefore, splitClipAt } = clipOpsModule;
+  const project = () => createProject({ clips: [clip(8, { transition: { type: "fade", duration: 1 } }), clip(8)] });
+
+  it("refuses zero-length cuts at the clip edges", () => {
+    const p = project();
+    expect(cutBefore(p, 0)).toBe(false);
+    expect(cutAfter(p, 15)).toBe(false); // project end: 8 + 8 - 1
+    expect(p.clips.map((c) => [c.inPoint, c.outPoint])).toEqual([[0, 8], [0, 8]]);
+  });
+
+  it("cuts the outgoing clip when the playhead is inside a dissolve", () => {
+    const p = project();
+    expect(cutAfter(p, 7.25)).toBe(true); // overlap runs 7..8
+    expect(p.clips[0].outPoint).toBeCloseTo(7.25);
+    expect(p.clips[1].outPoint).toBe(8);
+  });
+
+  it("trims the incoming clip's head with cut before inside a dissolve", () => {
+    const p = project();
+    expect(cutBefore(p, 7.25)).toBe(true);
+    expect(p.clips[1].inPoint).toBeCloseTo(0.25);
+    expect(p.clips[0].outPoint).toBe(8);
+  });
+
+  it("refuses to split inside a dissolve and still splits just past it", () => {
+    const p = project();
+    expect(splitClipAt(p, 7.5)).toBeNull();
+    expect(p.clips).toHaveLength(2);
+    expect(splitClipAt(p, 9)).not.toBeNull();
+    expect(p.clips).toHaveLength(3);
   });
 });

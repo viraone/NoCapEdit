@@ -1,5 +1,7 @@
 "use client";
+import { useEffect, useRef } from "react";
 import { cx } from "@/lib/utils/cx";
+import { createSliderGesture, type SliderGesture } from "./sliderGesture";
 
 export interface SliderProps {
   label?: string;
@@ -8,8 +10,10 @@ export interface SliderProps {
   max: number;
   step?: number;
   onChange: (v: number) => void;
-  onDragStart?: () => void;
-  onDragEnd?: () => void;
+  /** Opens an undo step for the gesture; return false when it could not be opened. */
+  onDragStart?: () => boolean | void;
+  /** Closes the undo step; return true when one was recorded. */
+  onDragEnd?: () => boolean | void;
   format?: (v: number) => string;
   disabled?: boolean;
   className?: string;
@@ -17,6 +21,14 @@ export interface SliderProps {
 
 export function Slider({ label, value, min, max, step = 0.01, onChange, onDragStart, onDragEnd, format, disabled, className }: SliderProps) {
   const display = format ? format(value) : value.toFixed(2);
+  // The gesture lives for the input's lifetime and always calls the latest handlers.
+  const latest = useRef({ begin: onDragStart, end: onDragEnd });
+  useEffect(() => {
+    latest.current = { begin: onDragStart, end: onDragEnd };
+  });
+  const gestureRef = useRef<SliderGesture | null>(null);
+  // Created on first use from an event handler, never during render.
+  const g = () => (gestureRef.current ??= createSliderGesture({ begin: () => latest.current.begin?.(), end: () => latest.current.end?.() }));
   return (
     <div className={cx("block", className)}>
       {label && (
@@ -34,10 +46,12 @@ export function Slider({ label, value, min, max, step = 0.01, onChange, onDragSt
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        onPointerDown={onDragStart}
-        onPointerUp={onDragEnd}
-        onKeyUp={onDragEnd}
-        onBlur={onDragEnd}
+        onPointerDown={() => g().pointerDown()}
+        onPointerUp={() => g().pointerUp()}
+        onPointerCancel={() => g().pointerUp()}
+        onKeyDown={(e) => g().keyDown(e.key, e.metaKey || e.ctrlKey || e.altKey)}
+        onKeyUp={() => g().keyUp()}
+        onBlur={() => g().blur()}
         aria-label={label}
       />
     </div>

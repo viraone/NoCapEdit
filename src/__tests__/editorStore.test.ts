@@ -84,6 +84,35 @@ describe("autosave flush", () => {
     expect(mem.has("reelflow.unsaved")).toBe(false);
   });
 
+  it("records nothing for an edit that changes nothing", () => {
+    const s = useEditor.getState();
+    const before = s.project;
+    s.update((p) => void (p.name = p.name));
+    expect(useEditor.getState().project).toBe(before);
+    expect(useEditor.getState().past.length).toBe(0);
+    expect(useEditor.getState().saveState).toBe("saved");
+    s.update((p) => void (p.name = "changed"));
+    expect(useEditor.getState().past.length).toBe(1);
+    s.undo();
+    expect(useEditor.getState().future.length).toBe(1);
+    // A no-op after an undo keeps the redo stack.
+    s.update((p) => void (p.name = p.name));
+    expect(useEditor.getState().future.length).toBe(1);
+  });
+
+  it("reports whether a transaction was opened and whether it recorded a step", () => {
+    const s = useEditor.getState();
+    expect(s.beginTransaction()).toBe(true);
+    expect(s.beginTransaction()).toBe(false);
+    expect(s.endTransaction()).toBe(false); // nothing changed
+    expect(useEditor.getState().past.length).toBe(0);
+    expect(s.beginTransaction()).toBe(true);
+    s.update((p) => void (p.name = "dragged"), { history: false });
+    expect(s.endTransaction()).toBe(true);
+    expect(useEditor.getState().past.length).toBe(1);
+    expect(s.endTransaction()).toBe(false);
+  });
+
   it("tracks in-flight import assets and resets import state on unload", () => {
     const s = useEditor.getState();
     s.setImportStatus("Reading a.mp4 (1/1)");
