@@ -12,7 +12,7 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
 **Editing**
 - Multi-clip timeline with filmstrip thumbnails and audio waveforms, split at the
   playhead, reorder, trim in/out (drag the block edges), 0.25×–4× speed with pitch
-  preservation (`atempo`) or pitch shift (`asetrate`), crop zoom 0.5×–4× and pan.
+  preservation (`atempo`) or pitch shift (`asetrate`), crop zoom 0.5×–4× (down to the Fit value when a tall frame needs less) and pan.
 - 20 frame formats (Reels, TikTok, Shorts, Square, Widescreen…), safe-zone masks
   for Instagram Reels, TikTok and YouTube Shorts, canvas zoom.
 - Transitions: 11 native xfade transitions plus 10 GLSL shader transitions
