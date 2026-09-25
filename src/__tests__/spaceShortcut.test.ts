@@ -3,7 +3,7 @@ import { createFocusModality, isActivatableTarget } from "@/components/editor/sp
 
 describe("isActivatableTarget", () => {
   it("recognises buttons, switches, tiles and links by role/tag", () => {
-    const closestFor = (matches: boolean) => ({ closest: (sel: string) => (matches ? {} : null) }) as unknown as EventTarget;
+    const closestFor = (matches: boolean) => ({ closest: () => (matches ? {} : null) }) as unknown as EventTarget;
     expect(isActivatableTarget(closestFor(true))).toBe(true);
     expect(isActivatableTarget(closestFor(false))).toBe(false);
     expect(isActivatableTarget(null)).toBe(false);

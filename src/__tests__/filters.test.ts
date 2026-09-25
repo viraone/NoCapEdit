@@ -64,7 +64,7 @@ describe("buildFilterGraph", () => {
     expect(graph).toContain("acrossfade=d=1");
     expect(graph).toContain("[vx1][v2]concat=n=2:v=1:a=0[vx2]");
     expect(graph).toContain("[ax1][a2]concat=n=2:v=0:a=1[ax2]");
-    expect(graph).toContain("[vx2]format=yuv420p,fps=30[vout]");
+    expect(graph).toContain("[vx2]format=yuv420p,fps=30,tpad=stop_mode=clone:stop_duration=0.033333[vout]");
     expect(graph).toContain("[ax2]anull[aout]");
   });
   it("synthesises silence for clips without audio and mixes music", () => {

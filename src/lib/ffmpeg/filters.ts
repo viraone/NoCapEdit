@@ -5,7 +5,7 @@
 import type { ClipLayout } from "@/lib/models/timeline";
 import type { Placement } from "@/lib/models/placement";
 import { getGlTransition, isGlTransition } from "@/lib/gl/transitions";
-import { hdrToSdrChain } from "@/lib/ffmpegEngine";
+import { hdrToSdrChain, type SourceColor } from "@/lib/ffmpegEngine";
 import { audioFx } from "@/lib/audio/fx";
 import { isNeutralLook } from "@/lib/models/project";
 
@@ -25,6 +25,8 @@ export interface ClipInputPlan {
   audioInputIndex?: number | null;
   /** Tone-map a 10-bit HDR source to SDR. */
   hdr?: boolean;
+  /** The source's probed colour tags, so tone-mapping knows what it is converting from. */
+  color?: SourceColor;
   /** Path of the clip's .cube LUT inside the worker FS, when it has one. */
   lutPath?: string | null;
 }
@@ -146,7 +148,7 @@ export function cropRegion(p: Placement, source: { width: number; height: number
 function videoChain(plan: ExportPlan, c: ClipInputPlan, i: number): string {
   const { clip } = c.layout;
   const dur = num(c.layout.duration);
-  const hdr = c.hdr ? `${hdrToSdrChain()},` : "";
+  const hdr = c.hdr ? `${hdrToSdrChain(c.color)},` : "";
   const grade = lookFilters(c).map((f) => `${f},`).join("");
   const head = `[${c.inputIndex}:v]${hdr}${grade}setpts=(PTS-STARTPTS)/${num(clip.speed, 6)},fps=${plan.fps}`;
   const tail = `format=yuv420p,trim=duration=${dur},setpts=PTS-STARTPTS[v${i}]`;
@@ -231,7 +233,9 @@ export function buildFilterGraph(plan: ExportPlan): { graph: string; vout: strin
     v = "vov";
   }
   // A final fps pass regularises timestamps (xfade/overlay can leave sub-frame jitter).
-  parts.push(`[${v}]format=yuv420p,fps=${plan.fps}[vout]`);
+  // The one-frame clone covers a last clip whose video stream ends a frame before its nominal duration (xfade then
+  // ends early and fps drops its last buffered frame); the output -t cuts the surplus frame when there is none.
+  parts.push(`[${v}]format=yuv420p,fps=${plan.fps},tpad=stop_mode=clone:stop_duration=${num(1 / plan.fps, 6)}[vout]`);
 
   const mixInputs = [a];
   if (plan.music) {

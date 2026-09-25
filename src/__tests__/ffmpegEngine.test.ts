@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encoderArgs, hdrToSdrChain, parseProbeLog } from "@/lib/ffmpegEngine";
+import { encoderArgs, hdrToSdrChain, parseProbeLog, sourceColorParams } from "@/lib/ffmpegEngine";
 
 describe("parseProbeLog", () => {
   it("detects HDR HLG 10-bit sources", () => {
@@ -45,6 +45,15 @@ describe("encoderArgs", () => {
     }
     const x265 = encoderArgs({ ...base, codec: "h265" }, { fragmented: false, tsOffset: 0, duration: 5 }).join(" ");
     expect(x265).not.toContain("-x264-params");
+  });
+  it("tags frames with the source colour so untagged and SDR clips can be tone-mapped", () => {
+    expect(sourceColorParams({ colorTransfer: null, colorPrimaries: null, bitDepth: 8 })).toBe("setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709");
+    expect(sourceColorParams({ colorTransfer: null, colorPrimaries: null, bitDepth: 10 })).toBe("setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc");
+    expect(sourceColorParams({ colorTransfer: "arib-std-b67", colorPrimaries: "bt2020", bitDepth: 10 })).toBe("setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc");
+    expect(sourceColorParams()).toBe("");
+    // The tags come first; the zscale stage the export tests look for is unchanged.
+    expect(hdrToSdrChain({ colorTransfer: null, colorPrimaries: null, bitDepth: 8 })).toMatch(/^setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,zscale=t=linear:npl=100,.*tonemap=tonemap=hable/);
+    expect(hdrToSdrChain()).toMatch(/^zscale=t=linear:npl=100,/);
   });
   it("tone-maps through zscale", () => {
     expect(hdrToSdrChain()).toContain("tonemap=tonemap=hable");

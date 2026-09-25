@@ -36,12 +36,28 @@ export function debugFlag(name: "debug" | "singleThread"): boolean {
  * sessions go straight to the single-threaded core instead of waiting for the
  * watchdog again. The same key is the manual `reelflow.singleThread` switch.
  */
+const singleThreadListeners = new Set<() => void>();
+
+/** Notifies `cb` whenever setSingleThreadPreference runs (for useSyncExternalStore). Returns the unsubscribe. */
+export function subscribeSingleThreadPreference(cb: () => void): () => void {
+  singleThreadListeners.add(cb);
+  return () => void singleThreadListeners.delete(cb);
+}
+
 export function setSingleThreadPreference(on: boolean): void {
   try {
     if (on) localStorage.setItem("reelflow.singleThread", "1");
     else localStorage.removeItem("reelflow.singleThread");
   } catch {
     /* storage unavailable */
+  }
+  // Called from the watchdog mid-export too: a listener error must never mask that path.
+  for (const cb of singleThreadListeners) {
+    try {
+      cb();
+    } catch {
+      /* ignore */
+    }
   }
 }
 

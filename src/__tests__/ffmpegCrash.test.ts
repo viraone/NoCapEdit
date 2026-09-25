@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // A stub FFmpeg whose exec rejects the way @ffmpeg/ffmpeg's worker forwards a trap: as a string.
-const stub = { multithreaded: true, reject: "TypeError: Cannot read properties of undefined (reading 'startsWith')" as unknown };
+const stub = { multithreaded: true, reject: "TypeError: Cannot read properties of undefined (reading 'startsWith')" as unknown, exitCode: null as number | null };
 vi.mock("@/lib/ffmpeg/loader", () => ({
   loadFFmpeg: async () => ({
-    ffmpeg: { on() {}, off() {}, terminate() {}, exec: () => Promise.reject(stub.reject) },
+    ffmpeg: { on() {}, off() {}, terminate() {}, exec: () => (stub.exitCode === null ? Promise.reject(stub.reject) : Promise.resolve(stub.exitCode)) },
     info: { multithreaded: stub.multithreaded, source: "local" },
   }),
   resetFFmpeg: () => {},
@@ -21,6 +21,7 @@ describe("exec crash fallback", () => {
   beforeEach(() => {
     stub.multithreaded = true;
     stub.reject = "TypeError: Cannot read properties of undefined (reading 'startsWith')";
+    stub.exitCode = null;
     vi.mocked(loader.setSingleThreadPreference).mockClear();
   });
 
@@ -51,5 +52,12 @@ describe("exec crash fallback", () => {
     await engine.load();
     await expect(engine.exec(["-i", "a.mp4", "out.mp4"])).rejects.toBe(cancel);
     expect(engine.preferSingleThread).toBe(false);
+  });
+
+  it("reports a failed probe with ffmpeg's exit code instead of an empty result", async () => {
+    stub.exitCode = 1;
+    const engine = new FFmpegEngine();
+    await engine.load();
+    await expect(engine.probe("/in/bad.mp4")).rejects.toThrow(/^ffmpeg exited with code 1\./);
   });
 });

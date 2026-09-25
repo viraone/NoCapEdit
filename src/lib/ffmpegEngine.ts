@@ -56,8 +56,40 @@ export const RESOLUTION_PRESETS: { id: string; label: string; height: number | n
 export const AUDIO_RATE = 48000;
 
 /** Canonical HDR (PQ / HLG, BT.2020) -> SDR BT.709 tone-mapping chain. */
-export function hdrToSdrChain(): string {
+/** Colour tags of a source as parseProbeLog reports them (null when the file carries none). */
+export interface SourceColor {
+  colorTransfer: string | null;
+  colorPrimaries: string | null;
+  bitDepth: number;
+}
+
+const SETPARAMS_TRC: Record<string, string> = { smpte2084: "smpte2084", "arib-std-b67": "arib-std-b67", bt709: "bt709", "bt2020-10": "bt2020-10", "bt2020-12": "bt2020-12", smpte170m: "smpte170m", bt470bg: "smpte170m" };
+const SETPARAMS_PRIMARIES: Record<string, string> = { bt2020: "bt2020", bt709: "bt709", smpte170m: "smpte170m", bt470bg: "bt470bg" };
+const SETPARAMS_MATRIX: Record<string, string> = { bt2020: "bt2020nc", smpte170m: "smpte170m", bt470bg: "bt470bg" };
+
+/**
+ * A `setparams` stage that tags every frame with the source's colour
+ * properties before zscale. zimg cannot linearise frames whose transfer and
+ * primaries are unknown (it throws, which the wasm core surfaces as a crash),
+ * and zscale's own tin/pin/min options do not reach it in this core, so the
+ * tags have to be on the frames. Untagged sources get an explicit guess: 10-bit
+ * and deeper is treated as PQ/BT.2020 (HDR), 8-bit as BT.709. The colour
+ * range is left as the source has it.
+ */
+export function sourceColorParams(source?: SourceColor): string {
+  if (!source) return "";
+  const deep = source.bitDepth > 8;
+  const trc = (source.colorTransfer && SETPARAMS_TRC[source.colorTransfer]) ?? (deep ? "smpte2084" : "bt709");
+  const primaries = (source.colorPrimaries && SETPARAMS_PRIMARIES[source.colorPrimaries]) ?? (deep ? "bt2020" : "bt709");
+  const matrix = SETPARAMS_MATRIX[primaries] ?? "bt709";
+  return `setparams=color_primaries=${primaries}:color_trc=${trc}:colorspace=${matrix}`;
+}
+
+/** Tone-maps to SDR BT.709. With the source's probed colour tags the chain also works on untagged or SDR clips. */
+export function hdrToSdrChain(source?: SourceColor): string {
+  const tags = sourceColorParams(source);
   return [
+    ...(tags ? [tags] : []),
     "zscale=t=linear:npl=100",
     "format=gbrpf32le",
     "zscale=p=bt709",
@@ -206,7 +238,12 @@ export interface RenderProgress {
   segments?: number;
   /** The engine actually running this render (known once loading is done). */
   engine?: FFmpegInfo;
+  /** Why the render took a detour (an engine stall and restart); shown for the rest of the render. */
+  notice?: string;
 }
+
+/** Lets React commit a status line before the next synchronous progress update replaces it. */
+export const yieldToUI = (ms = 50) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export interface RenderStats {
   seconds: number;
@@ -462,8 +499,11 @@ export class FFmpegEngine {
    */
   async probe(path: string): Promise<MediaInfo> {
     const lines: string[] = [];
-    // Goes through exec() so the hang watchdog covers probing too.
-    await this.exec(["-hide_banner", "-threads", "1", "-i", path, "-frames:v", "1", "-frames:a", "1", "-f", "null", "-"], undefined, (line) => lines.push(line));
+    // Goes through exec() so the hang watchdog covers probing too. A non-zero
+    // exit (an unreadable file) is reported with ffmpeg's own output rather
+    // than returning an empty MediaInfo that fails later with a vaguer error.
+    const code = await this.exec(["-hide_banner", "-threads", "1", "-i", path, "-frames:v", "1", "-frames:a", "1", "-f", "null", "-"], undefined, (line) => lines.push(line));
+    if (code !== 0) throw new Error(`ffmpeg exited with code ${code}.\n${this.recentLogs()}`);
     return parseProbeLog(lines);
   }
 
@@ -481,8 +521,11 @@ export class FFmpegEngine {
    * Renders every segment in order and streams the result into `job.sink`.
    * Fragmented segments are spliced into one MP4 (init from the first one).
    */
-  async render(job: RenderJob, onProgress: (p: RenderProgress) => void, signal?: AbortSignal): Promise<RenderStats> {
+  async render(job: RenderJob, reportProgress: (p: RenderProgress) => void, signal?: AbortSignal): Promise<RenderStats> {
     const started = performance.now();
+    // Once the render has had to restart, every later update carries the reason.
+    let notice: string | undefined;
+    const onProgress = (p: RenderProgress) => reportProgress(notice ? { ...p, notice } : p);
     const check = () => {
       if (signal?.aborted) throw abortError();
     };
@@ -516,7 +559,9 @@ export class FFmpegEngine {
             // kept: the render resumes from this part instead of starting over.
             if (!(e instanceof FFmpegHungError) || resumed || signal?.aborted) throw e;
             resumed = true;
-            onProgress({ stage: "loading", progress: seg.start / job.duration, message: `Video engine stalled; restarting${e.multithreaded ? " single-threaded" : ""} from part ${seg.index + 1}` });
+            notice = `Video engine stalled; restarting${e.multithreaded ? " single-threaded" : ""} from part ${seg.index + 1}`;
+            onProgress({ stage: "loading", progress: seg.start / job.duration, message: notice });
+            await yieldToUI();
             info = await this.load((message) => onProgress({ stage: "loading", progress: seg.start / job.duration, message }));
             check();
             mounted = await this.mountInputs(job.inputs);

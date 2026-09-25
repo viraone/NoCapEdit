@@ -8,7 +8,7 @@ import { projectDuration } from "@/lib/models/timeline";
 import { getAsset } from "@/lib/storage/db";
 import { exportProject, plannedSegments, DEFAULT_EXPORT_OPTIONS, outputFrame, type ExportOptions, type ExportProgress, type ExportResult } from "@/lib/ffmpeg/exporter";
 import { requestDiskSink, supportsDiskStreaming, type OutputSink } from "@/lib/ffmpeg/sinks";
-import { setSingleThreadPreference, singleThreadPreferred, supportsMultithread, type FFmpegInfo } from "@/lib/ffmpeg/loader";
+import { setSingleThreadPreference, singleThreadPreferred, subscribeSingleThreadPreference, supportsMultithread, type FFmpegInfo } from "@/lib/ffmpeg/loader";
 import { ffmpegEngine, RESOLUTION_PRESETS, type X264Preset } from "@/lib/ffmpegEngine";
 import { GlTransitionRenderer } from "@/lib/gl/transitions";
 import { needsCompositor } from "@/lib/playback/compositor";
@@ -66,7 +66,7 @@ export function ExportPanel() {
   const disk = useSyncExternalStore(noSubscribe, supportsDiskStreaming, no);
   const multithread = useSyncExternalStore(noSubscribe, supportsMultithread, no);
   /** The threaded core stalled on this device before; every export is single-threaded now. */
-  const singleThreadForced = useSyncExternalStore(noSubscribe, singleThreadPreferred, no);
+  const singleThreadForced = useSyncExternalStore(subscribeSingleThreadPreference, singleThreadPreferred, no);
   const webgl = useSyncExternalStore(noSubscribe, readWebgl, no);
   const [toDiskChoice, setToDiskChoice] = useState<boolean | null>(null);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
@@ -292,6 +292,8 @@ export function ExportPanel() {
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={progress.stage === "loading" || progress.stage === "preparing" ? null : progress.progress} />
             <p className="text-[11px] text-label-2">{progress.message}</p>
+            {/* After the status line: the first <p> in this box is the live message. */}
+            {progress.notice && <p className="text-[11px] text-sys-orange">{progress.notice}</p>}
             <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}>
               <Square size={12} /> Cancel
             </Button>

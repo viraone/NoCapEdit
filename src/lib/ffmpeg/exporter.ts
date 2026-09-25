@@ -20,12 +20,14 @@ import { ensureFontsLoaded } from "@/lib/captions/fonts";
 import { toSrt, toTranscript } from "@/lib/captions/srt";
 import { toSpeakerSrt, toWebVtt } from "@/lib/transcriptionEngine";
 import { even } from "@/lib/utils/math";
+import { safeFilename } from "@/lib/utils/download";
 import { captureFrames, needsCompositor } from "@/lib/playback/compositor";
 import { musicSourceTime } from "@/lib/playback/engine";
 import {
   ffmpegEngine,
   encoderArgs,
   FFmpegHungError,
+  yieldToUI,
   type EncodeSettings,
   type HdrMode,
   type MediaInfo,
@@ -86,6 +88,8 @@ export interface ExportProgress {
   message: string;
   /** The ffmpeg engine actually running the export, once it is loaded. */
   engine?: FFmpegInfo;
+  /** Why the export took a detour (an engine stall and restart); shown under the status line. */
+  notice?: string;
 }
 
 export interface ExportResult {
@@ -209,8 +213,10 @@ export async function exportProject(
     ffmpegEngine.preferSingleThread = true;
     ffmpegEngine.cancel();
     await sink?.reset();
-    onProgress({ stage: "loading", progress: 0, message: "Multi-threaded engine stalled; restarting single-threaded" });
-    return runExport(project, assets, options, onProgress, signal, sink);
+    const notice = "Multi-threaded engine stalled; restarting single-threaded";
+    onProgress({ stage: "loading", progress: 0, message: notice, notice });
+    await yieldToUI();
+    return runExport(project, assets, options, (p) => onProgress({ ...p, notice }), signal, sink);
   }
 }
 
@@ -248,7 +254,7 @@ async function runExport(
     gopSeconds: 2,
     hdr: opts.hdr,
   };
-  const fileName = `${project.name.replace(/[^\w\-. ]+/g, "_").trim() || "nocapedit"}.mp4`;
+  const fileName = `${safeFilename(project.name)}.mp4`;
   const out = sink ?? createBlobSink(fileName);
 
   // ---- inputs ---------------------------------------------------------------
@@ -327,6 +333,7 @@ async function runExport(
             hasAudio,
             audioInputIndex,
             hdr,
+            color: info?.video ? { colorTransfer: info.video.colorTransfer, colorPrimaries: info.video.colorPrimaries, bitDepth: info.video.bitDepth } : undefined,
             lutPath,
           });
           clipPaths.push(ctx.inputPath(nameOf.get(l.clip.assetId)!));
@@ -483,7 +490,7 @@ async function runExport(
     job,
     (p) => {
       const stage: ExportStage = p.stage === "loading" ? "loading" : p.stage === "preparing" ? "preparing" : p.stage === "encoding" ? "encoding" : p.stage === "writing" ? "writing" : "done";
-      if (p.stage !== "done") onProgress({ stage, progress: p.progress, message: p.message, ...(p.engine ? { engine: p.engine } : {}) });
+      if (p.stage !== "done") onProgress({ stage, progress: p.progress, message: p.message, ...(p.engine ? { engine: p.engine } : {}), ...(p.notice ? { notice: p.notice } : {}) });
     },
     signal,
   );
