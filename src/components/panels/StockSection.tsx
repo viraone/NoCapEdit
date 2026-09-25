@@ -5,7 +5,7 @@ import { getStockKey, setStockKey, searchStock, downloadStock, type StockProvide
 import { formatTime } from "@/lib/utils/time";
 import { PanelSection } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
-import { Field, inputClass } from "@/components/ui/Field";
+import { Field, Input, inputClass } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 
@@ -86,7 +86,7 @@ export function StockSection({ onImport, disabled }: { onImport: (files: File[])
           <Field label="API key" hint={provider === "pexels" ? "Free at pexels.com/api — stored only in this browser." : "Free at pixabay.com/api/docs — stored only in this browser."}>
             <div className="flex items-center gap-1.5">
               <KeyRound size={14} className="shrink-0 text-label-3" />
-              <input className={inputClass} type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste your key" />
+              <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste your key" />
             </div>
           </Field>
           <div className="flex gap-1.5">

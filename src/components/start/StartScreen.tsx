@@ -24,7 +24,7 @@ import { uid } from "@/lib/utils/id";
 import { ensureCrossOriginIsolation } from "@/lib/coi";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Field, inputClass } from "@/components/ui/Field";
+import { Field, Input } from "@/components/ui/Field";
 import { FileDrop } from "@/components/ui/FileDrop";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { cx } from "@/lib/utils/cx";
@@ -284,7 +284,7 @@ export function StartScreen() {
       <Modal open={newOpen} onClose={() => setNewOpen(false)} title="New project">
         <div className="space-y-4">
           <Field label="Name">
-            <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Untitled reel" autoFocus />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Untitled reel" />
           </Field>
           <Field label="Frame format">
             <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1">

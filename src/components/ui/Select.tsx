@@ -1,10 +1,15 @@
 "use client";
 import type { SelectHTMLAttributes } from "react";
 import { cx } from "@/lib/utils/cx";
+import { useFieldControl } from "./Field";
 
-export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select({ className, children, id, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  const field = useFieldControl();
   return (
     <select
+      id={id ?? field?.id}
+      aria-labelledby={field?.captionId}
+      aria-describedby={field?.hintId}
       className={cx(
         "h-8 w-full rounded-lg border border-sys-gray4 bg-sys-gray5 px-2 text-[13px] text-white focus:border-sys-blue focus:outline-none focus:ring-1 focus:ring-sys-blue/50 disabled:opacity-50",
         className,

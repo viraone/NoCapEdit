@@ -10,7 +10,13 @@ export function FileDrop({ accept, multiple, onFiles, children, className, disab
       role="button"
       tabIndex={0}
       onClick={() => !disabled && inputRef.current?.click()}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && !disabled && inputRef.current?.click()}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        // Owns Space itself: stop it from also toggling playback (EditorShell's global shortcut).
+        e.preventDefault();
+        e.stopPropagation();
+        if (!disabled) inputRef.current?.click();
+      }}
       onDragOver={(e) => {
         e.preventDefault();
         if (!disabled) setOver(true);

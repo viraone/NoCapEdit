@@ -108,7 +108,16 @@ export function ClipsPanel() {
                     seek(layout.start);
                   }}
                 >
-                  <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60"
+                    aria-current={selected ? "true" : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      select({ kind: "clip", id: clip.id });
+                      seek(layout.start);
+                    }}
+                  >
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-sys-gray4 text-[11px] text-white">{i + 1}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-semibold">{clip.name}</p>
@@ -118,7 +127,7 @@ export function ClipsPanel() {
                         {!clip.hasAudio && " · no audio"}
                       </p>
                     </div>
-                  </div>
+                  </button>
                   <div className="mt-1.5 flex items-center gap-0.5">
                     <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), move(clip.id, -1))} disabled={i === 0} title="Move up">
                       <ArrowUp size={13} />

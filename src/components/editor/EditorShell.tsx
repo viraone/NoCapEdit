@@ -20,12 +20,12 @@ import { CanvasBar } from "@/components/canvas/CanvasBar";
 import { VideoCanvas } from "@/components/canvas/VideoCanvas";
 import { TimelineDock } from "@/components/timeline/TimelineDock";
 import { TimelineResizeHandle } from "@/components/timeline/TimelineResizeHandle";
+import { isNativeKeyOwner, isTextEntryTarget, isUndoRedoChord } from "./keyTargets";
+import { createFocusModality, isActivatableTarget } from "./spaceShortcut";
 
-function isTypingTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+/** True while a modal dialog (Recorder, New project, Delete project?) is open. */
+function modalOpen(): boolean {
+  return !!document.querySelector('[role="dialog"][aria-modal="true"]');
 }
 
 function NoticeStrip() {
@@ -61,8 +61,23 @@ export function EditorShell() {
   }, [project, assetUrls]);
 
   useEffect(() => {
+    const modality = createFocusModality();
+    const onPointerDown = () => modality.pointerDown();
+    const onPointerUp = () => modality.pointerUp();
+    const onFocusIn = () => modality.focusIn();
+    const onFocusOut = () => modality.focusOut();
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("pointerup", onPointerUp, true);
+    window.addEventListener("pointercancel", onPointerUp, true);
+    window.addEventListener("focusin", onFocusIn, true);
+    window.addEventListener("focusout", onFocusOut, true);
+
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
+      if (e.key === "Tab") modality.tab();
+      // A dialog (Recorder, New project, Delete project?) owns every shortcut while it is open.
+      if (modalOpen()) return;
+      if (isTextEntryTarget(e.target)) return;
+      if (isNativeKeyOwner(e.target) && !isUndoRedoChord(e)) return;
       const s = useEditor.getState();
       const mod = e.metaKey || e.ctrlKey;
       // Same action as the "Split at playhead" button (Clips / Trim panels).
@@ -72,6 +87,10 @@ export function EditorShell() {
         s.setNotice(ok ? "Split the clip at the playhead." : "Move the playhead inside a clip to split it.");
       };
       if (e.code === "Space") {
+        if (e.defaultPrevented) return;
+        // A keyboard-focused control (Tab, or a scripted .focus()) gets its own
+        // native Space activation; a pointer-focused one keeps toggling playback.
+        if (isActivatableTarget(e.target) && !modality.isPointerFocused()) return;
         e.preventDefault();
         engine.toggle();
       } else if (e.key.toLowerCase() === "s" && !mod && !e.altKey) {
@@ -110,7 +129,14 @@ export function EditorShell() {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("pointerup", onPointerUp, true);
+      window.removeEventListener("pointercancel", onPointerUp, true);
+      window.removeEventListener("focusin", onFocusIn, true);
+      window.removeEventListener("focusout", onFocusOut, true);
+    };
   }, []);
 
   return (
