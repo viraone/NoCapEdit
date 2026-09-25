@@ -21,6 +21,10 @@ export function TopBar() {
     setPrevName(project.name);
     setName(project.name);
   }
+  const openRename = () => {
+    setName(project.name);
+    setEditing(true);
+  };
   const commitName = () => {
     const n = name.trim() || "Untitled reel";
     if (n !== project.name) update((p) => void (p.name = n));
@@ -40,19 +44,22 @@ export function TopBar() {
             onBlur={commitName}
             onKeyDown={(e) => {
               if (e.key === "Enter") commitName();
-              if (e.key === "Escape") setEditing(false);
+              if (e.key === "Escape") {
+                setName(project.name);
+                setEditing(false);
+              }
             }}
             aria-label="Project name"
           />
         ) : (
-          <button type="button" className="truncate text-[15px] font-bold tracking-tight hover:text-label-2" onClick={() => setEditing(true)} title="Rename">
+          <button type="button" className="truncate text-[15px] font-bold tracking-tight hover:text-label-2" onClick={openRename} title="Rename">
             {project.name}
           </button>
         )}
         <Link href="/" className="rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white" title="All projects">
           <Folder size={16} />
         </Link>
-        <button type="button" className="rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white" title="Rename" onClick={() => setEditing(true)}>
+        <button type="button" className="rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white" title="Rename" onClick={openRename}>
           <MoreHorizontal size={16} />
         </button>
         <span className="mx-1 h-4 w-px bg-sys-gray4" />

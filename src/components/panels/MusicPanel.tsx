@@ -69,6 +69,7 @@ export function MusicPanel() {
   const [sfxVolume, setSfxVolume] = useState(0.6);
   const [sfxError, setSfxError] = useState<string | null>(null);
   const sfx = SFX_LIBRARY.find((s) => s.id === sfxId) ?? SFX_LIBRARY[0];
+  const sfxCount = project.voiceovers.filter((v) => v.kind === "sfx").length;
   const addSfxAt = async (mode: "playhead" | "captions") => {
     setSfxError(null);
     try {
@@ -150,9 +151,11 @@ export function MusicPanel() {
           </Button>
         </div>
         {sfxError && <p className="text-[11px] text-sys-red">{sfxError}</p>}
-        {project.voiceovers.some((v) => v.kind === "sfx") && (
+        {sfxCount > 0 && (
           <div className="flex items-center justify-between text-[11px] text-label-2">
-            <span>{project.voiceovers.filter((v) => v.kind === "sfx").length} effects on the timeline</span>
+            <span>
+              {sfxCount} effect{sfxCount === 1 ? "" : "s"} on the timeline
+            </span>
             <Button variant="ghost" size="xs" className="text-sys-red" onClick={() => update((p) => void (p.voiceovers = p.voiceovers.filter((v) => v.kind !== "sfx")))}>
               <Trash2 size={11} /> Remove all
             </Button>

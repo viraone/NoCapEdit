@@ -9,6 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Tile, TileGrid } from "@/components/ui/Tile";
 import { cx } from "@/lib/utils/cx";
+import { formatLocalStamp } from "@/lib/utils/time";
 
 type Mode = "screen" | "camera" | "screen-mic";
 
@@ -119,7 +120,7 @@ export function Recorder({ open, onClose, onRecorded }: { open: boolean; onClose
       recorder.onstop = () => {
         const type = recorder.mimeType || "video/webm";
         const ext = type.includes("mp4") ? "mp4" : "webm";
-        const stamp = new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", "-");
+        const stamp = formatLocalStamp();
         const file = new File(chunksRef.current, `Recording ${stamp}.${ext}`, { type });
         cleanup();
         setStatus("idle");

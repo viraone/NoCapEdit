@@ -44,7 +44,7 @@ export function StylePanel() {
 
   return (
     <>
-      <PanelHeader title="Caption style" description="18 presets with a per-word accent highlight. Changes apply to every caption." />
+      <PanelHeader title="Caption style" description={`${CAPTION_PRESETS.length} presets with a per-word accent highlight. Changes apply to every caption.`} />
       {PRESET_CATEGORIES.map((cat) => (
         <PanelSection key={cat.id} title={cat.name}>
           <div className="grid grid-cols-3 gap-2">

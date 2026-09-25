@@ -247,7 +247,12 @@ export function SubtitlesPanel() {
         });
         p.captions.showTranslated = true;
       });
-      setNotice(`Translated with the ${result.engine === "browser" ? "built-in browser translator" : "on-device Marian model"}.`);
+      const ENGINE_NOTICE: Record<typeof result.engine, string> = {
+        copy: "Source and target language are the same; captions copied.",
+        browser: "Translated with the built-in browser translator.",
+        marian: "Translated with the on-device Marian model.",
+      };
+      setNotice(ENGINE_NOTICE[result.engine]);
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) setError(e instanceof Error ? e.message : String(e));
     } finally {

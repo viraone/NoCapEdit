@@ -195,7 +195,11 @@ export const useEditor = create<EditorState>()(
     unload() {
       for (const url of Object.values(get().assetUrls)) URL.revokeObjectURL(url);
       engine.dispose();
-      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, importStatus: null, importError: null, pendingAssetIds: [] });
+      if (noticeTimer) {
+        clearTimeout(noticeTimer);
+        noticeTimer = null;
+      }
+      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, importStatus: null, importError: null, pendingAssetIds: [], notice: null });
     },
 
     update(fn, opts = {}) {

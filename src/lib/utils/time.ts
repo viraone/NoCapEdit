@@ -42,6 +42,12 @@ export function parseSrtTime(text: string): number {
   return h * 3600 + min * 60 + s + ms / 1000;
 }
 
+/** "YYYY-MM-DD HH-MM" in local wall-clock time, for the recorder's default file name. */
+export function formatLocalStamp(d: Date = new Date()): string {
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}-${p2(d.getMinutes())}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];

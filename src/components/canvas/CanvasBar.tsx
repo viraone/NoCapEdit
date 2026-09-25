@@ -5,7 +5,7 @@ import { useTargetClip } from "@/components/panels/shared";
 import { FRAME_FORMATS, getFormat } from "@/lib/models/formats";
 import { ZOOM_MAX, type Clip } from "@/lib/models/project";
 import { fitZoom, minZoom } from "@/lib/models/clipOps";
-import { CAPTION_PRESETS, getPreset } from "@/lib/captions/presets";
+import { CAPTION_PRESETS } from "@/lib/captions/presets";
 import { cx } from "@/lib/utils/cx";
 
 /** Pill controls under the preview: format, picture zoom, fill/fit, caption style, safe zone. */
@@ -22,6 +22,7 @@ export function CanvasBar() {
       if (c) fn(c);
     });
   const zoom = clip?.zoom ?? 1;
+  const safeOn = project.safeZone !== "none";
 
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 pb-1">
@@ -89,11 +90,12 @@ export function CanvasBar() {
       <button
         type="button"
         className={cx("pill")}
-        data-active={project.safeZone !== "none" ? "true" : "false"}
+        data-active={safeOn ? "true" : "false"}
         onClick={() => update((p) => void (p.safeZone = p.safeZone === "none" ? (getFormat(p.formatId).safeZone === "none" ? "reels" : getFormat(p.formatId).safeZone) : "none"))}
-        title={`Caption style: ${getPreset(project.subtitleStyle.presetId).name}`}
+        title={safeOn ? "Hide the platform safe zone" : "Show the platform safe zone"}
+        aria-pressed={safeOn}
       >
-        {project.safeZone !== "none" ? <Eye size={14} /> : <EyeOff size={14} />} Safe zone
+        {safeOn ? <Eye size={14} /> : <EyeOff size={14} />} Safe zone
       </button>
     </div>
   );

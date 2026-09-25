@@ -34,7 +34,7 @@ export interface TranslateOptions {
 
 export interface TranslateResult {
   translations: string[];
-  engine: "browser" | "marian";
+  engine: "browser" | "marian" | "copy";
 }
 
 export function canTranslate(source: string, target: string): boolean {
@@ -42,7 +42,7 @@ export function canTranslate(source: string, target: string): boolean {
 }
 
 export async function translateTexts(texts: string[], opts: TranslateOptions): Promise<TranslateResult> {
-  if (opts.source === opts.target) return { translations: [...texts], engine: "marian" };
+  if (opts.source === opts.target) return { translations: [...texts], engine: "copy" };
 
   const native = opts.forceOnDeviceModel ? null : nativeTranslator();
   if (native) {
