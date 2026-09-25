@@ -3,6 +3,7 @@ import { createClip } from "@/lib/models/project";
 import { layoutClips, locateFrame, projectDuration, toProjectTime, toSourceTime } from "@/lib/models/timeline";
 import { computePlacement } from "@/lib/models/placement";
 import * as clipOpsModule from "@/lib/models/clipOps";
+import { fitZoom, minZoom } from "@/lib/models/clipOps";
 import { createProject } from "@/lib/models/project";
 
 const clip = (duration: number, extra: Partial<ReturnType<typeof createClip>> = {}) => ({
@@ -105,5 +106,18 @@ describe("clip cuts and splits at edges and inside transitions", () => {
     expect(p.clips).toHaveLength(2);
     expect(splitClipAt(p, 9)).not.toBeNull();
     expect(p.clips).toHaveLength(3);
+  });
+});
+
+describe("fitZoom", () => {
+  it("returns the exact contain ratio, with no 0.5 floor", () => {
+    expect(fitZoom({ width: 1920, height: 1080 }, { width: 1080, height: 1920 })).toBeCloseTo(0.31640625, 10);
+    expect(fitZoom({ width: 1920, height: 1080 }, { width: 1080, height: 1080 })).toBe(0.5625);
+    expect(fitZoom({ width: 1080, height: 1920 }, { width: 1080, height: 1920 })).toBe(1);
+    expect(fitZoom({ width: 0, height: 0 }, { width: 1080, height: 1920 })).toBe(1);
+  });
+  it("lets the zoom controls go down to the Fit value when it is below 0.5", () => {
+    expect(minZoom(0.31640625)).toBe(0.31640625);
+    expect(minZoom(0.9)).toBe(0.5);
   });
 });

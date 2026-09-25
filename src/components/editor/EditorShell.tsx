@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from "react";
-import { Lightbulb } from "lucide-react";
+import { AlertTriangle, Lightbulb, X } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
 import { ensureFontsLoaded } from "@/lib/captions/fonts";
@@ -26,6 +26,22 @@ import { createFocusModality, isActivatableTarget } from "./spaceShortcut";
 /** True while a modal dialog (Recorder, New project, Delete project?) is open. */
 function modalOpen(): boolean {
   return !!document.querySelector('[role="dialog"][aria-modal="true"]');
+}
+
+/** Files an import could not add. The Clips panel shows them itself; elsewhere (a top-bar import) they show here. */
+function ImportErrorStrip() {
+  const error = useEditor((s) => s.importError);
+  const tool = useEditor((s) => s.tool);
+  if (!error || tool === "clips") return null;
+  return (
+    <div className="flex shrink-0 items-start gap-2 rounded-lg bg-sys-red/10 px-3 py-1.5 text-[12px] text-sys-red" role="alert">
+      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+      <p className="min-w-0 flex-1 whitespace-pre-wrap">{error}</p>
+      <button type="button" className="shrink-0 rounded p-0.5 hover:bg-sys-red/20" onClick={() => useEditor.getState().setImportError(null)} aria-label="Dismiss" title="Dismiss">
+        <X size={13} />
+      </button>
+    </div>
+  );
 }
 
 function NoticeStrip() {
@@ -114,6 +130,7 @@ export function EditorShell() {
           if (sel.kind === "cue") p.cues = p.cues.filter((c) => c.id !== sel.id);
           if (sel.kind === "overlay") p.overlays = p.overlays.filter((o) => o.id !== sel.id);
           if (sel.kind === "clip") p.clips = p.clips.filter((c) => c.id !== sel.id);
+          if (sel.kind === "voiceover") p.voiceovers = p.voiceovers.filter((v) => v.id !== sel.id);
         });
         s.select(null);
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
@@ -143,6 +160,7 @@ export function EditorShell() {
     <div className="flex h-screen flex-col gap-2 overflow-hidden bg-[#0b0b0d] p-2.5 text-white">
       <TopBar />
       <NoticeStrip />
+      <ImportErrorStrip />
       <div className="flex min-h-0 flex-1 gap-3">
         <div className="flex shrink-0 gap-3">
           <ToolRail />

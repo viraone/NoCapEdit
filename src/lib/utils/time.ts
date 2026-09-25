@@ -10,6 +10,15 @@ export function formatTime(seconds: number, withTenths = true): string {
   return withTenths ? `${base}.${tenths}` : base;
 }
 
+/** m:ss.cc transport timecode, rounded in whole centiseconds so 59.996 reads 1:00.00, never 0:60.00. */
+export function formatTimecode(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+  const cs = Math.round(seconds * 100);
+  const m = Math.floor(cs / 6000);
+  const s = (cs % 6000) / 100;
+  return `${m}:${s.toFixed(2).padStart(5, "0")}`;
+}
+
 /** HH:MM:SS,mmm as required by SubRip. */
 export function formatSrtTime(seconds: number): string {
   const totalMs = Math.max(0, Math.round(seconds * 1000));

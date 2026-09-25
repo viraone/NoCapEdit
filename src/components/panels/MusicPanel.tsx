@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Upload, Trash2, Music, Mic2, Volume2, Square, Play } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
@@ -30,6 +30,12 @@ export function MusicPanel() {
   const [error, setError] = useState<string | null>(null);
   const music = project.music;
   const selection = useEditor((s) => s.selection);
+  const voListRef = useRef<HTMLUListElement>(null);
+  // A voice-over picked on the timeline scrolls its row into view.
+  useEffect(() => {
+    if (selection?.kind !== "voiceover") return;
+    voListRef.current?.querySelector<HTMLElement>(`[data-voiceover="${selection.id}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [selection]);
   const [voText, setVoText] = useState("");
   const [voice, setVoice] = useState(TTS_VOICES[0].id);
   const [voJob, setVoJob] = useState<{ message: string; progress: number | null } | null>(null);
@@ -191,9 +197,14 @@ export function MusicPanel() {
         )}
         {voError && <p className="text-[11px] text-sys-red">{voError}</p>}
         {project.voiceovers.some((v) => v.kind !== "sfx") && (
-          <ul className="space-y-1.5">
+          <ul ref={voListRef} className="space-y-1.5">
             {project.voiceovers.filter((v) => v.kind !== "sfx").map((vo) => (
-              <li key={vo.id} className={cx("rounded-md border border-sys-gray4 p-2", selection?.id === vo.id && "border-sys-blue")}>
+              <li
+                key={vo.id}
+                data-voiceover={vo.id}
+                className={cx("rounded-md border border-sys-gray4 p-2", selection?.kind === "voiceover" && selection.id === vo.id && "border-sys-blue")}
+                onClick={() => useEditor.getState().select({ kind: "voiceover", id: vo.id })}
+              >
                 <div className="flex items-center gap-1.5">
                   <button type="button" className="rounded p-0.5 text-label-2 hover:bg-sys-gray4 hover:text-white" onClick={() => useEditor.getState().seek(vo.start)} title="Jump to voice-over">
                     <Play size={11} />

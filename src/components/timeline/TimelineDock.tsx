@@ -487,11 +487,16 @@ export function TimelineDock() {
               {project.voiceovers.map((vo) => (
                 <div
                   key={vo.id}
-                  className="absolute top-1 z-10 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-orange/60 bg-sys-orange/25 px-1 text-[10px] text-white"
+                  className={cx(
+                    "absolute top-1 z-10 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-orange/60 bg-sys-orange/25 px-1 text-[10px] text-white",
+                    selection?.kind === "voiceover" && selection.id === vo.id && "ring-1 ring-sys-blue",
+                  )}
                   style={{ left: vo.start * pxPerSec, width: Math.max(6, vo.duration * pxPerSec) }}
                   title={vo.text}
+                  data-voiceover-block={vo.id}
                   onPointerDown={(e) => {
                     e.stopPropagation();
+                    select({ kind: "voiceover", id: vo.id });
                     seek(vo.start);
                     setTool("music");
                   }}

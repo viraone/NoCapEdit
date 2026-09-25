@@ -4,8 +4,8 @@ import { Scissors, ArrowRightToLine, ArrowLeftToLine, Snail, PersonStanding, Rab
 import { useEditor } from "@/store/editorStore";
 import { useProject, useTargetClip, useSliderTx } from "./shared";
 import { layoutClips, findLayout, toSourceTime } from "@/lib/models/timeline";
-import { SPEED_MAX, SPEED_MIN, TRANSITIONS, ZOOM_MAX, ZOOM_MIN, type Clip, type TransitionType } from "@/lib/models/project";
-import { cutAfter, cutBefore, fitZoom, splitClipAt } from "@/lib/models/clipOps";
+import { SPEED_MAX, SPEED_MIN, TRANSITIONS, ZOOM_MAX, type Clip, type TransitionType } from "@/lib/models/project";
+import { cutAfter, cutBefore, fitZoom, minZoom, splitClipAt } from "@/lib/models/clipOps";
 import { getFormat } from "@/lib/models/formats";
 import { getAsset, putAsset, getPeaks } from "@/lib/storage/db";
 import { applyRemovals, findFillerWords, findSilences, mergeRanges, totalDuration, DEFAULT_FILLERS, OPTIONAL_FILLERS, DEFAULT_SILENCE, type TimeRange } from "@/lib/edit/magicCut";
@@ -311,7 +311,7 @@ export function TrimPanel() {
 
       <PanelSection title={`Picture zoom  ${zoomLabel}`}>
         <TileGrid cols={4}>
-          <Tile icon={<ZoomOut size={16} />} label="Out" onClick={() => edit((c) => void (c.zoom = Math.max(ZOOM_MIN, Math.round((c.zoom - 0.1) * 10) / 10)))} />
+          <Tile icon={<ZoomOut size={16} />} label="Out" onClick={() => edit((c) => void (c.zoom = Math.max(minZoom(fit), Math.round((c.zoom - 0.1) * 10) / 10)))} />
           <Tile icon={<ZoomIn size={16} />} label="In" onClick={() => edit((c) => void (c.zoom = Math.min(ZOOM_MAX, Math.round((c.zoom + 0.1) * 10) / 10)))} />
           <Tile icon={<Maximize size={16} />} label="Fill" active={Math.abs(clip.zoom - 1) < 1e-6} onClick={() => edit((c) => void ((c.zoom = 1), (c.pan = { x: 0, y: 0 })))} />
           <Tile icon={<Minimize size={16} />} label="Fit" active={Math.abs(clip.zoom - fit) < 1e-6} onClick={() => edit((c) => void ((c.zoom = fit), (c.pan = { x: 0, y: 0 })))} />
@@ -411,7 +411,19 @@ export function TrimPanel() {
             <Toggle checked={clip.preservePitch} onChange={(v) => edit((c) => void (c.preservePitch = v))} label="Preserve voice pitch" description="Off shifts the pitch with the speed" />
           </PanelSection>
           <PanelSection title="Framing">
-            <Slider label="Crop zoom" value={clip.zoom} min={ZOOM_MIN} max={ZOOM_MAX} step={0.01} format={(v) => `${v.toFixed(2)}×`} onChange={(v) => edit((c) => void (c.zoom = v), false)} {...tx} />
+            <Slider
+              label="Crop zoom"
+              value={clip.zoom}
+              // The exact Fit value (not step-aligned), so Home shows the whole picture precisely; End then reaches
+              // ~3.996 rather than 4 (visually identical, "4.00x") since native range steps are computed from min,
+              // and 4 is not exactly min + n*step for a fractional min like this.
+              min={minZoom(fit)}
+              max={ZOOM_MAX}
+              step={0.01}
+              format={(v) => `${Math.max(minZoom(fit), v).toFixed(2)}×`}
+              onChange={(v) => edit((c) => void (c.zoom = Math.max(minZoom(fit), v)), false)}
+              {...tx}
+            />
             <Slider label="Pan X" value={clip.pan.x} min={-1} max={1} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => void (c.pan.x = v), false)} {...tx} />
             <Slider label="Pan Y" value={clip.pan.y} min={-1} max={1} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => void (c.pan.y = v), false)} {...tx} />
             <p className="text-[11px] text-label-3">With the Trim tool active you can also drag the video in the preview to pan it.</p>

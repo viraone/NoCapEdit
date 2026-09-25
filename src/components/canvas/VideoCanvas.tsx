@@ -1,4 +1,5 @@
 "use client";
+import { OVERLAY_WIDTH_RANGE, SUBTITLE_SCALE_RANGE, TEXT_FONT_SIZE_RANGE } from "@/lib/models/project";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Film, Play } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
@@ -209,10 +210,10 @@ export function VideoCanvas() {
           if (d.elKind === "overlay") {
             const ov = p.overlays.find((o) => o.id === d.id);
             if (!ov) return;
-            if (ov.kind === "text") ov.fontSize = clamp(d.origin.size * factor, 0.01, 0.3);
-            else ov.width = clamp(d.origin.size * factor, 0.02, 3);
+            if (ov.kind === "text") ov.fontSize = clamp(d.origin.size * factor, TEXT_FONT_SIZE_RANGE.min, TEXT_FONT_SIZE_RANGE.max);
+            else ov.width = clamp(d.origin.size * factor, OVERLAY_WIDTH_RANGE.min, OVERLAY_WIDTH_RANGE.max);
           } else {
-            p.subtitleStyle.sizeScale = clamp(d.origin.size * factor, 0.3, 3);
+            p.subtitleStyle.sizeScale = clamp(d.origin.size * factor, SUBTITLE_SCALE_RANGE.min, SUBTITLE_SCALE_RANGE.max);
           }
         },
         { history: false },
@@ -294,7 +295,7 @@ export function VideoCanvas() {
     e.stopPropagation();
     const sel = selectionRef.current;
     const r = selRectRef.current;
-    if (!sel || !r || sel.kind === "clip") return;
+    if (!sel || !r || sel.kind === "clip" || sel.kind === "voiceover") return;
     const proj = projectRef.current;
     let sizeValue = proj.subtitleStyle.sizeScale;
     if (sel.kind === "overlay") {

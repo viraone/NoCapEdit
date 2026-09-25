@@ -3,8 +3,8 @@ import { ZoomIn, ZoomOut, Maximize, Minimize, Eye, EyeOff } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useTargetClip } from "@/components/panels/shared";
 import { FRAME_FORMATS, getFormat } from "@/lib/models/formats";
-import { ZOOM_MAX, ZOOM_MIN, type Clip } from "@/lib/models/project";
-import { fitZoom } from "@/lib/models/clipOps";
+import { ZOOM_MAX, type Clip } from "@/lib/models/project";
+import { fitZoom, minZoom } from "@/lib/models/clipOps";
 import { CAPTION_PRESETS, getPreset } from "@/lib/captions/presets";
 import { cx } from "@/lib/utils/cx";
 
@@ -53,7 +53,7 @@ export function CanvasBar() {
       </label>
 
       <div className="pill gap-1 px-1.5">
-        <button type="button" className="rounded-md p-1 hover:bg-white/10 disabled:opacity-40" disabled={!clip} onClick={() => edit((c) => void (c.zoom = Math.max(ZOOM_MIN, Math.round((c.zoom - 0.1) * 10) / 10)))} title="Zoom out">
+        <button type="button" className="rounded-md p-1 hover:bg-white/10 disabled:opacity-40" disabled={!clip} onClick={() => edit((c) => void (c.zoom = Math.max(minZoom(fit), Math.round((c.zoom - 0.1) * 10) / 10)))} title="Zoom out">
           <ZoomOut size={14} />
         </button>
         <span className="w-10 text-center tabular-nums">{zoom.toFixed(1)}×</span>

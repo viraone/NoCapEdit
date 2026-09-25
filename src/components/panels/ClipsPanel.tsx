@@ -73,7 +73,7 @@ export function ClipsPanel() {
             <p className="mt-1 text-[11px] text-label-2">{status}</p>
           </div>
         )}
-        {error && <p className="text-[11px] text-sys-red">{error}</p>}
+        {error && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{error}</p>}
         {canRecord && (
           <Button variant="secondary" size="sm" className="w-full" onClick={() => setRecording(true)} disabled={!!status}>
             <Video size={13} /> Record screen or camera

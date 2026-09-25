@@ -20,7 +20,9 @@ export interface SliderProps {
 }
 
 export function Slider({ label, value, min, max, step = 0.01, onChange, onDragStart, onDragEnd, format, disabled, className }: SliderProps) {
-  const display = format ? format(value) : value.toFixed(2);
+  // Shown where the thumb can actually sit, even for an older out-of-range stored value.
+  const shown = Math.min(max, Math.max(min, value));
+  const display = format ? format(shown) : shown.toFixed(2);
   // The gesture lives for the input's lifetime and always calls the latest handlers.
   const latest = useRef({ begin: onDragStart, end: onDragEnd });
   useEffect(() => {

@@ -15,6 +15,14 @@ export function TimelineResizeHandle() {
   const drag = useRef<{ startY: number; startH: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
+  // Keep the preview's minimum height when the window shrinks (and grow back when it grows).
+  useEffect(() => {
+    const fit = () => useEditor.getState().fitTimelineHeightToWindow();
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
+
   // One cursor and no text selection anywhere while the grip is held, even with the pointer over the preview.
   useEffect(() => {
     if (!dragging) return;

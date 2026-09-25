@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Search, Download, KeyRound, ExternalLink } from "lucide-react";
 import { getStockKey, setStockKey, searchStock, downloadStock, type StockProvider, type StockVideo } from "@/lib/stock/providers";
 import { formatTime } from "@/lib/utils/time";
@@ -17,33 +17,55 @@ export function StockSection({ onImport, disabled }: { onImport: (files: File[])
   const [query, setQuery] = useState("");
   const [orientation, setOrientation] = useState<"" | "portrait" | "landscape" | "square">("portrait");
   const [results, setResults] = useState<StockVideo[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const busy = searching ? "Searching…" : downloading;
+  /** Drops a second search or download started before the first one's state update landed. */
+  const inFlight = useRef(false);
+  /** Bumped on every search and provider switch: a late response from an older search is ignored. */
+  const searchSeq = useRef(0);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const switchProvider = (p: StockProvider) => {
+    searchSeq.current += 1;
     setProvider(p);
     setKey(getStockKey(p));
     setResults([]);
+    setError(null);
+    if (searching) {
+      // The pending search now belongs to the old provider: forget it.
+      setSearching(false);
+      inFlight.current = false;
+    }
   };
 
   const search = async () => {
+    if (inFlight.current || busy) return;
     setError(null);
     setStockKey(provider, key.trim());
     if (!query.trim()) return;
-    setBusy("Searching…");
+    const seq = ++searchSeq.current;
+    inFlight.current = true;
+    setSearching(true);
     try {
-      setResults(await searchStock(provider, query.trim(), orientation));
+      const list = await searchStock(provider, query.trim(), orientation);
+      if (seq === searchSeq.current) setResults(list);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (seq === searchSeq.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(null);
+      if (seq === searchSeq.current) {
+        setSearching(false);
+        inFlight.current = false;
+      }
     }
   };
 
   const add = async (item: StockVideo) => {
+    if (inFlight.current || busy) return;
+    inFlight.current = true;
     setError(null);
-    setBusy(`Downloading ${item.title}`);
+    setDownloading(`Downloading ${item.title}`);
     setProgress(null);
     try {
       const file = await downloadStock(item, (loaded, total) => setProgress(total ? loaded / total : null));
@@ -51,8 +73,9 @@ export function StockSection({ onImport, disabled }: { onImport: (files: File[])
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(null);
+      setDownloading(null);
       setProgress(null);
+      inFlight.current = false;
     }
   };
 
@@ -90,8 +113,17 @@ export function StockSection({ onImport, disabled }: { onImport: (files: File[])
             </div>
           </Field>
           <div className="flex gap-1.5">
-            <input className={inputClass} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. city night, coffee, ocean" onKeyDown={(e) => e.key === "Enter" && search()} />
-            <Button variant="secondary" size="md" onClick={search} disabled={!!busy || !query.trim()}>
+            <input
+              className={inputClass}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. city night, coffee, ocean"
+              aria-label="Stock search query"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !busy && query.trim()) void search();
+              }}
+            />
+            <Button variant="secondary" size="md" onClick={search} disabled={!!busy || !query.trim()} aria-label="Search" title="Search">
               <Search size={14} />
             </Button>
           </div>

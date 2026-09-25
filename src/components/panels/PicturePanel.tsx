@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Upload, Trash2, Image as ImageIcon, Sparkles, Square, Clapperboard } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
-import { createImageOverlay, createLottieOverlay, type ImageOverlay, type LottieOverlay } from "@/lib/models/project";
+import { OVERLAY_WIDTH_RANGE, createImageOverlay, createLottieOverlay, type ImageOverlay, type LottieOverlay } from "@/lib/models/project";
 import { projectDuration } from "@/lib/models/timeline";
 import { importImage } from "@/lib/media/import";
 import { removeImageBackground } from "@/lib/matte/matte";
@@ -177,7 +177,7 @@ export function PicturePanel() {
       {selected && (
         <>
           <PanelSection title="Appearance" right={<Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => remove(selected.id)} title="Delete"><Trash2 size={13} /></Button>}>
-            <Slider label="Size" value={selected.width} min={0.05} max={1.5} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((o) => void (o.width = v), false)} {...tx} />
+            <Slider label="Size" value={selected.width} min={OVERLAY_WIDTH_RANGE.min} max={OVERLAY_WIDTH_RANGE.max} step={OVERLAY_WIDTH_RANGE.step} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((o) => void (o.width = v), false)} {...tx} />
             <Slider label="Opacity" value={selected.opacity} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((o) => void (o.opacity = v), false)} {...tx} />
             <Slider label="Rotation" value={selected.rotation} min={-180} max={180} step={1} format={(v) => `${v.toFixed(0)}°`} onChange={(v) => edit((o) => void (o.rotation = v), false)} {...tx} />
             {selected.kind === "lottie" && (

@@ -36,13 +36,16 @@ export function videoLaneHeight(dockH: number): number {
 const STORAGE_KEY = "reelflow.timelineHeight";
 
 /** The height the user last dragged the dock to, or the default; reads are guarded because storage may be unavailable. */
-export function readStoredDockHeight(): number {
+export function readStoredDockHeight(fallback = DOCK_DEFAULT_H): number {
+  let v = fallback;
   try {
-    const v = Number(localStorage.getItem(STORAGE_KEY));
-    return clampDockHeight(v > 0 ? v : DOCK_DEFAULT_H, window.innerHeight);
+    const stored = Number(localStorage.getItem(STORAGE_KEY));
+    if (stored > 0) v = stored;
   } catch {
-    return DOCK_DEFAULT_H;
+    /* storage unavailable: keep the fallback */
   }
+  // Always clamped against the live window (guarded for the static prerender).
+  return clampDockHeight(v, typeof window === "undefined" ? undefined : window.innerHeight);
 }
 
 export function storeDockHeight(h: number): void {

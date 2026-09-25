@@ -5,14 +5,8 @@ import { useTargetClip } from "@/components/panels/shared";
 import { engine } from "@/lib/playback/engine";
 import { projectDuration } from "@/lib/models/timeline";
 import { cutAfter, cutBefore, moveClip, removeClip } from "@/lib/models/clipOps";
-import { formatTime } from "@/lib/utils/time";
+import { formatTime, formatTimecode } from "@/lib/utils/time";
 import { Button } from "@/components/ui/Button";
-
-function timecode(t: number): string {
-  const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  return `${m}:${s.toFixed(2).padStart(5, "0")}`;
-}
 
 /** Transport (centre) and clip actions (right), the top row of the timeline card. */
 export function TransportBar() {
@@ -67,7 +61,7 @@ export function TransportBar() {
           <ArrowLeftToLine size={15} />
         </Button>
         <span className="ml-2 font-mono text-[13px] tabular-nums">
-          <span className="font-bold text-sys-blue">{timecode(currentTime)}</span> <span className="text-label-3">/</span> <span className="text-label-2">{formatTime(duration)}</span>
+          <span className="font-bold text-sys-blue">{formatTimecode(currentTime)}</span> <span className="text-label-3">/</span> <span className="text-label-2">{formatTime(duration)}</span>
         </span>
       </div>
       <div className="flex items-center justify-end gap-1.5">

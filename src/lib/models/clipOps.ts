@@ -1,5 +1,5 @@
 /** Clip edits shared by the Clips panel, Trim panel and timeline (operate on a draft project). */
-import type { VideoProject } from "./project";
+import { ZOOM_MIN, type VideoProject } from "./project";
 import { layoutClips, locateFrame, toSourceTime } from "./timeline";
 import { uid } from "@/lib/utils/id";
 
@@ -90,5 +90,12 @@ export function cutAfter(p: VideoProject, time: number): boolean {
 export function fitZoom(source: { width: number; height: number }, frame: { width: number; height: number }): number {
   const cover = Math.max(frame.width / source.width, frame.height / source.height);
   const contain = Math.min(frame.width / source.width, frame.height / source.height);
-  return Math.max(0.5, Math.min(4, contain / cover));
+  // No floor: a 16:9 clip in a 9:16 frame needs about 0.32 to be shown whole.
+  const r = contain / cover;
+  return Number.isFinite(r) && r > 0 ? r : 1;
+}
+
+/** Lowest zoom the controls allow: ZOOM_MIN, or the Fit value when that is lower. */
+export function minZoom(fit: number): number {
+  return Math.min(ZOOM_MIN, fit);
 }

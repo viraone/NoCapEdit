@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { Plus, Trash2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
-import { createTextOverlay, type FontKey, type TextOverlay, type TextAnimation } from "@/lib/models/project";
+import { TEXT_FONT_SIZE_RANGE, createTextOverlay, type FontKey, type TextOverlay, type TextAnimation } from "@/lib/models/project";
 import { projectDuration } from "@/lib/models/timeline";
 import { FONT_KEYS, FONT_LABELS, fontFamily } from "@/lib/captions/fonts";
 import { formatTime } from "@/lib/utils/time";
@@ -142,7 +142,7 @@ export function TextPanel() {
                 );
               })}
             </div>
-            <Slider label="Size" value={selected.fontSize} min={0.015} max={0.15} step={0.001} format={(v) => `${(v * 100).toFixed(1)}%`} onChange={(v) => edit((o) => void (o.fontSize = v), false)} {...tx} />
+            <Slider label="Size" value={selected.fontSize} min={TEXT_FONT_SIZE_RANGE.min} max={TEXT_FONT_SIZE_RANGE.max} step={TEXT_FONT_SIZE_RANGE.step} format={(v) => `${(v * 100).toFixed(1)}%`} onChange={(v) => edit((o) => void (o.fontSize = v), false)} {...tx} />
             {selected.variant === "title" && <Slider label="Max width" value={selected.maxWidth} min={0.3} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((o) => void (o.maxWidth = v), false)} {...tx} />}
             <ColorInput label="Text colour" value={selected.color} onChange={(v) => edit((o) => void (o.color = v))} />
             <Toggle checked={!!selected.background} onChange={(v) => edit((o) => void (o.background = v ? "#ef4444" : null))} label="Background" />

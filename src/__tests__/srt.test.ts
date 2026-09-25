@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSrt, toSrt, toTranscript } from "@/lib/captions/srt";
-import { formatSrtTime, formatTime, parseSrtTime } from "@/lib/utils/time";
+import { formatSrtTime, formatTime, formatTimecode, parseSrtTime } from "@/lib/utils/time";
 
 describe("srt", () => {
   it("formats SubRip timestamps", () => {
@@ -44,5 +44,15 @@ describe("formatTime", () => {
     expect(formatTime(119.99)).toBe("1:59.9");
     expect(formatTime(61.5, false)).toBe("1:01");
     expect(formatTime(-1)).toBe("0:00.0");
+  });
+});
+
+describe("formatTimecode", () => {
+  it("never shows 60 seconds just below a minute", () => {
+    expect(formatTimecode(59.996)).toBe("1:00.00");
+    expect(formatTimecode(119.999)).toBe("2:00.00");
+    expect(formatTimecode(65.25)).toBe("1:05.25");
+    expect(formatTimecode(0)).toBe("0:00.00");
+    expect(formatTimecode(Number.NaN)).toBe("0:00.00");
   });
 });

@@ -8,7 +8,7 @@ import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/compon
 export type ToolId = "clips" | "trim" | "subtitles" | "style" | "text" | "picture" | "music" | "export";
 
 export interface Selection {
-  kind: "clip" | "cue" | "overlay";
+  kind: "clip" | "cue" | "overlay" | "voiceover";
   id: string;
 }
 
@@ -37,6 +37,8 @@ export interface EditorState {
   editRequest: (Selection & { nonce: number }) | null;
   /** Progress line of the video import running in this editor (shared by the top bar and the Clips panel), null when idle. */
   importStatus: string | null;
+  /** Files the last import could not add, one "name: reason" per line; shown by the Clips panel. */
+  importError: string | null;
   /** Assets already written to IndexedDB by an import whose clip has not joined the project yet. */
   pendingAssetIds: string[];
 
@@ -56,6 +58,8 @@ export interface EditorState {
   select(sel: Selection | null): void;
   setTimelineZoom(z: number): void;
   setTimelineHeight(h: number): void;
+  /** Re-clamps the dock to the current window without changing the stored preference, so it grows back later. */
+  fitTimelineHeightToWindow(): void;
   setCanvasZoom(z: CanvasZoom): void;
   setNotice(text: string | null): void;
   /** Selects the element, switches to its panel and asks that panel to focus its editor. */
@@ -63,6 +67,7 @@ export interface EditorState {
   registerAsset(assetId: string, blob: Blob): string;
   releaseAsset(assetId: string): void;
   setImportStatus(status: string | null): void;
+  setImportError(error: string | null): void;
   markAssetPending(assetId: string): void;
   unmarkAssetPending(assetId: string): void;
 }
@@ -156,6 +161,7 @@ export const useEditor = create<EditorState>()(
     notice: null,
     editRequest: null,
     importStatus: null,
+    importError: null,
     pendingAssetIds: [],
 
     async loadProject(id) {
@@ -189,7 +195,7 @@ export const useEditor = create<EditorState>()(
     unload() {
       for (const url of Object.values(get().assetUrls)) URL.revokeObjectURL(url);
       engine.dispose();
-      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, importStatus: null, pendingAssetIds: [] });
+      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, importStatus: null, importError: null, pendingAssetIds: [] });
     },
 
     update(fn, opts = {}) {
@@ -257,6 +263,10 @@ export const useEditor = create<EditorState>()(
     setPlaying: (isPlaying) => set({ isPlaying }),
     select: (selection) => set({ selection }),
     setTimelineZoom: (timelineZoom) => set({ timelineZoom: Math.min(600, Math.max(10, timelineZoom)) }),
+    fitTimelineHeightToWindow: () => {
+      const timelineHeight = readStoredDockHeight(get().timelineHeight);
+      if (timelineHeight !== get().timelineHeight) set({ timelineHeight });
+    },
     setTimelineHeight: (h) => {
       const timelineHeight = clampDockHeight(h, typeof window === "undefined" ? undefined : window.innerHeight);
       if (timelineHeight === get().timelineHeight) return;
@@ -276,6 +286,7 @@ export const useEditor = create<EditorState>()(
         const kind = project?.overlays.find((o) => o.id === sel.id)?.kind;
         tool = kind === "image" || kind === "lottie" ? "picture" : "text";
       } else if (sel.kind === "clip") tool = "trim";
+      else if (sel.kind === "voiceover") tool = "music";
       set({ selection: sel, tool, editRequest: { ...sel, nonce: Date.now() } });
     },
 
@@ -285,6 +296,7 @@ export const useEditor = create<EditorState>()(
       return url;
     },
     setImportStatus: (importStatus) => set({ importStatus }),
+    setImportError: (importError) => set({ importError }),
     markAssetPending: (assetId) => set((s) => ({ pendingAssetIds: [...s.pendingAssetIds, assetId] })),
     unmarkAssetPending: (assetId) => set((s) => ({ pendingAssetIds: s.pendingAssetIds.filter((id) => id !== assetId) })),
 

@@ -1,4 +1,5 @@
 "use client";
+import { SUBTITLE_SCALE_RANGE } from "@/lib/models/project";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
 import { CAPTION_PRESETS, PRESET_CATEGORIES, getPreset, type CaptionPreset } from "@/lib/captions/presets";
@@ -68,7 +69,7 @@ export function StylePanel() {
         </PanelSection>
       ))}
       <PanelSection title="Adjust">
-        <Slider label="Size" value={style.sizeScale} min={0.5} max={2} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set((s) => void (s.sizeScale = v), false)} {...tx} />
+        <Slider label="Size" value={style.sizeScale} min={SUBTITLE_SCALE_RANGE.min} max={SUBTITLE_SCALE_RANGE.max} step={SUBTITLE_SCALE_RANGE.step} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set((s) => void (s.sizeScale = v), false)} {...tx} />
         <Slider label="Vertical position" value={style.y} min={0.05} max={0.95} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set((s) => void (s.y = v), false)} {...tx} />
         <Slider label="Max width" value={style.maxWidth} min={0.4} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set((s) => void (s.maxWidth = v), false)} {...tx} />
         <Toggle checked={style.highlight} onChange={(v) => set((s) => void (s.highlight = v))} label="Highlight the spoken word" description={`Preset uses the “${preset.highlight}” highlight`} />

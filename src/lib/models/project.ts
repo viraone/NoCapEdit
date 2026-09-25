@@ -81,7 +81,7 @@ export interface Clip {
   speed: number;
   /** Keep the voice pitch when changing speed (atempo) or shift it (asetrate). */
   preservePitch: boolean;
-  /** Crop zoom 0.5x to 4x relative to a "cover" fit of the frame. */
+  /** Crop zoom relative to a "cover" fit of the frame: 0.5x (or the Fit value, when lower) to 4x. */
   zoom: number;
   /** Pan offset as a fraction of the frame size, -1..1. */
   pan: { x: number; y: number };
@@ -309,6 +309,10 @@ export interface VideoProject {
 export const SPEED_MIN = 0.25;
 export const SPEED_MAX = 4;
 export const ZOOM_MIN = 0.5;
+/** Size ranges shared by the canvas resize handles and the panel sliders, so the two can never disagree. */
+export const OVERLAY_WIDTH_RANGE = { min: 0.05, max: 3, step: 0.005 } as const;
+export const TEXT_FONT_SIZE_RANGE = { min: 0.015, max: 0.3, step: 0.001 } as const;
+export const SUBTITLE_SCALE_RANGE = { min: 0.5, max: 3, step: 0.01 } as const;
 export const ZOOM_MAX = 4;
 
 export function createProject(partial: Partial<VideoProject> = {}): VideoProject {
