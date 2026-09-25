@@ -42,9 +42,27 @@ The engine splices them into one file while streaming to the sink:
    segment's audio by exactly one AAC frame (`atrim=end_sample`, `audioTailTrim`)
    and the priming frame of the next segment fills the gap. Result: contiguous
    `tfdt` on both tracks, 0 ms A/V offset at every seam (measured with the
-   flash/click fixture), and a 21 ms near-silent dip at each seam that is
-   inaudible in speech content. Without `delay_moov` the priming played as
-   content and audio lagged by 21–26 ms in segmented exports.
+   flash/click fixture), and a ~20 ms near-silent dip at each seam that is
+   inaudible in speech content and, measured directly against background
+   music, still under the roughly 20–50 ms gap-perceptibility threshold most
+   listeners have for music (not full silence: the mix stays around -38 dBFS
+   through the dip, since it is a codec-priming artefact, not a decode gap).
+   Without `delay_moov` the priming played as content and audio lagged by
+   21–26 ms in segmented exports. A rewrite that removes the dip entirely
+   (drop the shared AAC frame at the boundary and shift trun/moof so the same
+   MDCT window is decoded once, not split across segments) was scoped and
+   rejected as disproportionate: it touches every segmented export, the disk
+   sink and the watchdog-restart path for a sub-perceptual improvement. See
+   `docs/HANDOFF.md`'s note on the music seam gap (D-21) for the measurement
+   that decision was based on.
+7. Music input seek: seeking an MP3 mid-file (`-ss` before `-i`) restarts the
+   decoder with none of the preceding frames' bit-reservoir data, so its first
+   ~10–140 ms (worse at low bitrates) decode as silence — the same effect at
+   every segment's music seek, not just at export start. `splitMusicSeek()`
+   (`src/lib/ffmpeg/filters.ts`) seeks one second earlier than the real start
+   and the `[mus]` filter chain drops that second with `atrim=start=`, so the
+   decoder is warm before the kept audio begins. This cut the measured seam
+   dropout from 120 ms to the ~20 ms priming dip in point 6 above.
 
 `src/__tests__/nativeParity.test.ts` runs the generated commands through the
 native ffmpeg binary and validates the spliced file (duration, clean decode,

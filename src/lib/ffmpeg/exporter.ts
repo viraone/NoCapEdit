@@ -40,7 +40,7 @@ import {
   type X264Preset,
 } from "@/lib/ffmpegEngine";
 import type { FFmpegInfo } from "./loader";
-import { AAC_PRIMING_SECONDS, buildFilterGraph, buildInputArgs, type ClipInputPlan, type ExportFiles, type ExportPlan, type MusicPlan, type VoiceoverPlan } from "./filters";
+import { AAC_PRIMING_SECONDS, buildFilterGraph, buildInputArgs, splitMusicSeek, type ClipInputPlan, type ExportFiles, type ExportPlan, type MusicPlan, type VoiceoverPlan } from "./filters";
 import { planSegments, segmentGrid } from "./segments";
 import { createBlobSink, type OutputSink } from "./sinks";
 
@@ -420,8 +420,9 @@ async function runExport(
         if (project.music && nameOf.has(project.music.assetId)) {
           const seek = musicSourceTime(project.music, seg.start);
           if (seek !== null) {
-            music = { inputIndex: idx++, volume: project.music.volume, fadeIn: project.music.fadeIn, fadeOut: project.music.fadeOut, segmentStart: seg.start, totalDuration: duration };
-            musicFile = { path: ctx.inputPath(nameOf.get(project.music.assetId)!), seek, loop: project.music.loop };
+            const { inputSeek, headTrim } = splitMusicSeek(seek);
+            music = { inputIndex: idx++, volume: project.music.volume, fadeIn: project.music.fadeIn, fadeOut: project.music.fadeOut, segmentStart: seg.start, totalDuration: duration, headTrim };
+            musicFile = { path: ctx.inputPath(nameOf.get(project.music.assetId)!), seek: inputSeek, loop: project.music.loop };
           }
         }
         const voiceovers: VoiceoverPlan[] = [];

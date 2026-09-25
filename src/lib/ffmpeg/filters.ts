@@ -52,6 +52,12 @@ export interface MusicPlan {
   segmentStart: number;
   /** Whole project duration (for the fade-out). */
   totalDuration: number;
+  /**
+   * Seconds of extra audio decoded before the segment's real start and then
+   * dropped (see MUSIC_SEEK_PREROLL): warms up the MP3 decoder's bit
+   * reservoir so the segment's first samples are not silence.
+   */
+  headTrim: number;
 }
 
 export interface VoiceoverPlan {
@@ -84,6 +90,22 @@ export interface ExportPlan {
 
 /** AAC encoder priming (samples) that the next spliced segment carries at its head. */
 export const AAC_PRIMING_SECONDS = 1024 / 48000;
+
+/**
+ * Extra seconds to seek before a music segment's real start. An input-side
+ * `-ss` into an MP3 restarts the decoder mid-stream with none of the
+ * preceding frames' bit-reservoir data, so its first ~10-140 ms decode as
+ * silence; decoding through a second of audio first and discarding it
+ * (splitMusicSeek + the [mus] chain's atrim=start) warms the decoder up
+ * before the kept audio begins.
+ */
+export const MUSIC_SEEK_PREROLL = 1;
+
+/** Splits a music source-time seek into where ffmpeg should actually seek to, and how much of that to discard. */
+export function splitMusicSeek(seek: number): { inputSeek: number; headTrim: number } {
+  const inputSeek = Math.max(0, seek - MUSIC_SEEK_PREROLL);
+  return { inputSeek, headTrim: seek - inputSeek };
+}
 
 export interface QualityProfile {
   preset: string;
@@ -240,7 +262,8 @@ export function buildFilterGraph(plan: ExportPlan): { graph: string; vout: strin
   const mixInputs = [a];
   if (plan.music) {
     const m = plan.music;
-    parts.push(`[${m.inputIndex}:a]aresample=${AUDIO_RATE},${AFORMAT},asetpts=PTS-STARTPTS,volume=volume='${musicGainExpression(m)}':eval=frame,atrim=duration=${dur},asetpts=PTS-STARTPTS[mus]`);
+    const headTrim = m.headTrim > 0 ? `,atrim=start=${num(m.headTrim)}` : "";
+    parts.push(`[${m.inputIndex}:a]aresample=${AUDIO_RATE},${AFORMAT}${headTrim},asetpts=PTS-STARTPTS,volume=volume='${musicGainExpression(m)}':eval=frame,atrim=duration=${dur},asetpts=PTS-STARTPTS[mus]`);
     mixInputs.push("mus");
   }
   plan.voiceovers.forEach((vo, k) => {
@@ -288,7 +311,8 @@ export function buildInputArgs(plan: ExportPlan, files: ExportFiles): string[] {
   if (plan.framesInput !== null && files.framesPattern) args.push("-framerate", String(plan.fps), "-start_number", "0", "-i", files.framesPattern);
   if (plan.music && files.music) {
     if (files.music.loop) args.push("-stream_loop", "-1");
-    args.push("-ss", num(files.music.seek), "-t", num(plan.duration + 1), "-i", files.music.path);
+    // Reads from headTrim seconds before the real start (dropped in the filter graph above) so the decoder is warm.
+    args.push("-ss", num(files.music.seek), "-t", num(plan.duration + 1 + (plan.music.headTrim ?? 0)), "-i", files.music.path);
   }
   for (const vo of files.voiceovers) args.push("-i", vo);
   return args;

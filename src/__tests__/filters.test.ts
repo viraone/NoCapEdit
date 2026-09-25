@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createClip } from "@/lib/models/project";
 import { layoutClips } from "@/lib/models/timeline";
 import { computePlacement } from "@/lib/models/placement";
-import { buildExportArgs, buildFilterGraph, cropRegion, speedFilters, type ExportPlan } from "@/lib/ffmpeg/filters";
+import { buildExportArgs, buildFilterGraph, buildInputArgs, cropRegion, speedFilters, splitMusicSeek, type ExportFiles, type ExportPlan } from "@/lib/ffmpeg/filters";
 
 const frame = { width: 1080, height: 1920 };
 function plan(clips: ReturnType<typeof createClip>[], extra: Partial<ExportPlan> = {}): ExportPlan {
@@ -69,10 +69,20 @@ describe("buildFilterGraph", () => {
   });
   it("synthesises silence for clips without audio and mixes music", () => {
     const a = clip(3, { hasAudio: false });
-    const { graph } = buildFilterGraph(plan([a], { music: { inputIndex: 1, volume: 0.4, fadeIn: 1, fadeOut: 2, segmentStart: 10, totalDuration: 13 } }));
+    const { graph } = buildFilterGraph(plan([a], { music: { inputIndex: 1, volume: 0.4, fadeIn: 1, fadeOut: 2, segmentStart: 10, totalDuration: 13, headTrim: 0 } }));
     expect(graph).toContain("anullsrc=r=48000:cl=stereo,atrim=duration=3");
     expect(graph).toContain("volume=volume='0.4*clip(min((t+10)/1,(13-t-10)/2),0,1)':eval=frame");
     expect(graph).toContain("amix=inputs=2:duration=first:dropout_transition=0:normalize=0,anull[aout]");
+  });
+  it("drops the pre-roll used to warm up the MP3 decoder before a mid-file seek", () => {
+    const a = clip(3, { hasAudio: false });
+    const { graph } = buildFilterGraph(plan([a], { music: { inputIndex: 1, volume: 1, fadeIn: 0, fadeOut: 0, segmentStart: 20, totalDuration: 30, headTrim: 1 } }));
+    expect(graph).toContain(`aresample=48000,${"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"},atrim=start=1,asetpts=PTS-STARTPTS,volume=`);
+  });
+  it("skips the atrim stage when there is no pre-roll to drop", () => {
+    const a = clip(3, { hasAudio: false });
+    const { graph } = buildFilterGraph(plan([a], { music: { inputIndex: 1, volume: 1, fadeIn: 0, fadeOut: 0, segmentStart: 0, totalDuration: 30, headTrim: 0 } }));
+    expect(graph).not.toContain("atrim=start=");
   });
   it("overlays the caption layer when present", () => {
     const { graph } = buildFilterGraph(plan([clip(3)], { overlayInput: 1 }));
@@ -96,6 +106,37 @@ describe("compositor and mix inputs", () => {
     const { graph } = buildFilterGraph(p);
     expect(graph).toContain("[1:a]asetpts=PTS-STARTPTS");
     expect(graph).toContain("[0:v]zscale=t=linear:npl=100");
+  });
+});
+
+describe("splitMusicSeek", () => {
+  it("seeks a second earlier than the real start and reports that second as the head to drop", () => {
+    expect(splitMusicSeek(5)).toEqual({ inputSeek: 4, headTrim: 1 });
+  });
+  it("clamps the input seek at 0 and drops only what it actually seeked past", () => {
+    expect(splitMusicSeek(0.4)).toEqual({ inputSeek: 0, headTrim: 0.4 });
+    expect(splitMusicSeek(0)).toEqual({ inputSeek: 0, headTrim: 0 });
+  });
+});
+
+describe("buildInputArgs music pre-roll", () => {
+  const musicFiles = (seek: number): ExportFiles => ({ clips: [], overlayList: null, framesPattern: null, music: { path: "/mnt/music.mp3", seek, loop: false }, voiceovers: [], output: "out.mp4" });
+  it("reads from the (already seeked-back) input seek through the segment plus the pre-roll it will drop", () => {
+    const { inputSeek, headTrim } = splitMusicSeek(4);
+    expect(headTrim).toBe(1);
+    const p: ExportPlan = {
+      width: frame.width,
+      height: frame.height,
+      fps: 30,
+      duration: 10,
+      clips: [],
+      overlayInput: null,
+      framesInput: null,
+      music: { inputIndex: 0, volume: 1, fadeIn: 0, fadeOut: 0, segmentStart: 0, totalDuration: 10, headTrim },
+      voiceovers: [],
+    };
+    const args = buildInputArgs(p, musicFiles(inputSeek));
+    expect(args).toEqual(["-ss", "3", "-t", "12", "-i", "/mnt/music.mp3"]);
   });
 });
 
