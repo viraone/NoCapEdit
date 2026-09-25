@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import type { VideoProject } from "@/lib/models/project";
+import { normalizeProject, type VideoProject } from "@/lib/models/project";
 import { getProject, listProjectAssets, saveProject } from "@/lib/storage/db";
 import { engine } from "@/lib/playback/engine";
 import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/components/timeline/dockLayout";
@@ -66,6 +66,42 @@ export interface EditorState {
 }
 
 const MAX_HISTORY = 60;
+
+/**
+ * Synchronous safety copy of an unsaved project, written when the page is
+ * hidden or unloaded. Browsers abandon IndexedDB writes started during unload,
+ * so a reload right after an edit would otherwise lose it; the next load
+ * restores the copy when it is newer than the stored project.
+ */
+const JOURNAL_KEY = "reelflow.unsaved";
+
+function writeJournal(project: VideoProject) {
+  try {
+    localStorage.setItem(JOURNAL_KEY, JSON.stringify(project));
+  } catch {
+    /* storage full or unavailable: the IndexedDB flush is the only attempt */
+  }
+}
+
+function readJournal(id: string): VideoProject | null {
+  try {
+    const raw = localStorage.getItem(JOURNAL_KEY);
+    const p = raw ? (JSON.parse(raw) as VideoProject) : null;
+    return p && p.id === id ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Drops the safety copy once a save at least as new has reached IndexedDB. */
+function clearJournal(saved: VideoProject) {
+  try {
+    const j = readJournal(saved.id);
+    if (j && j.updatedAt <= saved.updatedAt) localStorage.removeItem(JOURNAL_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -77,6 +113,7 @@ function scheduleSave(project: VideoProject, set: (s: Partial<EditorState>) => v
     set({ saveState: "saving" });
     try {
       await saveProject(project);
+      clearJournal(project);
       set({ saveState: "saved" });
     } catch (e) {
       console.error("Autosave failed", e);
@@ -111,7 +148,15 @@ export const useEditor = create<EditorState>()(
       get().unload();
       set({ loading: true, error: null });
       try {
-        const project = await getProject(id);
+        let project = await getProject(id);
+        const journal = project ? readJournal(id) : null;
+        if (project && journal) {
+          if (journal.updatedAt > project.updatedAt) {
+            project = normalizeProject(journal);
+            await saveProject(project);
+          }
+          clearJournal(project);
+        }
         if (!project) {
           set({ loading: false, error: "This project no longer exists on this device." });
           return false;
@@ -242,7 +287,10 @@ export async function flushSave() {
   if (!pending) return;
   const project = useEditor.getState().project;
   try {
-    if (project) await saveProject(project);
+    if (project) {
+      await saveProject(project);
+      clearJournal(project);
+    }
     useEditor.setState({ saveState: "saved" });
   } catch (e) {
     console.error("Autosave failed", e);
@@ -256,9 +304,14 @@ export async function flushSave() {
  * without this the last half-second of edits is lost. Returns a detach function.
  */
 export function attachUnloadFlush(): () => void {
-  const onHide = () => void flushSave();
+  const hide = () => {
+    const { project, saveState } = useEditor.getState();
+    if (project && (saveTimer || saveState !== "saved")) writeJournal(project);
+    void flushSave();
+  };
+  const onHide = () => hide();
   const onVisibility = () => {
-    if (document.visibilityState === "hidden") void flushSave();
+    if (document.visibilityState === "hidden") hide();
   };
   window.addEventListener("pagehide", onHide);
   document.addEventListener("visibilitychange", onVisibility);
