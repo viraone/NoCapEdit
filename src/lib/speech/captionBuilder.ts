@@ -131,3 +131,60 @@ export function splitCue(cue: CaptionCue, wordIndex: number): [CaptionCue, Capti
 export function sortCues(cues: CaptionCue[]): CaptionCue[] {
   return [...cues].sort((a, b) => a.start - b.start);
 }
+
+/**
+ * Cues in `after` that are new or changed compared with `before` (by id and
+ * content, not object identity: every store update clones the project). Used
+ * to keep cues edited or imported while a transcription was running.
+ */
+export function cuesEditedSince(before: CaptionCue[], after: CaptionCue[]): CaptionCue[] {
+  const seen = new Map(before.map((c) => [c.id, JSON.stringify(c)]));
+  return after.filter((c) => seen.get(c.id) !== JSON.stringify(c));
+}
+
+/** Per-word timings for a cue's current text: its stored words when the counts match, otherwise spread by length. */
+function timedTokens(cue: CaptionCue): WordTiming[] {
+  const tokens = cue.text.split(/\s+/).filter(Boolean);
+  if (cue.words && cue.words.length === tokens.length) {
+    return cue.words.map((w, i) => ({ ...w, text: tokens[i] }));
+  }
+  const total = tokens.reduce((sum, t) => sum + Math.max(1, t.length), 0);
+  const span = Math.max(0.01, cue.end - cue.start);
+  let t = cue.start;
+  return tokens.map((tok) => {
+    const d = (Math.max(1, tok.length) / total) * span;
+    const w = { text: tok, start: t, end: t + d };
+    t += d;
+    return w;
+  });
+}
+
+/**
+ * Re-groups the cues that carry word timings into new cue boundaries, from
+ * each cue's CURRENT text (hand edits survive; stored timings are reused when
+ * the word count still matches). Cues without word timings (Add at playhead,
+ * imported .srt) have no real timing to re-flow from, so they are kept exactly
+ * as they are. `group` is buildCues or buildSpeakerCues with the panel's
+ * rules. Each new cue keeps the anchor of the cue its first word came from;
+ * translations are dropped because the new boundaries no longer match them.
+ */
+export function regroupCues(cues: CaptionCue[], group: (words: WordTiming[]) => CaptionCue[]): CaptionCue[] {
+  const words: WordTiming[] = [];
+  const untimed: CaptionCue[] = [];
+  const anchorAt = new Map<number, CaptionCue["anchor"]>();
+  for (const cue of sortCues(cues)) {
+    if (!cue.words?.length) {
+      untimed.push(cue);
+      continue;
+    }
+    for (const w of timedTokens(cue)) {
+      words.push(w);
+      if (cue.anchor) anchorAt.set(w.start, cue.anchor);
+    }
+  }
+  const regrouped = group(words).map((c) => {
+    const anchor = c.words?.length ? anchorAt.get(c.words[0].start) : undefined;
+    return anchor ? { ...c, anchor } : c;
+  });
+  return sortCues([...regrouped, ...untimed]);
+}

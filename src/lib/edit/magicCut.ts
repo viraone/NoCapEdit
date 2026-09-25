@@ -21,7 +21,9 @@ const normalize = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "")
 
 /** Filler words as project-time ranges (needs cues with word timings). */
 export function findFillerWords(cues: CaptionCue[], fillers: string[] = DEFAULT_FILLERS, pad = 0.03): TimeRange[] {
-  const set = new Set(fillers.map(normalize));
+  // Single words go through normalize(); phrases ("you know") are matched word by word.
+  const phrases = new Set(fillers.filter((f) => /\s/.test(f.trim())).map((f) => f.trim().split(/\s+/).map(normalize).join(" ")));
+  const set = new Set(fillers.filter((f) => !/\s/.test(f.trim())).map(normalize));
   const out: TimeRange[] = [];
   for (const cue of cues) {
     const words = cue.words;
@@ -29,8 +31,8 @@ export function findFillerWords(cues: CaptionCue[], fillers: string[] = DEFAULT_
     for (let i = 0; i < words.length; i++) {
       const w = normalize(words[i].text);
       const next = words[i + 1] ? normalize(words[i + 1].text) : "";
-      if (w === "you" && next === "know" && set.has("you know")) {
-        out.push({ start: Math.max(cue.start, words[i].start - pad), end: Math.min(cue.end, words[i + 1].end + pad), kind: "filler", label: "you know" });
+      if (next && phrases.has(`${w} ${next}`)) {
+        out.push({ start: Math.max(cue.start, words[i].start - pad), end: Math.min(cue.end, words[i + 1].end + pad), kind: "filler", label: `${words[i].text} ${words[i + 1].text}` });
         i++;
         continue;
       }

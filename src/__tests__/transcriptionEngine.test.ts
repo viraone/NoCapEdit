@@ -41,3 +41,15 @@ describe("toWebVtt", () => {
     expect(vtt).toContain("<v Speaker 1>hi <00:00:00.400>there");
   });
 });
+
+describe("toWebVtt with edited cues", () => {
+  const cue = { id: "c", start: 0, end: 1, text: "hi there", words: [w("hi", 0, 0.4), w("there", 0.4, 1)] };
+  it("uses the edited text, keeping karaoke timestamps when the word count matches", () => {
+    expect(toWebVtt([{ ...cue, text: "Hey There" }], { karaoke: true })).toContain("Hey <00:00:00.400>There");
+  });
+  it("falls back to the plain edited text when the word count changed", () => {
+    const vtt = toWebVtt([{ ...cue, text: "a completely new line" }], { karaoke: true });
+    expect(vtt).toContain("a completely new line");
+    expect(vtt).not.toContain("there");
+  });
+});

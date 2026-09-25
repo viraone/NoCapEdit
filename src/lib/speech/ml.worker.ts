@@ -5,7 +5,7 @@
  * WebGPU when available, otherwise on WASM. Nothing leaves the device.
  */
 import { pipeline, env, WhisperTextStreamer, AutoProcessor, AutoModel, AutoModelForAudioFrameClassification, RawImage } from "@huggingface/transformers";
-import { cluster, mergeSmallClusters } from "./diarizeCluster";
+import { cluster, mergeSmallClusters, speechTurns } from "./diarizeCluster";
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -269,7 +269,7 @@ type SegProcessor = ((audio: Float32Array) => Promise<Record<string, unknown>>) 
   post_process_speaker_diarization?: (logits: unknown, numSamples: number) => { id: number; start: number; end: number; confidence: number }[][];
   feature_extractor?: { post_process_speaker_diarization?: (logits: unknown, numSamples: number) => { id: number; start: number; end: number; confidence: number }[][] };
 };
-type Model = ((inputs: Record<string, unknown>) => Promise<Record<string, { data: Float32Array; dims: number[] }>>) & { dispose?: () => Promise<void> };
+type Model = ((inputs: Record<string, unknown>) => Promise<Record<string, { data: Float32Array; dims: number[] }>>) & { dispose?: () => Promise<void>; config?: { id2label?: Record<string, string> } };
 
 let segModels: { processor: SegProcessor; model: Model } | null = null;
 let embModels: { processor: (audio: Float32Array) => Promise<Record<string, unknown>>; model: Model } | null = null;
@@ -306,7 +306,8 @@ async function diarize(req: Extract<MlRequest, { type: "diarize" }>) {
     if (last && last.window === t.window && last.localId === t.localId && t.start - last.end < 0.4) last.end = Math.max(last.end, t.end);
     else merged.push({ ...t });
   }
-  const usable = merged.filter((t) => t.end - t.start >= 0.4);
+  // Silence (NO_SPEAKER) never reaches the embedding and clustering steps.
+  const usable = speechTurns(merged, segModels.model.config?.id2label).filter((t) => t.end - t.start >= 0.4);
   if (!usable.length) {
     post({ type: "result", id: req.id, payload: { segments: [], speakers: 0 } });
     return;

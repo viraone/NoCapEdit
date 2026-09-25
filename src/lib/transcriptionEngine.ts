@@ -149,8 +149,11 @@ export function toWebVtt(cues: CaptionCue[], opts: VttOptions = {}): string {
     const text = (opts.translated && c.translatedText?.trim() ? c.translatedText : c.text).trim();
     if (!text) return;
     let body = text;
-    if (opts.karaoke && c.words && c.words.length && (!opts.translated || !c.translatedText)) {
-      body = c.words.map((w, k) => (k === 0 ? w.text : `<${vttTime(w.start)}>${w.text}`)).join(" ");
+    // The cue's text wins over its stored words (edits only change the text):
+    // word timestamps are borrowed only when the word counts still match.
+    const tokens = text.split(/\s+/).filter(Boolean);
+    if (opts.karaoke && c.words && c.words.length === tokens.length && (!opts.translated || !c.translatedText)) {
+      body = tokens.map((tok, k) => (k === 0 ? tok : `<${vttTime(c.words![k].start)}>${tok}`)).join(" ");
     }
     if (opts.speakers && c.speaker !== undefined) body = `<v ${speakerLabel(c.speaker)}>${body}`;
     lines.push(String(i + 1), `${vttTime(c.start)} --> ${vttTime(c.end)}`, body, "");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cluster, cosineDistance, mergeSmallClusters, relabelByAppearance } from "@/lib/speech/diarizeCluster";
+import { cluster, cosineDistance, mergeSmallClusters, relabelByAppearance, speechTurns } from "@/lib/speech/diarizeCluster";
 
 const v = (...x: number[]) => new Float32Array(x);
 
@@ -29,5 +29,16 @@ describe("diarization clustering", () => {
 
   it("renumbers by first appearance", () => {
     expect(relabelByAppearance([2, 2, 0, 5, 0])).toEqual([0, 0, 1, 2, 1]);
+  });
+});
+
+describe("speechTurns", () => {
+  const turns = [0, 1, 2, 0, 4].map((localId, i) => ({ localId, start: i, end: i + 1 }));
+  it("drops NO_SPEAKER turns by label", () => {
+    const labels = { "0": "NO_SPEAKER", "1": "SPEAKER_1", "2": "SPEAKER_2", "4": "SPEAKERS_1_AND_2" };
+    expect(speechTurns(turns, labels).map((t) => t.localId)).toEqual([1, 2, 4]);
+  });
+  it("drops class 0 when the model has no label map", () => {
+    expect(speechTurns(turns).map((t) => t.localId)).toEqual([1, 2, 4]);
   });
 });

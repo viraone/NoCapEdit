@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCues, CAPTION_RULES, mergeCues, splitCue } from "@/lib/speech/captionBuilder";
+import { buildCues, CAPTION_RULES, cuesEditedSince, mergeCues, regroupCues, splitCue } from "@/lib/speech/captionBuilder";
 import type { WordTiming } from "@/lib/models/project";
 
 const w = (text: string, start: number, end: number): WordTiming => ({ text, start, end });
@@ -66,5 +66,43 @@ describe("mergeCues / splitCue", () => {
     expect(parts![1].text).toBe("two three");
     expect(parts![0].end).toBe(0.3);
     expect(parts![1].start).toBe(0.3);
+  });
+});
+
+describe("cuesEditedSince", () => {
+  it("finds new and changed cues by content, not identity", () => {
+    const before = buildCues([w("a", 0, 0.3), w("b", 2, 2.3)]);
+    const after = structuredClone(before);
+    expect(cuesEditedSince(before, after)).toEqual([]); // a clone is not an edit
+    after[1].text = "edited";
+    const added = { ...before[0], id: "new", start: 5, end: 6, text: "imported" };
+    const edited = cuesEditedSince(before, [...after, added]);
+    expect(edited.map((c) => c.text)).toEqual(["edited", "imported"]);
+  });
+});
+
+describe("regroupCues", () => {
+  const regroup = (cues: ReturnType<typeof buildCues>, maxWords: number) => regroupCues(cues, (words) => buildCues(words, { ...CAPTION_RULES, maxWords }));
+
+  it("regroups from the edited text, keeping the stored timings when the word count matches", () => {
+    const cues = buildCues([w("one", 0, 0.2), w("two", 0.2, 0.4), w("three", 0.4, 0.6), w("four", 0.6, 0.8)]);
+    cues[0].text = "ONE TWO THREE FOUR";
+    const out = regroup(cues, 2);
+    expect(out.map((c) => c.text)).toEqual(["ONE TWO", "THREE FOUR"]);
+    expect(out[1].words?.[0].start).toBeCloseTo(0.4);
+  });
+
+  it("keeps cues without word timings exactly as they are", () => {
+    const timed = buildCues([w("hello", 0, 0.3), w("there", 0.3, 0.6)]);
+    const handMade = { id: "hand", start: 3, end: 4, text: "added by hand" } as unknown as (typeof timed)[number];
+    const out = regroup([...timed, handMade], 6);
+    expect(out.map((c) => c.text)).toEqual(["hello there", "added by hand"]);
+    expect(out[1]).toBe(handMade);
+  });
+
+  it("carries a timed cue's anchor over to the cue its first word lands in", () => {
+    const timed = buildCues([w("hello", 0, 0.3), w("there", 0.3, 0.6)]);
+    timed[0].anchor = { x: 0.3, y: 0.2 } as never;
+    expect(regroup(timed, 6)[0].anchor).toEqual({ x: 0.3, y: 0.2 });
   });
 });

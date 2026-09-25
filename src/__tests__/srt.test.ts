@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSrt, toSrt, toTranscript } from "@/lib/captions/srt";
-import { formatSrtTime, parseSrtTime } from "@/lib/utils/time";
+import { formatSrtTime, formatTime, parseSrtTime } from "@/lib/utils/time";
 
 describe("srt", () => {
   it("formats SubRip timestamps", () => {
@@ -29,5 +29,20 @@ describe("srt", () => {
       { id: "3", start: 5, end: 6, text: "Three." },
     ]);
     expect(txt).toBe("One two.\n\nThree.\n");
+  });
+});
+
+describe("formatTime", () => {
+  it("prints exact tenths without dropping one", () => {
+    expect(formatTime(7.6)).toBe("0:07.6");
+    expect(formatTime(0.3)).toBe("0:00.3");
+    expect(formatTime(7.63)).toBe("0:07.6");
+  });
+  it("keeps minutes, seconds and tenths consistent near boundaries", () => {
+    expect(formatTime(59.95)).toBe("0:59.9");
+    expect(formatTime(60)).toBe("1:00.0");
+    expect(formatTime(119.99)).toBe("1:59.9");
+    expect(formatTime(61.5, false)).toBe("1:01");
+    expect(formatTime(-1)).toBe("0:00.0");
   });
 });

@@ -8,7 +8,7 @@ import { getAsset } from "@/lib/storage/db";
 import { getSpeechAudio } from "@/lib/speech/audioCache";
 import { layoutClips } from "@/lib/models/timeline";
 import type { CaptionCue, WordTiming } from "@/lib/models/project";
-import { buildCues, mergeCues, splitCue, sortCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
+import { buildCues, cuesEditedSince, mergeCues, regroupCues, splitCue, sortCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
 import { findHighlights, type Highlight } from "@/lib/edit/highlights";
 import { keepOnly } from "@/lib/edit/magicCut";
 import { getPreset } from "@/lib/captions/presets";
@@ -112,8 +112,14 @@ export function SubtitlesPanel() {
     if (!project.clips.length) return;
     setError(null);
     setNotice(null);
+    if (project.clips.every((c) => !c.hasAudio)) {
+      setError(project.cues.length ? "None of the clips has an audio track, so there is nothing to transcribe. Your captions were kept." : "None of the clips has an audio track, so there is nothing to transcribe.");
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
+    // Cues edited or imported while this job runs are kept when it finishes.
+    const cuesAtStart = useEditor.getState().project?.cues ?? [];
     const layouts = layoutClips(project.clips);
     const words: WordTiming[] = [];
     const segments: SpeakerSegment[] = [];
@@ -153,14 +159,23 @@ export function SubtitlesPanel() {
         }
         if (result.diarizationError) diarizationNote = ` Speaker detection failed: ${result.diarizationError}`;
       }
+      if (!words.length) {
+        // Nothing transcribed: never replace existing captions with an empty list.
+        setError(useEditor.getState().project?.cues.length ? "No speech was found; your existing captions were kept." : "No speech was found.");
+        return;
+      }
       const cues = diarize ? buildSpeakerCues(words, segments.length ? segments : null, rules) : buildCues(words, rules);
+      let kept = 0;
       update((p) => {
-        p.cues = cues;
+        const edited = cuesEditedSince(cuesAtStart, p.cues);
+        kept = edited.length;
+        p.cues = edited.length ? sortCues([...edited, ...cues]) : cues;
         p.captions.sourceLanguage = language;
         if (diarize && segments.length) p.subtitleStyle.speakerColors = true;
       });
       const speakerCount = new Set(cues.map((c) => c.speaker).filter((s) => s !== undefined)).size;
-      setNotice(`${cues.length} captions from ${words.length} words (${usedDevice || "on-device"})${speakerCount ? `, ${speakerCount} speaker${speakerCount === 1 ? "" : "s"}` : ""}.${diarizationNote}`);
+      const keptNote = kept ? ` ${kept} caption${kept === 1 ? "" : "s"} edited or imported while generating ${kept === 1 ? "was" : "were"} kept alongside the new ones (Undo reverts).` : "";
+      setNotice(`${cues.length} captions from ${words.length} words (${usedDevice || "on-device"})${speakerCount ? `, ${speakerCount} speaker${speakerCount === 1 ? "" : "s"}` : ""}.${diarizationNote}${keptNote}`);
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -174,6 +189,7 @@ export function SubtitlesPanel() {
     setError(null);
     setNotice(null);
     const collected: WordTiming[] = [];
+    const cuesAtStart = useEditor.getState().project?.cues ?? [];
     seek(0);
     engine.play();
     setJob({ kind: "dictate", message: "Listening while the reel plays. Turn the volume up so the microphone can hear it.", progress: null });
@@ -181,8 +197,12 @@ export function SubtitlesPanel() {
       dictationRef.current = null;
       clearInterval(timer);
       engine.pause();
-      const cues = buildCues(collected);
-      if (cues.length) update((p) => void (p.cues = cues));
+      const cues = buildCues(collected, rules);
+      if (cues.length)
+        update((p) => {
+          const edited = cuesEditedSince(cuesAtStart, p.cues);
+          p.cues = edited.length ? sortCues([...edited, ...cues]) : cues;
+        });
       setNotice(cues.length ? `${cues.length} captions from live dictation (timings are approximate).` : "Nothing was recognised.");
       setJob(null);
     };
@@ -237,19 +257,23 @@ export function SubtitlesPanel() {
   };
 
   const regroup = () => {
-    const words = sortCues(project.cues).flatMap((c) => c.words ?? []);
-    if (!words.length) {
+    setError(null);
+    setNotice(null);
+    if (!project.cues.some((c) => c.words?.length)) {
       setError("Re-grouping needs word timings; generate captions first.");
       return;
     }
     const segments = project.cues.filter((c) => c.speaker !== undefined).map((c) => ({ start: c.start, end: c.end, speaker: c.speaker! }));
-    update((p) => void (p.cues = segments.length ? buildSpeakerCues(words, segments, rules) : buildCues(words, rules)));
+    // From each cue's current text, so edits and cues without word timings survive.
+    update((p) => void (p.cues = regroupCues(p.cues, (w) => (segments.length ? buildSpeakerCues(w, segments, rules) : buildCues(w, rules)))));
     pushNotice(`Re-grouped into ${wordsPerCue}-word captions.`);
   };
 
   const runHighlights = () => setHighlights(findHighlights(project.cues, highlightLen, 3));
 
   const importSrt = async (file: File) => {
+    setError(null);
+    setNotice(null);
     const cues = parseSrt(await file.text());
     if (!cues.length) {
       setError("No cues found in that file.");
@@ -378,10 +402,19 @@ export function SubtitlesPanel() {
         <div className="flex items-center gap-2">
           <label className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-label-2 hover:text-white">
             <FileUp size={12} /> Import .srt
-            <input type="file" accept=".srt,text/plain" className="hidden" onChange={(e) => e.target.files?.[0] && importSrt(e.target.files[0])} />
+            <input type="file" accept=".srt,text/plain" className="hidden" onChange={(e) => {
+                const f = e.target.files?.[0];
+                // Reset so choosing the same file again fires change.
+                e.target.value = "";
+                if (f) importSrt(f);
+              }} />
           </label>
           <span className="text-sys-gray3">·</span>
-          <button type="button" className="text-[11px] text-label-2 hover:text-white" onClick={() => update((p) => void (p.cues = []))} disabled={!project.cues.length}>
+          <button type="button" className="text-[11px] text-label-2 hover:text-white" onClick={() => {
+              setError(null);
+              setNotice(null);
+              update((p) => void (p.cues = []));
+            }} disabled={!project.cues.length}>
             Clear all
           </button>
         </div>

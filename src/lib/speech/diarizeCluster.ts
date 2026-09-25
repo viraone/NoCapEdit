@@ -86,3 +86,13 @@ export function mergeSmallClusters(labels: number[], embeddings: Float32Array[],
   });
   return relabelByAppearance(out);
 }
+
+/**
+ * Drops pyannote's NO_SPEAKER (silence) turns before speaker embedding. The
+ * segmentation model's classes are {0: NO_SPEAKER, 1-3: SPEAKER_n, 4-6:
+ * overlaps}; silence embeddings are near-identical, so left in they form a
+ * phantom speaker that crowds out or merges the real voices.
+ */
+export function speechTurns<T extends { localId: number }>(turns: T[], id2label?: Record<string, string>): T[] {
+  return turns.filter((t) => (id2label ? id2label[String(t.localId)] !== "NO_SPEAKER" : t.localId !== 0));
+}

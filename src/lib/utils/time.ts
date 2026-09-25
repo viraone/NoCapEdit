@@ -1,9 +1,11 @@
 /** 0:00.0 style timecode used in the UI. */
 export function formatTime(seconds: number, withTenths = true): string {
   if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  const tenths = Math.floor((seconds - Math.floor(seconds)) * 10);
+  // Whole tenths first, so exact tenths (7.6 is 7.5999... in binary) are not shown one tenth low.
+  const t = Math.floor(seconds * 10 + 1e-6);
+  const m = Math.floor(t / 600);
+  const s = Math.floor(t / 10) % 60;
+  const tenths = t % 10;
   const base = `${m}:${s.toString().padStart(2, "0")}`;
   return withTenths ? `${base}.${tenths}` : base;
 }

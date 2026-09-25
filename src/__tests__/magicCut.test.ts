@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createClip, createProject } from "@/lib/models/project";
 import { projectDuration } from "@/lib/models/timeline";
-import { applyRemovals, findFillerWords, findSilences, keepOnly, makeTimeMap, mergeRanges, subtractRanges } from "@/lib/edit/magicCut";
+import { applyRemovals, findFillerWords, findSilences, keepOnly, makeTimeMap, mergeRanges, subtractRanges, DEFAULT_FILLERS } from "@/lib/edit/magicCut";
 import { layoutClips } from "@/lib/models/timeline";
 import { findHighlights, sentencesFromCues } from "@/lib/edit/highlights";
 
@@ -83,5 +83,18 @@ describe("highlights", () => {
     expect(h.length).toBeGreaterThan(0);
     expect(h[0].start).toBe(3);
     expect(h[0].reasons).toContain("has a concrete number");
+  });
+});
+
+describe("findFillerWords phrases", () => {
+  const cue = { id: "c", start: 0, end: 3, text: "so you know it works", words: [w("so", 0, 0.3), w("you", 0.5, 0.7), w("know,", 0.7, 1), w("it", 1.2, 1.4), w("works", 1.4, 2)] };
+  it("finds a two-word filler phrase", () => {
+    const r = findFillerWords([cue], [...DEFAULT_FILLERS, "you know"], 0);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ start: 0.5, end: 1, label: "you know," });
+  });
+  it("does not treat the words of a phrase as fillers on their own", () => {
+    const lone = { ...cue, words: [w("you", 0, 0.2), w("said", 0.2, 0.5), w("know", 0.5, 0.8)] };
+    expect(findFillerWords([lone], [...DEFAULT_FILLERS, "you know"], 0)).toEqual([]);
   });
 });
