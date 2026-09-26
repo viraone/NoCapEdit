@@ -10,6 +10,7 @@ import { layoutClips } from "@/lib/models/timeline";
 import type { CaptionCue, WordTiming } from "@/lib/models/project";
 import { buildCues, cuesEditedSince, mergeCues, regroupCues, splitCue, sortCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
 import { findHighlights, type Highlight } from "@/lib/edit/highlights";
+import { findAiHighlights, loadAiSettings, loadHighlightFinder, localAiEnabled, saveAiSettings, saveHighlightFinder, type AiSettings } from "@/lib/edit/aiHighlights";
 import { keepOnly } from "@/lib/edit/magicCut";
 import { getPreset } from "@/lib/captions/presets";
 import { Sparkle, Wand } from "lucide-react";
@@ -22,11 +23,11 @@ import { isWebSpeechAvailable, startLiveDictation, type LiveDictationController 
 import { LANGUAGES, WHISPER_LANGUAGE_OPTIONS } from "@/lib/speech/languages";
 import { parseSrt } from "@/lib/captions/srt";
 import { uid } from "@/lib/utils/id";
-import { formatTime } from "@/lib/utils/time";
+import { formatTime, nowMs } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
-import { Field, inputClass } from "@/components/ui/Field";
+import { Field, Input, inputClass } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { Toggle } from "@/components/ui/Toggle";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -87,6 +88,16 @@ export function SubtitlesPanel() {
   const rules = { ...CAPTION_RULES, maxWords: wordsPerCue };
   const [highlightLen, setHighlightLen] = useState(30);
   const [highlights, setHighlights] = useState<Highlight[] | null>(null);
+  // Local AI finder (Ollama on this machine); offered on localhost or with reelflow.localAi=1.
+  const [aiAvailable] = useState(localAiEnabled);
+  // Word statistics by default; picking Local AI is remembered on this machine.
+  const [finder, setFinder] = useState<"stats" | "ai">(() => (localAiEnabled() && loadHighlightFinder() === "ai" ? "ai" : "stats"));
+  const [aiSettings, setAiSettings] = useState<AiSettings>(loadAiSettings);
+  const [aiCount, setAiCount] = useState(5);
+  const [aiJob, setAiJob] = useState<{ message: string; started: number } | null>(null);
+  const [aiElapsed, setAiElapsed] = useState(0);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const aiAbortRef = useRef<AbortController | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -98,6 +109,13 @@ export function SubtitlesPanel() {
     if (!selection || selection.kind !== "cue") return;
     listRef.current?.querySelector<HTMLElement>(`[data-cue="${selection.id}"]`)?.scrollIntoView({ block: "nearest" });
   }, [selection]);
+
+  useEffect(() => {
+    if (!aiJob) return;
+    const id = setInterval(() => setAiElapsed(Math.round((nowMs() - aiJob.started) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [aiJob]);
+  useEffect(() => () => aiAbortRef.current?.abort(), []);
 
   const cancel = () => {
     abortRef.current?.abort();
@@ -274,7 +292,39 @@ export function SubtitlesPanel() {
     pushNotice(`Re-grouped into ${wordsPerCue}-word captions.`);
   };
 
-  const runHighlights = () => setHighlights(findHighlights(project.cues, highlightLen, 3));
+  const updateAiSettings = (patch: Partial<AiSettings>) => {
+    const next = { ...aiSettings, ...patch };
+    setAiSettings(next);
+    saveAiSettings(next);
+  };
+  const runHighlights = async () => {
+    setAiError(null);
+    if (finder === "stats") {
+      setHighlights(findHighlights(project.cues, highlightLen, 3));
+      return;
+    }
+    setHighlights(null);
+    setAiElapsed(0);
+    const controller = new AbortController();
+    aiAbortRef.current = controller;
+    setAiJob({ message: `Sending the transcript to ${aiSettings.model}`, started: nowMs() });
+    try {
+      const found = await findAiHighlights(project.cues, {
+        settings: aiSettings,
+        count: aiCount,
+        minSeconds: Math.max(8, Math.round(highlightLen * 0.6)),
+        maxSeconds: Math.round(highlightLen * 1.6),
+        signal: controller.signal,
+        onProgress: (message) => setAiJob((j) => (j ? { ...j, message } : j)),
+      });
+      setHighlights(found);
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      aiAbortRef.current = null;
+      setAiJob(null);
+    }
+  };
 
   const importSrt = async (file: File) => {
     setError(null);
@@ -425,26 +475,86 @@ export function SubtitlesPanel() {
         </div>
       </PanelSection>
       <PanelSection title="Highlights">
+        {aiAvailable && (
+          <div className="grid grid-cols-2 gap-0.5 rounded-lg bg-sys-gray5 p-0.5" role="group" aria-label="Highlight finder">
+            {(
+              [
+                ["ai", "Local AI"],
+                ["stats", "Word statistics"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={finder === id}
+                disabled={!!aiJob}
+                onClick={() => {
+                  setFinder(id);
+                  saveHighlightFinder(id);
+                  setHighlights(null);
+                  setAiError(null);
+                }}
+                className={cx("h-7 rounded-md text-[11px] font-semibold", finder === id ? "bg-sys-gray3 text-white" : "text-label-2 hover:text-white")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2">
-          <Select value={String(highlightLen)} onChange={(e) => setHighlightLen(Number(e.target.value))}>
-            <option value="15">15 s clip</option>
-            <option value="30">30 s clip</option>
-            <option value="60">60 s clip</option>
+          <Select value={String(highlightLen)} onChange={(e) => setHighlightLen(Number(e.target.value))} disabled={!!aiJob} aria-label="Clip length">
+            <option value="15">15 s</option>
+            <option value="30">30 s</option>
+            <option value="60">60 s</option>
           </Select>
-          <Button variant="secondary" size="md" onClick={runHighlights} disabled={!project.cues.length}>
+          {finder === "ai" && (
+            <Select value={String(aiCount)} onChange={(e) => setAiCount(Number(e.target.value))} disabled={!!aiJob} aria-label="Number of clips">
+              <option value="3">× 3</option>
+              <option value="5">× 5</option>
+              <option value="8">× 8</option>
+              <option value="12">× 12</option>
+            </Select>
+          )}
+          <Button variant="secondary" size="md" onClick={runHighlights} disabled={!project.cues.length || !!aiJob}>
             <Sparkle size={14} /> Find
           </Button>
         </div>
-        {highlights && highlights.length === 0 && <p className="text-[11px] text-label-3">Nothing stood out; try a longer clip length.</p>}
+        {finder === "ai" && !aiJob && (
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Model">
+              <Input value={aiSettings.model} onChange={(e) => updateAiSettings({ model: e.target.value })} placeholder="qwen3.8:27b" spellCheck={false} />
+            </Field>
+            <Field label="Ollama server">
+              <Input value={aiSettings.endpoint} onChange={(e) => updateAiSettings({ endpoint: e.target.value })} placeholder="http://localhost:11434" spellCheck={false} />
+            </Field>
+          </div>
+        )}
+        {aiJob && (
+          <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
+            <ProgressBar value={null} />
+            <p className="text-[11px] text-label-2">
+              {aiJob.message} · {aiElapsed} s
+            </p>
+            <Button variant="outline" size="sm" onClick={() => aiAbortRef.current?.abort()}>
+              <Square size={12} /> Cancel
+            </Button>
+          </div>
+        )}
+        {aiError && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{aiError}</p>}
+        {highlights && highlights.length === 0 && (
+          <p className="text-[11px] text-label-3">{finder === "ai" ? "The model found no clips that fit this length; try a longer clip length." : "Nothing stood out; try a longer clip length."}</p>
+        )}
         {highlights?.map((h, i) => (
           <div key={i} className="space-y-1.5 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2">
             <div className="flex items-center justify-between text-[11px] text-label-2">
               <span className="tabular-nums">
                 {formatTime(h.start)} – {formatTime(h.end)} · {Math.round(h.end - h.start)} s
               </span>
-              <span>{h.reasons.slice(0, 2).join(" · ")}</span>
+              {h.title ? <span className="tabular-nums font-semibold text-sys-yellow">{h.score}/10</span> : <span>{h.reasons.slice(0, 2).join(" · ")}</span>}
             </div>
+            {h.title && <p className="text-[12px] font-semibold leading-snug">{h.title}</p>}
             <p className="line-clamp-3 text-[12px] leading-snug">{h.text}</p>
+            {h.title && h.reasons[0] && <p className="line-clamp-2 text-[11px] leading-snug text-label-3">{h.reasons[0]}</p>}
             <div className="flex gap-1.5">
               <Button variant="ghost" size="xs" onClick={() => seek(h.start)}>
                 <Play size={11} /> Jump

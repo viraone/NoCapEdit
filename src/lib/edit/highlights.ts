@@ -18,6 +18,10 @@ export interface Highlight {
   score: number;
   text: string;
   reasons: string[];
+  /** Set by the local AI finder: a short headline for the clip. */
+  title?: string;
+  /** Set by the local AI finder: the opening line that grabs attention. */
+  hook?: string;
 }
 
 const STOP = new Set(
