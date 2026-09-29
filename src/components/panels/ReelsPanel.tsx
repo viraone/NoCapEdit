@@ -212,7 +212,7 @@ export function ReelsPanel() {
       </PanelSection>
       <PanelSection title={`Reels${reels.length ? ` (${reels.length})` : ""}`}>
         {reels.length === 0 ? (
-          <EmptyState icon={<Clapperboard size={20} />} title="No reels yet" description="Press Make reels; each one shows up here and on the start screen." />
+          <EmptyState icon={<Clapperboard size={20} />} title="No reels yet" description="Press Make reels; each one shows up here and on the start screen. Double-click a reel to edit it, press its thumbnail to preview." />
         ) : (
           <ul className="space-y-1.5" data-reel-list>
             {reels.map((r) => (
@@ -220,8 +220,8 @@ export function ReelsPanel() {
                 key={r.id}
                 data-reel={r.id}
                 className="flex cursor-pointer items-center gap-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2 select-none hover:border-sys-gray3"
-                title="Double-click to watch this reel here"
-                onDoubleClick={() => setPreview(r)}
+                title="Double-click to open this reel in the editor; press the thumbnail to preview it here"
+                onDoubleClick={() => router.push(`/editor?id=${r.id}`)}
               >
                 <button type="button" className="group relative h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6" onClick={() => setPreview(r)} aria-label="Play this reel">
                   {thumbs[r.id] ? (

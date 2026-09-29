@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Folder, MoreHorizontal, Home, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard } from "lucide-react";
+import { Folder, MoreHorizontal, Home, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useImportClips } from "@/components/panels/useImportClips";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
@@ -104,6 +104,11 @@ export function TopBar() {
         <Link href="/" className="rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white" title="All projects">
           <Folder size={16} />
         </Link>
+        {project.sourceProjectId && (
+          <Link href={`/editor?id=${project.sourceProjectId}&tool=reels`} className="flex items-center gap-1 rounded-md bg-sys-pink/15 px-2 py-1 text-[11px] font-semibold text-sys-pink hover:bg-sys-pink/25" title="Back to the video this reel was cut from" data-back-to-source>
+            <ArrowLeft size={12} /> Back to source · Reels
+          </Link>
+        )}
         <div ref={menuRef} className="relative">
           <button type="button" className={cx("rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white", menuOpen && "bg-sys-gray5 text-white")} title="Project menu" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
             <MoreHorizontal size={16} />
