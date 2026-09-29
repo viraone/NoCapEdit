@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, ArrowLeftRight, MessageSquare } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, ArrowLeftRight, MessageSquare, AudioLines } from "lucide-react";
 import { TransportBar } from "@/components/canvas/TransportBar";
 import { useEditor } from "@/store/editorStore";
 import { layoutClips, type ClipLayout } from "@/lib/models/timeline";
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Filmstrip, loadThumbs, type Loaded } from "./Filmstrip";
 import { toSourceTime } from "@/lib/models/timeline";
 import { AudioWaveform } from "./AudioWaveform";
-import { RULER_H, CUE_H, MUSIC_H, DOCK_CHROME_H, videoLaneHeight } from "./dockLayout";
+import { RULER_H, CUE_H, AUDIO_H, MUSIC_H, DOCK_CHROME_H, videoLaneHeight } from "./dockLayout";
 
 const EDGE = 7;
 /** Vertical inset of a clip block inside the video lane. */
@@ -180,7 +180,6 @@ function ClipBlock({
   const width = Math.max(6, layout.duration * pxPerSec);
   const blockH = laneH - CLIP_PAD * 2;
   // The waveform keeps its 28-of-68 share of the block as the lane grows, within sane bounds.
-  const waveH = clamp(Math.round(blockH * 0.41), 16, 56);
   const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null } | null>(null);
   const [dragging, setDragging] = useState(false);
   /** Project time under the pointer, measured against the lane so scrolling is accounted for. */
@@ -270,7 +269,6 @@ function ClipBlock({
       }}
     >
       <Filmstrip assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={blockH} />
-      {clip.hasAudio && <AudioWaveform assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={waveH} color="rgba(255,214,10,0.9)" />}
       <div className="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/60 px-1 py-0.5 text-[10px] font-semibold text-white">
         <span className="max-w-32 truncate">{clip.name}</span>
         <span className="text-label-2">{formatTime(layout.duration)}</span>
@@ -356,7 +354,7 @@ export function TimelineDock() {
 
   const pxPerSec = zoom;
   const contentW = Math.max(viewW, duration * pxPerSec + 160);
-  const lanesH = RULER_H + CUE_H + videoH + MUSIC_H;
+  const lanesH = RULER_H + CUE_H + videoH + AUDIO_H + MUSIC_H;
   const fit = () => setZoom(duration > 0 ? (viewW - 80) / duration : 80);
   const scrubbing = useRef(false);
   const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout } | null>(null);
@@ -405,6 +403,9 @@ export function TimelineDock() {
           </div>
           <div className="flex items-center gap-1 px-2" style={{ height: videoH }}>
             <Film size={11} /> Video
+          </div>
+          <div className="flex items-center gap-1 px-2" style={{ height: AUDIO_H }}>
+            <AudioLines size={11} /> Audio
           </div>
           <div className="flex items-center gap-1 px-2" style={{ height: MUSIC_H }}>
             <Music size={11} /> Music
@@ -482,6 +483,33 @@ export function TimelineDock() {
                 />
               ))}
               {dropX !== null && <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-sys-blue shadow-[0_0_6px_rgba(10,132,255,0.9)]" data-drop-indicator style={{ left: dropX }} />}
+            </div>
+            {/* Clip audio on its own lane: one waveform block per clip, aligned with its video block. */}
+            <div className="relative border-b border-sys-gray5/70" style={{ height: AUDIO_H }} data-audio-lane>
+              {layouts.map((layout) =>
+                layout.clip.hasAudio ? (
+                  <div
+                    key={layout.clip.id}
+                    data-audio-clip={layout.clip.id}
+                    className={cx(
+                      "absolute top-1 cursor-pointer overflow-hidden rounded-md border bg-sys-yellow/10",
+                      selection?.kind === "clip" && selection.id === layout.clip.id ? "border-sys-blue" : "border-sys-yellow/30",
+                    )}
+                    style={{ left: layout.start * pxPerSec, width: Math.max(6, layout.duration * pxPerSec), height: AUDIO_H - 8 }}
+                    title={`${layout.clip.name} audio${layout.clip.audioAssetId ? ` (${layout.clip.audioLabel ?? "cleaned"})` : ""}`}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      select({ kind: "clip", id: layout.clip.id });
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setTool("trim");
+                    }}
+                  >
+                    <AudioWaveform assetId={layout.clip.audioAssetId ?? layout.clip.assetId} inPoint={layout.clip.inPoint} outPoint={layout.clip.outPoint} width={Math.max(6, layout.duration * pxPerSec)} height={AUDIO_H - 8} color="rgba(255,214,10,0.9)" />
+                  </div>
+                ) : null,
+              )}
             </div>
             <div className="relative" style={{ height: MUSIC_H }}>
               {project.voiceovers.map((vo) => (

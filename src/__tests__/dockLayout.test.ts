@@ -14,7 +14,7 @@ import {
 
 describe("timeline dock height", () => {
   it("defaults to the original fixed layout", () => {
-    expect(DOCK_DEFAULT_H).toBe(236);
+    expect(DOCK_DEFAULT_H).toBe(272);
     expect(videoLaneHeight(DOCK_DEFAULT_H)).toBe(VIDEO_DEFAULT_H);
   });
 
