@@ -160,16 +160,47 @@ body {
   opacity: 0.4;
 }
 
-@keyframes rf-indeterminate {
+/* Progress bars: a fill that glides between values with a soft sheen while
+   work is in progress, and a smooth gradient sweep when the amount is unknown. */
+.rf-progress-fill {
+  background: linear-gradient(90deg, #0a84ff, #409cff);
+  transition: width 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: width;
+}
+.rf-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 20%, rgba(255, 255, 255, 0.45) 50%, transparent 80%);
+  background-size: 220% 100%;
+  animation: rf-sheen 1.8s ease-in-out infinite;
+}
+@keyframes rf-sheen {
   0% {
-    transform: translateX(-100%);
+    background-position: 140% 0;
   }
   100% {
-    transform: translateX(300%);
+    background-position: -80% 0;
   }
 }
 .rf-indeterminate {
-  animation: rf-indeterminate 1.2s infinite linear;
+  background: linear-gradient(90deg, rgba(10, 132, 255, 0.15) 0%, #0a84ff 40%, #7fc0ff 50%, #0a84ff 60%, rgba(10, 132, 255, 0.15) 100%);
+  background-size: 200% 100%;
+  animation: rf-sweep 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes rf-sweep {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rf-progress-fill::after,
+  .rf-indeterminate {
+    animation: none;
+  }
 }
 
 .no-scrollbar::-webkit-scrollbar {
