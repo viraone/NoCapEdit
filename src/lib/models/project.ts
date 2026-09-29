@@ -261,6 +261,8 @@ export interface MusicTrack {
   /** Seconds trimmed from the head of the music file. */
   startOffset: number;
   loop: boolean;
+  /** Attribution for a track found through a Creative Commons library (optional, absent for the user's own files). */
+  credit?: { title: string; artist: string; license: string; licenseUrl: string | null; pageUrl: string; source: "openverse" } | null;
 }
 
 export interface SubtitleStyle {
