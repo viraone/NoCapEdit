@@ -33,6 +33,10 @@ export function ReelsPanel() {
   const [settings, setSettings] = useState<ReelSettings>(loadReelSettings);
   const [models, setModels] = useState<string[] | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsPending, setModelsPending] = useState(false);
+  const isLocalPage = typeof location !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  /** On a public site Chrome gates requests to this computer behind a "local network" permission prompt. */
+  const permissionHint = isLocalPage ? "" : " Chrome asks whether this site may reach Ollama on your computer: choose Allow in the prompt. If you dismissed it, click the icon left of the address bar, set Local network access to Allow, and reload.";
   const [reels, setReels] = useState<VideoProject[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [job, setJob] = useState<{ message: string; progress: number | null; started: number } | null>(null);
@@ -55,11 +59,15 @@ export function ReelsPanel() {
   };
   const refreshModels = async () => {
     setModelsError(null);
+    setModelsPending(true);
     try {
-      setModels(await listOllamaModels(aiSettings.endpoint));
-    } catch {
+      setModels(await listOllamaModels(aiSettings.endpoint, AbortSignal.timeout(30000)));
+    } catch (e) {
       setModels(null);
-      setModelsError("Couldn't list models: is Ollama running?");
+      const timedOut = e instanceof DOMException && e.name === "TimeoutError";
+      setModelsError((timedOut ? "Ollama didn't answer within 30 s." : "Couldn't list models: is Ollama running?") + permissionHint);
+    } finally {
+      setModelsPending(false);
     }
   };
   const refreshReels = async () => {
@@ -117,7 +125,7 @@ export function ReelsPanel() {
       const dup = result.skipped ? ` ${result.skipped} already existed and ${result.skipped === 1 ? "was" : "were"} skipped.` : "";
       setNote(`${result.made.length} reel${result.made.length === 1 ? "" : "s"} ready.${short}${dup}`);
     } catch (e) {
-      if (!(e instanceof DOMException && e.name === "AbortError")) setError(e instanceof Error ? e.message : String(e));
+      if (!(e instanceof DOMException && e.name === "AbortError")) setError((e instanceof Error ? e.message : String(e)) + (/reach Ollama/i.test(String(e)) ? permissionHint : ""));
     } finally {
       abortRef.current = null;
       setJob(null);
@@ -225,6 +233,7 @@ export function ReelsPanel() {
             ) : (
               <Input value={aiSettings.model} onChange={(e) => updateAi({ model: e.target.value })} placeholder="qwen3.8:27b" spellCheck={false} disabled={!!job} />
             )}
+            {modelsPending && !models && <p className="mt-1 text-[11px] text-label-3">Listing the models on this computer…{permissionHint}</p>}
             {modelsError && <p className="mt-1 text-[11px] text-sys-orange">{modelsError}</p>}
           </Field>
           <Field label="Ollama server">
