@@ -24,6 +24,11 @@ export function CanvasBar() {
       if (c) fn(c);
     });
   const zoom = clip?.zoom ?? 1;
+  // A <select> sizes to its longest option; in the monospace UI the selected
+  // label's character count gives an exact width instead.
+  const chWidth = (label: string) => ({ width: `calc(${label.length}ch + 1.75rem)` });
+  const formatLabel = `${format.name} · ${format.ratio}`;
+  const presetLabel = CAPTION_PRESETS.find((p) => p.id === project.subtitleStyle.presetId)?.name ?? "";
   const [phone, setPhone] = useState(false);
   const safeOn = project.safeZone !== "none";
 
@@ -33,6 +38,7 @@ export function CanvasBar() {
         <span className="h-3 w-3 rounded-full bg-[conic-gradient(#ffd60a,#ff375f,#bf5af2,#0a84ff,#ffd60a)]" />
         <select
           className="max-w-72 cursor-pointer appearance-none truncate bg-transparent pr-6 font-semibold focus:outline-none"
+          style={chWidth(formatLabel)}
           value={project.formatId}
           onChange={(e) =>
             update((p) => {
@@ -76,7 +82,8 @@ export function CanvasBar() {
       <label className="pill cursor-pointer">
         <span className="font-bold">Aa</span>
         <select
-          className="cursor-pointer appearance-none bg-transparent pr-3 font-semibold focus:outline-none"
+          className="cursor-pointer appearance-none bg-transparent pr-6 font-semibold focus:outline-none"
+          style={chWidth(presetLabel)}
           value={project.subtitleStyle.presetId}
           onChange={(e) => update((p) => void (p.subtitleStyle.presetId = e.target.value))}
           aria-label="Caption style"
@@ -87,7 +94,7 @@ export function CanvasBar() {
             </option>
           ))}
         </select>
-        <span className="-ml-3 text-label-2">⌄</span>
+        <span className="-ml-5 text-label-2">⌄</span>
       </label>
 
       <button
