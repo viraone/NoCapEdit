@@ -25,16 +25,39 @@ type View = "feed" | "reels";
 interface Persona {
   username: string;
   caption: string;
+  /** Profile photo as a small data URL, kept in this browser only. */
+  avatar: string | null;
 }
+
+const DEFAULT_USERNAME = "yourhandle";
 
 function loadPersona(fallbackCaption: string): Persona {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { username: "rickshawlounge", caption: fallbackCaption, ...(JSON.parse(raw) as Partial<Persona>) };
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<Persona>;
+      return { username: DEFAULT_USERNAME, caption: fallbackCaption, avatar: null, ...saved };
+    }
   } catch {
     /* ignore */
   }
-  return { username: "rickshawlounge", caption: fallbackCaption };
+  return { username: DEFAULT_USERNAME, caption: fallbackCaption, avatar: null };
+}
+
+/** Squares and shrinks a picked photo to 160 px so it fits in localStorage. */
+async function avatarDataUrl(file: File): Promise<string> {
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height);
+  const canvas = new OffscreenCanvas(160, 160);
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, 160, 160);
+  bmp.close();
+  const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.readAsDataURL(blob);
+  });
 }
 
 /** Mirrors the editor's preview canvas into a box, cover-cropped to the box's aspect. */
@@ -95,7 +118,7 @@ function StatusBar({ dark }: { dark: boolean }) {
   );
 }
 
-function TabBar({ dark, active }: { dark: boolean; active: "home" | "reels" }) {
+function TabBar({ dark, active, avatar }: { dark: boolean; active: "home" | "reels"; avatar: string | null }) {
   const c = dark ? "text-white" : "text-black";
   return (
     <div className={cx("absolute inset-x-0 bottom-0 flex h-[84px] items-start justify-around border-t px-4 pt-3", dark ? "border-white/10 bg-black" : "border-black/10 bg-white", c)}>
@@ -103,16 +126,26 @@ function TabBar({ dark, active }: { dark: boolean; active: "home" | "reels" }) {
       <Search size={26} strokeWidth={1.8} />
       <PlusSquare size={26} strokeWidth={1.8} />
       <Clapperboard size={26} strokeWidth={active === "reels" ? 2.6 : 1.8} />
-      <span className="h-[26px] w-[26px] rounded-full bg-gradient-to-tr from-sys-orange to-sys-pink" />
+      {avatar ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatar} alt="" className="h-[26px] w-[26px] rounded-full object-cover" />
+      ) : (
+        <span className="h-[26px] w-[26px] rounded-full bg-gradient-to-tr from-sys-orange to-sys-pink" />
+      )}
       <span className={cx("absolute bottom-2 left-1/2 h-[5px] w-[140px] -translate-x-1/2 rounded-full", dark ? "bg-white" : "bg-black")} />
     </div>
   );
 }
 
-function Avatar({ size = 32 }: { size?: number }) {
+function Avatar({ size = 32, src, initial }: { size?: number; src: string | null; initial: string }) {
   return (
-    <span className="rounded-full bg-gradient-to-tr from-sys-yellow via-sys-pink to-sys-purple p-[2px]" style={{ width: size, height: size }}>
-      <span className="flex h-full w-full items-center justify-center rounded-full bg-black text-[11px] font-bold text-white">R</span>
+    <span className="shrink-0 rounded-full bg-gradient-to-tr from-sys-yellow via-sys-pink to-sys-purple p-[2px]" style={{ width: size, height: size }}>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="h-full w-full rounded-full object-cover" />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center rounded-full bg-black text-[11px] font-bold uppercase text-white">{initial}</span>
+      )}
     </span>
   );
 }
@@ -177,6 +210,29 @@ export function PhonePreview({ onClose }: { onClose: () => void }) {
             This {format.ratio} format is taller than a feed post: Instagram crops it to 4:5 in the feed (shown here). Use the Instagram Post (4:5) format or post it as a Reel.
           </p>
         )}
+        <div className="flex items-center gap-3">
+          <Avatar size={48} src={persona.avatar} initial={(persona.username || "i").slice(0, 1)} />
+          <div className="flex flex-col gap-1">
+            <label className="cursor-pointer text-[12px] text-sys-blue hover:underline">
+              {persona.avatar ? "Change profile photo" : "Add profile photo"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) savePersona({ avatar: await avatarDataUrl(f) });
+                }}
+              />
+            </label>
+            {persona.avatar && (
+              <button type="button" className="text-left text-[12px] text-label-3 hover:text-white" onClick={() => savePersona({ avatar: null })}>
+                Remove photo
+              </button>
+            )}
+          </div>
+        </div>
         <label className="block">
           <span className="caps">Username</span>
           <input className="mt-1.5 h-9 w-full rounded-lg border border-sys-gray4 bg-sys-gray5 px-2.5 text-[13px] text-white focus:border-sys-blue focus:outline-none" value={persona.username} onChange={(e) => savePersona({ username: e.target.value.replace(/\s+/g, "") })} />
@@ -186,6 +242,7 @@ export function PhonePreview({ onClose }: { onClose: () => void }) {
           <textarea className="mt-1.5 min-h-24 w-full resize-y rounded-lg border border-sys-gray4 bg-sys-gray5 px-2.5 py-1.5 text-[13px] leading-snug text-white focus:border-sys-blue focus:outline-none" value={persona.caption} onChange={(e) => savePersona({ caption: e.target.value })} />
         </label>
         <p className="text-[11px] text-label-3">Only the first two lines show before “more”. Links in captions are not clickable on Instagram; keep “link in bio”.</p>
+          <p className="text-[11px] text-label-3">This is a mock-up of the Instagram app, not a login: the username and photo stay in this browser and nothing is sent to Instagram.</p>
       </aside>
 
       <div className="flex flex-1 items-center justify-center" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -208,7 +265,7 @@ export function PhonePreview({ onClose }: { onClose: () => void }) {
                     </span>
                   </div>
                   <div className="flex h-12 items-center gap-2.5 px-3">
-                    <Avatar />
+                    <Avatar src={persona.avatar} initial={(persona.username || "i").slice(0, 1)} />
                     <span className="flex-1 text-[14px] font-semibold">{persona.username || "username"}</span>
                     <MoreHorizontal size={20} />
                   </div>
@@ -228,7 +285,7 @@ export function PhonePreview({ onClose }: { onClose: () => void }) {
                     <p className="text-black/50">View all 32 comments</p>
                     <p className="text-[12px] text-black/50">2 hours ago</p>
                   </div>
-                  <TabBar dark={false} active="home" />
+                  <TabBar dark={false} active="home" avatar={persona.avatar} />
                 </>
               ) : (
                 <>
@@ -258,7 +315,7 @@ export function PhonePreview({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="absolute bottom-[104px] left-4 right-20 space-y-2.5 text-white">
                     <p className="flex items-center gap-2.5 text-[14px] font-semibold">
-                      <Avatar size={30} /> {persona.username || "username"} <span className="rounded-md border border-white/70 px-2 py-0.5 text-[12px] font-semibold">Follow</span>
+                      <Avatar size={30} src={persona.avatar} initial={(persona.username || "i").slice(0, 1)} /> {persona.username || "username"} <span className="rounded-md border border-white/70 px-2 py-0.5 text-[12px] font-semibold">Follow</span>
                     </p>
                     <p className="line-clamp-2 text-[14px] leading-snug">
                       {persona.caption}
@@ -268,7 +325,7 @@ export function PhonePreview({ onClose }: { onClose: () => void }) {
                       <Music size={14} /> {project.music ? project.music.name : `${persona.username || "username"} · Original audio`}
                     </p>
                   </div>
-                  <TabBar dark active="reels" />
+                  <TabBar dark active="reels" avatar={persona.avatar} />
                 </>
               )}
             </div>
