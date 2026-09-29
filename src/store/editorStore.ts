@@ -35,6 +35,8 @@ export interface EditorState {
   notice: string | null;
   /** Set by a canvas double-click: the panel for this element should focus its content field. */
   editRequest: (Selection & { nonce: number }) | null;
+  /** Bumped by "Make reels" in the top-bar menu; the Subtitles panel runs the job. */
+  reelsRequest: number;
   /** Progress line of the video import running in this editor (shared by the top bar and the Clips panel), null when idle. */
   importStatus: string | null;
   /** Files the last import could not add, one "name: reason" per line; shown by the Clips panel. */
@@ -64,6 +66,7 @@ export interface EditorState {
   setNotice(text: string | null): void;
   /** Selects the element, switches to its panel and asks that panel to focus its editor. */
   requestEdit(sel: Selection): void;
+  requestReels(): void;
   registerAsset(assetId: string, blob: Blob): string;
   releaseAsset(assetId: string): void;
   setImportStatus(status: string | null): void;
@@ -160,6 +163,7 @@ export const useEditor = create<EditorState>()(
     canvasZoom: "fit",
     notice: null,
     editRequest: null,
+    reelsRequest: 0,
     importStatus: null,
     importError: null,
     pendingAssetIds: [],
@@ -282,6 +286,9 @@ export const useEditor = create<EditorState>()(
       set({ notice: text });
       if (noticeTimer) clearTimeout(noticeTimer);
       if (text) noticeTimer = setTimeout(() => set({ notice: null }), 6000);
+    },
+    requestReels() {
+      set({ tool: "subtitles", reelsRequest: Date.now() });
     },
     requestEdit(sel) {
       const project = get().project;

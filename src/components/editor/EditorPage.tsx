@@ -21,13 +21,17 @@ export function EditorPage() {
       router.replace("/");
       return;
     }
-    loadProject(id);
+    const tool = params.get("tool");
+    loadProject(id).then((ok) => {
+      // A reel opened straight into Export (or another panel) from its source project.
+      if (ok && tool && ["clips", "trim", "subtitles", "style", "text", "picture", "music", "export"].includes(tool)) useEditor.getState().setTool(tool as never);
+    });
     const detach = attachUnloadFlush();
     return () => {
       detach();
       flushSave().finally(() => useEditor.getState().unload());
     };
-  }, [id, loadProject, router]);
+  }, [id, loadProject, router, params]);
 
   if (error) {
     return (

@@ -189,7 +189,7 @@ export interface FindAiOptions extends AiRequestOptions {
 /** Asks the local model for the best moments of the transcript. Throws readable errors. */
 export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions): Promise<Highlight[]> {
   const sentences = sentencesFromCues(cues);
-  if (sentences.length < 3) throw new Error("There isn't enough speech in the captions yet. Generate captions first.");
+  if (sentences.length < 3) throw new Error(cues.length ? "The transcript is too short to cut reels from: it needs at least three sentences of speech." : "There isn't enough speech in the captions yet. Generate captions first.");
   const { system, user } = buildAiPrompt(sentences, opts);
   const promptTokens = estimateTokens(system + user);
   if (promptTokens > MAX_PROMPT_TOKENS) {
@@ -265,4 +265,13 @@ export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions):
     throw new Error("The model's answer wasn't valid JSON. Try again.");
   }
   return clipsToHighlights(clips, sentences, opts);
+}
+
+/** Names of the models Ollama has installed (GET /api/tags); throws when the server is unreachable. */
+export async function listOllamaModels(endpoint: string, signal?: AbortSignal): Promise<string[]> {
+  const base = endpoint.replace(/\/+$/, "");
+  const res = await fetch(`${base}/api/tags`, { signal });
+  if (!res.ok) throw new Error(`Ollama returned ${res.status}`);
+  const data = (await res.json()) as { models?: { name: string }[] };
+  return (data.models ?? []).map((m) => m.name).sort();
 }

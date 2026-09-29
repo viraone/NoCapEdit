@@ -105,6 +105,6 @@ describe("findAiHighlights", () => {
     controller.abort();
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new DOMException("aborted", "AbortError"))));
     await expect(findAiHighlights(cues, { settings, ...opts, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
-    await expect(findAiHighlights(cues.slice(0, 2), { settings, ...opts })).rejects.toThrow(/enough speech/);
+    await expect(findAiHighlights(cues.slice(0, 2), { settings, ...opts })).rejects.toThrow(/too short to cut reels|enough speech/);
   });
 });

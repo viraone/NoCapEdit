@@ -1,10 +1,13 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Folder, MoreHorizontal, Home, Undo2, Redo2, Upload, Share } from "lucide-react";
+import { Folder, MoreHorizontal, Home, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useImportClips } from "@/components/panels/useImportClips";
+import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Toggle } from "@/components/ui/Toggle";
 import { cx } from "@/lib/utils/cx";
 
 export function TopBar() {
@@ -15,6 +18,48 @@ export function TopBar() {
   const { onFiles, busy } = useImportClips();
   const fileRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [keepCaptions, setKeepCaptions] = useState(false);
+  const [replacing, setReplacing] = useState<string | null>(null);
+  const [replaceError, setReplaceError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", key);
+    };
+  }, [menuOpen]);
+  /** Swaps the whole video for a new file: one clip, same name/format/music/text; captions cleared unless kept. */
+  const replaceVideo = async () => {
+    if (!replaceFile) return;
+    setReplaceError(null);
+    setReplacing(`Reading ${replaceFile.name}`);
+    try {
+      const { clip, assetId, blob } = await importVideo(replaceFile, project.id, (m) => setReplacing(m));
+      useEditor.getState().registerAsset(assetId, blob);
+      update((p) => {
+        const old = p.clips[0];
+        p.clips = [{ ...clip, ...(old ? { background: old.background, look: old.look ?? null } : {}) }];
+        if (!keepCaptions) p.cues = [];
+      });
+      updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
+      useEditor.getState().setNotice(`Replaced the video with ${replaceFile.name}${keepCaptions ? "" : " and cleared the captions"}. Undo brings the old one back.`);
+      setReplaceFile(null);
+    } catch (e) {
+      setReplaceError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReplacing(null);
+    }
+  };
   const [name, setName] = useState(project.name);
   const [prevName, setPrevName] = useState(project.name);
   if (prevName !== project.name) {
@@ -59,9 +104,51 @@ export function TopBar() {
         <Link href="/" className="rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white" title="All projects">
           <Folder size={16} />
         </Link>
-        <button type="button" className="rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white" title="Rename" onClick={openRename}>
-          <MoreHorizontal size={16} />
-        </button>
+        <div ref={menuRef} className="relative">
+          <button type="button" className={cx("rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white", menuOpen && "bg-sys-gray5 text-white")} title="Project menu" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+            <MoreHorizontal size={16} />
+          </button>
+          {menuOpen && (
+            <div role="menu" className="card absolute left-0 top-8 z-40 w-56 p-1 text-[13px]">
+              <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), openRename())}>
+                <Pencil size={14} /> Rename video
+              </button>
+              <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), replaceRef.current?.click())}>
+                <RefreshCw size={14} /> Replace entire video
+              </button>
+              <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sys-gray4 disabled:opacity-50" disabled={!project.clips.length} onClick={() => (setMenuOpen(false), useEditor.getState().requestReels())}>
+                <Clapperboard size={14} /> Make reels
+              </button>
+            </div>
+          )}
+        </div>
+        <input ref={replaceRef} type="file" accept="video/*" className="hidden" onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) {
+            setKeepCaptions(false);
+            setReplaceError(null);
+            setReplaceFile(f);
+          }
+        }} />
+        <Modal open={!!replaceFile} onClose={() => !replacing && setReplaceFile(null)} title="Replace entire video?">
+          <p className="text-sm text-label-2">
+            “{replaceFile?.name}” becomes the only clip in <b className="text-white">{project.name}</b>. The name, frame format, music, text and stickers stay. Undo brings the old video back.
+          </p>
+          <div className="mt-3">
+            <Toggle checked={keepCaptions} onChange={setKeepCaptions} label="Keep the captions" description="They were timed to the old audio; off clears them so you can generate new ones" />
+          </div>
+          {replaceError && <p className="mt-2 text-[11px] text-sys-red">{replaceError}</p>}
+          <div className="mt-4 flex items-center justify-end gap-2">
+            {replacing && <span className="mr-auto text-[11px] text-label-2">{replacing}</span>}
+            <Button variant="ghost" onClick={() => setReplaceFile(null)} disabled={!!replacing}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={replaceVideo} disabled={!!replacing}>
+              Replace
+            </Button>
+          </div>
+        </Modal>
         <span className="mx-1 h-4 w-px bg-sys-gray4" />
         <Button variant="ghost" size="iconSm" onClick={undo} disabled={!canUndo} title="Undo (⌘Z)">
           <Undo2 size={14} />

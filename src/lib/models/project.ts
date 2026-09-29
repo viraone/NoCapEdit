@@ -291,6 +291,17 @@ export interface CaptionSettings {
   targetLanguage: string;
 }
 
+/** Metadata carried by a reel cut out of a longer source project. */
+export interface ReelInfo {
+  index: number;
+  title: string;
+  score: number;
+  hook?: string;
+  /** Range in the source project's timeline, seconds. */
+  start: number;
+  end: number;
+}
+
 export interface VideoProject {
   id: string;
   version: number;
@@ -306,6 +317,10 @@ export interface VideoProject {
   subtitleStyle: SubtitleStyle;
   captions: CaptionSettings;
   safeZone: SafeZoneKind;
+  /** Set on reels: the project this one was cut from. */
+  sourceProjectId?: string;
+  /** Set on reels: how it was picked. */
+  reel?: ReelInfo | null;
 }
 
 export const SPEED_MIN = 0.25;

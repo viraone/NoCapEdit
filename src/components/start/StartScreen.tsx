@@ -286,6 +286,7 @@ export function StartScreen() {
                       )}
                       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
                       <span className="absolute bottom-3 right-3 rounded-lg bg-black/70 px-2.5 py-1 text-sm font-semibold tabular-nums text-white backdrop-blur">{formatTime(projectDuration(p.clips), false)}</span>
+                      {p.reel && <span className="absolute left-2 top-2 rounded bg-sys-purple/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">Reel {p.reel.index} · {p.reel.score}/10</span>}
                       <span className="absolute bottom-3 left-3 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-semibold text-label-2 backdrop-blur">{fmt.name}</span>
                     </div>
                     <div className="px-5 pb-3 pt-4 text-left">

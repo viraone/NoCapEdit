@@ -95,6 +95,9 @@ export async function saveProject(project: VideoProject): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   const db = await getDb();
+  // Reels cut from this project go with it.
+  const reels = (await db.getAll("projects")).filter((p) => p.sourceProjectId === id && p.id !== id);
+  for (const r of reels) await deleteProject(r.id);
   const assets = await db.getAllKeysFromIndex("assets", "by-project", id);
   const tx = db.transaction(["projects", "assets", "peaks", "thumbs", "projectThumbs"], "readwrite");
   await Promise.all([
