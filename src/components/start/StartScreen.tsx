@@ -60,6 +60,8 @@ export function StartScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<VideoProject | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
   const [recording, setRecording] = useState(false);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const canRecord = useRecordingSupported();
@@ -171,6 +173,20 @@ export function StartScreen() {
     refresh();
   };
 
+  /** Removes every project on this device (reels go with their sources; the rest one by one). */
+  const removeAll = async () => {
+    setDeletingAll(true);
+    try {
+      const list = await listProjects();
+      for (const p of list.filter((p) => !p.sourceProjectId)) await deleteProject(p.id);
+      for (const p of await listProjects()) await deleteProject(p.id);
+    } finally {
+      setDeletingAll(false);
+      setConfirmDeleteAll(false);
+      refresh();
+    }
+  };
+
   const duplicate = async (p: VideoProject) => {
     await duplicateProject(p.id, uid("prj"), `${p.name} copy`);
     refresh();
@@ -262,9 +278,16 @@ export function StartScreen() {
       </section>
 
       <section className="mt-14">
-        <div className="mb-5 flex items-baseline justify-between">
+        <div className="mb-5 flex items-center justify-between gap-3">
           <h2 className="text-xl font-semibold tracking-tight">Your projects</h2>
-          {projects.length > 0 && <span className="text-sm text-label-3">{projects.length} project{projects.length === 1 ? "" : "s"}</span>}
+          {projects.length > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-label-3">{projects.length} project{projects.length === 1 ? "" : "s"}</span>
+              <Button variant="ghost" size="sm" className="text-sys-red hover:text-red-200" onClick={() => setConfirmDeleteAll(true)} disabled={!!busy} title="Delete every project and its media from this device" data-delete-all>
+                <Trash2 size={13} /> Delete all
+              </Button>
+            </div>
+          )}
         </div>
         {projects.length === 0 ? (
           <p className="card rounded-3xl border-dashed p-14 text-center text-lg text-label-3">No projects yet. Drop a video above or create a new project.</p>
@@ -361,6 +384,20 @@ export function StartScreen() {
         setRecording(false);
         quickImport([file]);
       }} />
+
+      <Modal open={confirmDeleteAll} onClose={() => !deletingAll && setConfirmDeleteAll(false)} title="Delete all projects?">
+        <p className="text-sm text-label-2">
+          All {projects.length} project{projects.length === 1 ? "" : "s"}, their imported media, captions and reels will be removed from this device. This cannot be undone. Use Backup first if you want to keep any of them.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmDeleteAll(false)} disabled={deletingAll}>
+            Keep
+          </Button>
+          <Button variant="danger" onClick={removeAll} disabled={deletingAll} data-confirm-delete-all>
+            {deletingAll ? "Deleting…" : `Delete all ${projects.length}`}
+          </Button>
+        </div>
+      </Modal>
 
       <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title="Delete project?">
         <p className="text-sm text-label-2">
