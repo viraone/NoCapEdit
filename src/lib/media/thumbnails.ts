@@ -1,6 +1,9 @@
 import type { ThumbsRecord } from "@/lib/storage/db";
 
-const MAX_SPRITE_WIDTH = 8000;
+/** Canvas width budget for one sprite (well under Chrome's 32767 limit). */
+const MAX_SPRITE_WIDTH = 16000;
+/** Sprite frame height: tall enough to stay sharp when the video lane is dragged to its largest size. */
+export const FILMSTRIP_FRAME_HEIGHT = 160;
 
 function seek(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((resolve) => {
@@ -37,8 +40,8 @@ export async function generateFilmstrip(
   assetId: string,
   blob: Blob,
   duration: number,
-  frameHeight = 72,
-  maxFrames = 120,
+  frameHeight = FILMSTRIP_FRAME_HEIGHT,
+  maxFrames = 160,
 ): Promise<ThumbsRecord> {
   const url = URL.createObjectURL(blob);
   try {
@@ -52,6 +55,7 @@ export async function generateFilmstrip(
     canvas.width = frameWidth * count;
     canvas.height = frameHeight;
     const ctx = canvas.getContext("2d")!;
+    ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = "#111";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const interval = duration / count;
@@ -67,7 +71,7 @@ export async function generateFilmstrip(
     video.removeAttribute("src");
     video.load();
     const sprite = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/jpeg", 0.72),
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/jpeg", 0.8),
     );
     return { assetId, sprite, count, frameWidth, frameHeight, duration };
   } finally {

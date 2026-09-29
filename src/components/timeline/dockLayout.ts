@@ -3,22 +3,22 @@ import { clamp } from "@/lib/utils/math";
 /** Fixed lane heights of the timeline dock (px). */
 export const RULER_H = 24;
 export const CUE_H = 34;
-/** Clip audio waveforms, on their own lane under the video. */
-export const AUDIO_H = 36;
 export const MUSIC_H = 28;
 /** Transport bar (44) plus the "Timeline" header row (30). */
 export const DOCK_CHROME_H = 44 + 30;
 
-/** The video lane is the only lane that grows, so its range sets the dock's range. */
+/** The video lane and the audio lane under it (same height) are the lanes that grow. */
 export const VIDEO_MIN_H = 48;
 export const VIDEO_DEFAULT_H = 76;
 /** Thumbnail sprites are 72 px tall; past ~3× they turn to mush. */
 export const VIDEO_MAX_H = 220;
 
-const FIXED_H = DOCK_CHROME_H + RULER_H + CUE_H + AUDIO_H + MUSIC_H;
-export const DOCK_MIN_H = FIXED_H + VIDEO_MIN_H;
-export const DOCK_DEFAULT_H = FIXED_H + VIDEO_DEFAULT_H;
-export const DOCK_MAX_H = FIXED_H + VIDEO_MAX_H;
+const FIXED_H = DOCK_CHROME_H + RULER_H + CUE_H + MUSIC_H;
+/** Video lane plus the equally tall audio lane. */
+const GROWING_LANES = 2;
+export const DOCK_MIN_H = FIXED_H + VIDEO_MIN_H * GROWING_LANES;
+export const DOCK_DEFAULT_H = FIXED_H + VIDEO_DEFAULT_H * GROWING_LANES;
+export const DOCK_MAX_H = FIXED_H + VIDEO_MAX_H * GROWING_LANES;
 
 /** Window height the preview keeps for itself: the dock never grows past the window minus this. */
 export const STAGE_MIN_H = 320;
@@ -30,9 +30,9 @@ export function clampDockHeight(h: number, viewportH = Infinity): number {
   return clamp(Math.round(h), DOCK_MIN_H, max);
 }
 
-/** Height of the video lane for a dock of height `dockH`. */
+/** Height of the video lane (and of the audio lane) for a dock of height `dockH`. */
 export function videoLaneHeight(dockH: number): number {
-  return clamp(dockH - FIXED_H, VIDEO_MIN_H, VIDEO_MAX_H);
+  return clamp(Math.round((dockH - FIXED_H) / GROWING_LANES), VIDEO_MIN_H, VIDEO_MAX_H);
 }
 
 const STORAGE_KEY = "reelflow.timelineHeight";

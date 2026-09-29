@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { getThumbs, type ThumbsRecord } from "@/lib/storage/db";
-import { onAssetReady } from "@/lib/media/events";
+import { getAsset, getThumbs, putThumbs, type ThumbsRecord } from "@/lib/storage/db";
+import { emitAssetReady, onAssetReady } from "@/lib/media/events";
+import { FILMSTRIP_FRAME_HEIGHT, generateFilmstrip } from "@/lib/media/thumbnails";
 
 export interface Loaded {
   img: HTMLImageElement;
@@ -9,12 +10,28 @@ export interface Loaded {
 }
 const cache = new Map<string, Promise<Loaded | null>>();
 
+const upgrading = new Set<string>();
+
+/** Sprites made before the frame height was raised are rebuilt once, in the background, from the stored media. */
+function upgradeIfLowRes(assetId: string, rec: ThumbsRecord) {
+  if (rec.frameHeight >= FILMSTRIP_FRAME_HEIGHT || upgrading.has(assetId)) return;
+  upgrading.add(assetId);
+  (async () => {
+    const asset = await getAsset(assetId);
+    if (!asset) return;
+    const next = await generateFilmstrip(assetId, asset.blob, rec.duration);
+    await putThumbs(next);
+    emitAssetReady("thumbs", assetId);
+  })().catch(() => undefined);
+}
+
 export function loadThumbs(assetId: string, force = false): Promise<Loaded | null> {
   if (!force && cache.has(assetId)) return cache.get(assetId)!;
   const p = getThumbs(assetId).then(
     (rec) =>
       new Promise<Loaded | null>((resolve) => {
         if (!rec) return resolve(null);
+        upgradeIfLowRes(assetId, rec);
         const img = new Image();
         img.onload = () => resolve({ img, rec });
         img.onerror = () => resolve(null);
@@ -51,6 +68,7 @@ export function Filmstrip({ assetId, inPoint, outPoint, width, height }: { asset
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
+    ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = "#171717";
     ctx.fillRect(0, 0, width, height);
     if (!thumbs) return;

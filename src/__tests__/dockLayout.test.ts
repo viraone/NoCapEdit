@@ -14,7 +14,7 @@ import {
 
 describe("timeline dock height", () => {
   it("defaults to the original fixed layout", () => {
-    expect(DOCK_DEFAULT_H).toBe(272);
+    expect(DOCK_DEFAULT_H).toBe(312);
     expect(videoLaneHeight(DOCK_DEFAULT_H)).toBe(VIDEO_DEFAULT_H);
   });
 
@@ -40,11 +40,11 @@ describe("readStoredDockHeight", () => {
     const g = globalThis as unknown as { localStorage?: unknown; window?: unknown };
     const saved = { localStorage: g.localStorage, window: g.window };
     g.localStorage = { getItem: (k: string) => mem.get(k) ?? null };
-    g.window = { innerHeight: STAGE_MIN_H + 300 };
+    g.window = { innerHeight: STAGE_MIN_H + 320 };
     try {
-      expect(readStoredDockHeight(250)).toBe(250);
+      expect(readStoredDockHeight(280)).toBe(280);
       mem.set("reelflow.timelineHeight", String(DOCK_MAX_H));
-      expect(readStoredDockHeight()).toBe(300); // the window leaves only 300 px for the dock
+      expect(readStoredDockHeight()).toBe(320); // the window leaves only 320 px for the dock
       g.localStorage = { getItem: () => { throw new Error("blocked"); } };
       expect(readStoredDockHeight(260)).toBe(260);
     } finally {
