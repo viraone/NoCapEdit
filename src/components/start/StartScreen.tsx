@@ -166,108 +166,133 @@ export function StartScreen() {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/30">
-            <Film size={20} />
+    <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-8 py-10 text-[15px]">
+      <header className="flex flex-wrap items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-500 text-white shadow-lg shadow-brand-500/40">
+            <Film size={28} />
           </div>
           <div>
-            <h1 className="text-lg font-semibold leading-tight">NoCap Edit</h1>
-            <p className="text-xs text-label-3">Captioned vertical clips, edited entirely in your browser.</p>
+            <h1 className="text-3xl font-semibold leading-tight tracking-tight">NoCap Edit</h1>
+            <p className="mt-1 text-base text-label-2">Captioned vertical clips, edited entirely in your browser.</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <input ref={backupInputRef} type="file" accept=".nocap,.zip,application/zip" className="hidden" onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = "";
             if (f) restore(f);
           }} />
-          <Button variant="secondary" onClick={() => backupInputRef.current?.click()} disabled={!!busy} title="Restore a .nocap backup">
-            <PackageOpen size={16} /> Import backup
+          <Button variant="secondary" size="lg" onClick={() => backupInputRef.current?.click()} disabled={!!busy} title="Restore a .nocap backup">
+            <PackageOpen size={18} /> Import backup
           </Button>
           {canRecord && (
-            <Button variant="secondary" onClick={() => setRecording(true)} disabled={!!busy}>
-              <Video size={16} /> Record
+            <Button variant="secondary" size="lg" onClick={() => setRecording(true)} disabled={!!busy}>
+              <Video size={18} /> Record
             </Button>
           )}
-          <Button variant="primary" onClick={() => setNewOpen(true)}>
-            <Plus size={16} /> New project
+          <Button variant="primary" size="lg" onClick={() => setNewOpen(true)}>
+            <Plus size={18} /> New project
           </Button>
         </div>
       </header>
 
-      <section className="mt-8 grid gap-4 md:grid-cols-[1.4fr_1fr]">
-        <FileDrop accept="video/*" multiple onFiles={quickImport} disabled={!!busy} className="flex min-h-40 flex-col items-center justify-center gap-2 bg-sys-gray5">
-          <Upload size={24} className="text-label-3" />
-          <p className="text-sm font-medium">Drop a recording to start a new reel</p>
-          <p className="text-xs text-label-3">MP4, MOV or WebM. Files never leave this device.</p>
+      <section className="mt-12 grid gap-6 md:grid-cols-[1.5fr_1fr]">
+        <FileDrop
+          accept="video/*"
+          multiple
+          onFiles={quickImport}
+          disabled={!!busy}
+          className="relative flex min-h-72 flex-col items-center justify-center gap-3 overflow-hidden rounded-3xl bg-sys-gray5 px-8 py-10 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_50px_rgba(0,0,0,0.45)]"
+        >
+          <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 h-64 w-[36rem] -translate-x-1/2 rounded-full bg-sys-blue/15 blur-3xl" />
+          <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-sys-gray4 text-sys-blue shadow-inner shadow-black/40">
+            <Upload size={36} />
+          </div>
+          <p className="relative text-2xl font-semibold tracking-tight">Drop a recording to start a new reel</p>
+          <p className="relative text-base text-label-2">MP4, MOV or WebM · click to browse · files never leave this device</p>
           {busy && (
-            <div className="mt-2 w-64">
-              <ProgressBar value={null} />
-              <p className="mt-1 text-[11px] text-label-2">{busy}</p>
+            <div className="relative mt-3 w-80">
+              <ProgressBar value={null} className="h-2" />
+              <p className="mt-2 text-sm text-label-2">{busy}</p>
             </div>
           )}
-          {error && <p className="text-xs text-sys-red">{error}</p>}
+          {error && <p className="relative text-sm text-sys-red">{error}</p>}
         </FileDrop>
-        <div className="card p-4 text-xs text-label-2">
-          <p className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
-            <ShieldCheck size={16} className="text-sys-green" /> Zero-cost, on-device pipeline
+        <div className="card flex flex-col justify-center rounded-3xl p-6 text-[15px] text-label-2">
+          <p className="mb-5 flex items-center gap-2.5 text-lg font-semibold text-white">
+            <ShieldCheck size={22} className="text-sys-green" /> Zero-cost, on-device pipeline
           </p>
-          <ul className="space-y-1.5">
-            <li className="flex items-center gap-2">
-              <Cpu size={14} /> Whisper speech-to-text: {caps?.webgpu ? "WebGPU accelerated" : "WASM (WebGPU unavailable)"}
+          <ul className="space-y-3.5">
+            <li className="flex items-start gap-3">
+              <Cpu size={20} className="mt-0.5 shrink-0 text-sys-teal" />
+              <span>
+                <span className="block text-white">Whisper speech-to-text</span>
+                <span className="text-label-3">{caps?.webgpu ? "WebGPU accelerated" : "WASM (WebGPU unavailable)"}</span>
+              </span>
             </li>
-            <li className="flex items-center gap-2">
-              <Layers size={14} /> ffmpeg.wasm export: {caps?.isolated ? "multi-threaded" : "single-threaded (no cross-origin isolation)"}
+            <li className="flex items-start gap-3">
+              <Layers size={20} className="mt-0.5 shrink-0 text-sys-purple" />
+              <span>
+                <span className="block text-white">ffmpeg.wasm export</span>
+                <span className="text-label-3">{caps?.isolated ? "multi-threaded" : "single-threaded (no cross-origin isolation)"}</span>
+              </span>
             </li>
-            <li className="flex items-center gap-2">
-              <HardDrive size={14} />
-              {storage ? `${formatBytes(storage.usage)} used of ${formatBytes(storage.quota)} local storage${storage.persisted ? " (persistent)" : ""}` : "Local storage"}
+            <li className="flex items-start gap-3">
+              <HardDrive size={20} className="mt-0.5 shrink-0 text-sys-orange" />
+              <span>
+                <span className="block text-white">Local storage</span>
+                <span className="text-label-3">{storage ? `${formatBytes(storage.usage)} used of ${formatBytes(storage.quota)}${storage.persisted ? " · persistent" : ""}` : "Checking…"}</span>
+              </span>
             </li>
           </ul>
-          {storage && storage.quota > 0 && <ProgressBar className="mt-3" value={storage.usage / storage.quota} />}
+          {storage && storage.quota > 0 && <ProgressBar className="mt-5 h-2" value={storage.usage / storage.quota} />}
         </div>
       </section>
 
-      <section className="mt-10">
-        <h2 className="mb-3 text-sm font-semibold text-label-2">Your projects</h2>
+      <section className="mt-14">
+        <div className="mb-5 flex items-baseline justify-between">
+          <h2 className="text-xl font-semibold tracking-tight">Your projects</h2>
+          {projects.length > 0 && <span className="text-sm text-label-3">{projects.length} project{projects.length === 1 ? "" : "s"}</span>}
+        </div>
         {projects.length === 0 ? (
-          <p className="card border-dashed p-8 text-center text-sm text-label-3">No projects yet. Drop a video above or create a new project.</p>
+          <p className="card rounded-3xl border-dashed p-14 text-center text-lg text-label-3">No projects yet. Drop a video above or create a new project.</p>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => {
               const fmt = getFormat(p.formatId);
               return (
-                <div key={p.id} className="card group overflow-hidden transition-colors hover:border-sys-gray2">
+                <div key={p.id} className="card group overflow-hidden rounded-3xl transition-all duration-200 hover:-translate-y-1 hover:border-sys-gray2 hover:shadow-[0_24px_60px_rgba(0,0,0,0.55)]">
                   <button type="button" onClick={() => openProject(p.id)} className="block w-full">
-                    <div className="relative aspect-[4/3] w-full overflow-hidden bg-sys-gray6">
+                    <div className="relative aspect-[16/10] w-full overflow-hidden bg-sys-gray6">
                       {thumbs[p.id] ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={thumbs[p.id]} alt="" className="h-full w-full object-cover" />
+                        <img src={thumbs[p.id]} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
                       ) : (
                         <div className="flex h-full items-center justify-center text-sys-gray3">
-                          <Film size={28} />
+                          <Film size={44} />
                         </div>
                       )}
-                      <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] tabular-nums text-white">{formatTime(projectDuration(p.clips), false)}</span>
+                      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
+                      <span className="absolute bottom-3 right-3 rounded-lg bg-black/70 px-2.5 py-1 text-sm font-semibold tabular-nums text-white backdrop-blur">{formatTime(projectDuration(p.clips), false)}</span>
+                      <span className="absolute bottom-3 left-3 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-semibold text-label-2 backdrop-blur">{fmt.name}</span>
                     </div>
-                    <div className="px-3 pb-2 pt-2.5 text-left">
-                      <p className="truncate text-sm font-medium text-white">{p.name}</p>
-                      <p className="text-[11px] text-label-3">
-                        {fmt.name} · {p.clips.length} clip{p.clips.length === 1 ? "" : "s"} · {timeAgo(p.updatedAt)}
+                    <div className="px-5 pb-3 pt-4 text-left">
+                      <p className="truncate text-lg font-semibold text-white">{p.name}</p>
+                      <p className="mt-1 text-sm text-label-3">
+                        {p.clips.length} clip{p.clips.length === 1 ? "" : "s"} · {timeAgo(p.updatedAt)}
                       </p>
                     </div>
                   </button>
-                  <div className={cx("flex items-center gap-1 border-t border-sys-gray5 px-2 py-1 opacity-70 transition-opacity group-hover:opacity-100")}>
-                    <Button variant="ghost" size="xs" onClick={() => duplicate(p)} title="Duplicate">
-                      <Copy size={12} /> Duplicate
+                  <div className={cx("flex items-center gap-1.5 border-t border-sys-gray5 px-3 py-2 opacity-80 transition-opacity group-hover:opacity-100")}>
+                    <Button variant="ghost" size="sm" onClick={() => duplicate(p)} title="Duplicate">
+                      <Copy size={14} /> Duplicate
                     </Button>
-                    <Button variant="ghost" size="xs" onClick={() => backup(p)} title="Save a .nocap backup with all media" disabled={!!busy}>
-                      <Archive size={12} /> Backup
+                    <Button variant="ghost" size="sm" onClick={() => backup(p)} title="Save a .nocap backup with all media" disabled={!!busy}>
+                      <Archive size={14} /> Backup
                     </Button>
-                    <Button variant="ghost" size="xs" className="ml-auto text-sys-red hover:text-red-200" onClick={() => setConfirmDelete(p)} title="Delete">
-                      <Trash2 size={12} /> Delete
+                    <Button variant="ghost" size="sm" className="ml-auto text-sys-red hover:text-red-200" onClick={() => setConfirmDelete(p)} title="Delete">
+                      <Trash2 size={14} /> Delete
                     </Button>
                   </div>
                 </div>
@@ -277,7 +302,7 @@ export function StartScreen() {
         )}
       </section>
 
-      <footer className="mt-auto pt-10 text-[11px] text-label-3">
+      <footer className="mt-auto pt-14 text-sm text-label-3">
         Projects, clips and models are stored in this browser only. Clearing site data removes them.
       </footer>
 
@@ -300,8 +325,8 @@ export function StartScreen() {
                     <span className="block rounded-sm border border-sys-gray2 bg-sys-gray4" style={{ width: f.width >= f.height ? 32 : (32 * f.width) / f.height, height: f.height >= f.width ? 32 : (32 * f.height) / f.width }} />
                   </span>
                   <span>
-                    <span className="block text-sm">{f.name}</span>
-                    <span className="block text-[11px] text-label-3">
+                    <span className="block text-[15px]">{f.name}</span>
+                    <span className="block text-xs text-label-3">
                       {f.width}×{f.height} · {f.ratio}
                     </span>
                   </span>

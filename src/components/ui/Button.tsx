@@ -3,7 +3,7 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cx } from "@/lib/utils/cx";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "outline";
-export type ButtonSize = "xs" | "sm" | "md" | "icon" | "iconSm";
+export type ButtonSize = "xs" | "sm" | "md" | "lg" | "icon" | "iconSm";
 
 const variants: Record<ButtonVariant, string> = {
   primary: "bg-sys-blue text-white hover:bg-brand-400 disabled:hover:bg-sys-blue shadow-sm shadow-sys-blue/30",
@@ -17,6 +17,7 @@ const sizes: Record<ButtonSize, string> = {
   xs: "h-6 px-2 text-[11px] gap-1 rounded-md",
   sm: "h-7 px-2.5 text-xs gap-1.5 rounded-lg",
   md: "h-9 px-3.5 text-[13px] gap-2 rounded-[10px]",
+  lg: "h-12 px-5 text-[15px] gap-2.5 rounded-xl",
   icon: "h-9 w-9 rounded-[10px]",
   iconSm: "h-7 w-7 rounded-md",
 };
