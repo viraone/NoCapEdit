@@ -79,7 +79,7 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
-        <input ref={fileRef} type="file" accept="video/*" multiple className="hidden" onChange={(e) => {
+        <input ref={fileRef} type="file" accept="video/*,image/*" multiple className="hidden" onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
           if (files.length) onFiles(files);

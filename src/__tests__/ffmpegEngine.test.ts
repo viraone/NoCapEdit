@@ -82,7 +82,17 @@ describe("multi-threaded core thread caps", () => {
     const out = withThreadCaps(args, { decoder: 2, encoder: 8, filter: 2 });
     expect(out.slice(0, 4)).toEqual(["-filter_threads", "2", "-filter_complex_threads", "2"]);
     expect(out.join(" ")).toContain("-t 4 -threads 2 -i /in/clip0.mp4 -threads 2 -i /in/music.mp3");
-    expect(out.slice(-3)).toEqual(["-threads", "8", "out.mp4"]);
+    expect(out.slice(-5)).toEqual(["-threads", "8", "-x264-params", "lookahead-threads=1", "out.mp4"]);
+  });
+
+  it("pins x264's lookahead thread, merging into existing params", async () => {
+    const { withThreadCaps } = await import("@/lib/ffmpegEngine");
+    const plan = { decoder: 2, encoder: 8, filter: 2 };
+    const merged = withThreadCaps(["-i", "a.mp4", "-c:v", "libx264", "-x264-params", "keyint=60", "out.mp4"], plan);
+    expect(merged.join(" ")).toContain("-x264-params keyint=60:lookahead-threads=1 -threads 8 out.mp4");
+    expect(merged.join(" ").match(/lookahead-threads/g)).toHaveLength(1);
+    const x265 = withThreadCaps(["-i", "a.mp4", "-c:v", "libx265", "out.mp4"], plan);
+    expect(x265.join(" ")).not.toContain("x264-params");
   });
 
   it("respects explicit thread options and the null muxer output", async () => {

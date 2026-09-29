@@ -19,6 +19,8 @@ import {
   requestPersistentStorage,
 } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
+import { isImageFile, toClipFile, STILL_SECONDS } from "@/lib/media/stillVideo";
+import { fitZoom } from "@/lib/models/clipOps";
 import { formatBytes, formatTime } from "@/lib/utils/time";
 import { uid } from "@/lib/utils/id";
 import { ensureCrossOriginIsolation } from "@/lib/coi";
@@ -136,12 +138,21 @@ export function StartScreen() {
   const quickImport = async (files: File[]) => {
     setError(null);
     const first = files[0];
-    const project = createProject({ name: first.name.replace(/\.[^.]+$/, "") });
+    // A flyer or poster becomes an Instagram post: 4:5 frame, whole image visible.
+    const stillFirst = isImageFile(first);
+    const project = createProject({ name: first.name.replace(/\.[^.]+$/, ""), ...(stillFirst ? { formatId: "ig-portrait" } : {}) });
+    const format = getFormat(project.formatId);
     await saveProject(project);
     await requestPersistentStorage();
     try {
-      for (const [i, file] of files.entries()) {
-        const { clip, blob } = await importVideo(file, project.id, (s) => setBusy(`${s} (${i + 1}/${files.length})`));
+      for (const [i, raw] of files.entries()) {
+        const status = (s: string) => setBusy(`${s} (${i + 1}/${files.length})`);
+        const file = await toClipFile(raw, status);
+        const { clip, blob } = await importVideo(file, project.id, status);
+        if (isImageFile(raw)) {
+          clip.zoom = fitZoom({ width: clip.width, height: clip.height }, { width: format.width, height: format.height });
+          clip.pan = { x: 0, y: 0 };
+        }
         project.clips.push(clip);
         if (i === 0) await updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
         await saveProject(project);
@@ -199,7 +210,7 @@ export function StartScreen() {
 
       <section className="mt-12 grid gap-6 md:grid-cols-[1.5fr_1fr]">
         <FileDrop
-          accept="video/*"
+          accept="video/*,image/*"
           multiple
           onFiles={quickImport}
           disabled={!!busy}
@@ -209,8 +220,8 @@ export function StartScreen() {
           <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-sys-gray4 text-sys-blue shadow-inner shadow-black/40">
             <Upload size={36} />
           </div>
-          <p className="relative text-2xl font-semibold tracking-tight">Drop a recording to start a new reel</p>
-          <p className="relative text-base text-label-2">MP4, MOV or WebM · click to browse · files never leave this device</p>
+          <p className="relative text-2xl font-semibold tracking-tight">Drop a recording or a flyer to start a new reel</p>
+          <p className="relative text-base text-label-2">MP4, MOV, WebM · or an image, which becomes an {STILL_SECONDS} s Instagram post · files never leave this device</p>
           {busy && (
             <div className="relative mt-3 w-80">
               <ProgressBar value={null} className="h-2" />

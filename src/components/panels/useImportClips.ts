@@ -1,6 +1,7 @@
 "use client";
 import { useEditor } from "@/store/editorStore";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
+import { toClipFile } from "@/lib/media/stillVideo";
 import { uid } from "@/lib/utils/id";
 import { importErrorText } from "@/lib/media/importFeedback";
 
@@ -25,13 +26,16 @@ export function useImportClips() {
     let added = 0;
     state.setImportStatus(`Reading ${files[0]?.name ?? ""} (1/${files.length})`);
     try {
-      for (const [i, file] of files.entries()) {
+      for (const [i, raw] of files.entries()) {
         // Protect the asset from "Clean up unused media" from the moment it is
         // written until its clip is in the project.
         const assetId = uid("asset");
         state.markAssetPending(assetId);
         try {
-          const { clip, blob } = await importVideo(file, project.id, (s) => current() && state.setImportStatus(`${s} (${i + 1}/${files.length})`), assetId);
+          const status = (s: string) => current() && state.setImportStatus(`${s} (${i + 1}/${files.length})`);
+          // Images (flyers, posters) become 8 s still clips.
+          const file = await toClipFile(raw, status);
+          const { clip, blob } = await importVideo(file, project.id, status, assetId);
           if (!current()) continue;
           state.registerAsset(assetId, blob);
           const isFirst = useEditor.getState().project?.clips.length === 0;
@@ -39,7 +43,7 @@ export function useImportClips() {
           if (isFirst) updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
           added++;
         } catch (e) {
-          failures.push({ name: file.name, reason: e instanceof Error ? e.message : String(e) });
+          failures.push({ name: raw.name, reason: e instanceof Error ? e.message : String(e) });
         } finally {
           state.unmarkAssetPending(assetId);
         }
