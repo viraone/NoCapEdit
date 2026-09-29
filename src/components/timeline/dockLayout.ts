@@ -21,7 +21,7 @@ export const DOCK_DEFAULT_H = FIXED_H + VIDEO_DEFAULT_H * GROWING_LANES;
 export const DOCK_MAX_H = FIXED_H + VIDEO_MAX_H * GROWING_LANES;
 
 /** Window height the preview keeps for itself: the dock never grows past the window minus this. */
-export const STAGE_MIN_H = 320;
+export const STAGE_MIN_H = 380;
 
 /** Clamps a requested dock height to the lane limits and, when the window height is given, to what it can spare. */
 export function clampDockHeight(h: number, viewportH = Infinity): number {
