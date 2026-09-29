@@ -7,12 +7,13 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clapperboard, RefreshCw, FolderOpen, Share2, Trash2, Square, Captions, Play } from "lucide-react";
+import { Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
 import { DEFAULT_REEL_SETTINGS, listReels, loadReelSettings, makeReels, saveReelSettings, type ReelSettings } from "@/lib/edit/reelMaker";
-import { listOllamaModels, loadAiSettings, localAiEnabled, saveAiSettings, type AiSettings } from "@/lib/edit/aiHighlights";
+import { activeModel, listOllamaModels, loadAiSettings, localAiEnabled, saveAiSettings, type AiSettings } from "@/lib/edit/aiHighlights";
+import { AiModelFields } from "./AiModelFields";
 import { getFormat } from "@/lib/models/formats";
 import { projectDuration } from "@/lib/models/timeline";
 import type { VideoProject } from "@/lib/models/project";
@@ -20,7 +21,7 @@ import { deleteProject, getProjectThumb } from "@/lib/storage/db";
 import { formatTime, nowMs } from "@/lib/utils/time";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Field";
+import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 
@@ -58,6 +59,7 @@ export function ReelsPanel() {
     saveReelSettings(next);
   };
   const refreshModels = async () => {
+    if (aiSettings.provider !== "ollama") return;
     setModelsError(null);
     setModelsPending(true);
     try {
@@ -178,7 +180,7 @@ export function ReelsPanel() {
 
   return (
     <>
-      <PanelHeader title="Reels" description={`${aiSettings.model} reads the transcript, picks the best moments and cuts each into its own ${format.ratio} reel with captions carried over. Every reel opens and exports on its own.`} />
+      <PanelHeader title="Reels" description={`${activeModel(aiSettings)} reads the transcript, picks the best moments and cuts each into its own ${format.ratio} reel with captions carried over. Every reel opens and exports on its own.`} />
       <PanelSection title="Cut reels">
         <div className="grid grid-cols-2 gap-2">
           <Field label="How many">
@@ -220,27 +222,8 @@ export function ReelsPanel() {
         {note && <p className="text-[11px] text-sys-green">{note}</p>}
       </PanelSection>
       <PanelSection title="Model">
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Model" right={<button type="button" className="text-sys-blue hover:underline" onClick={refreshModels} title="Refresh local models"><RefreshCw size={11} className="inline" /> refresh</button>}>
-            {models && models.length ? (
-              <Select value={aiSettings.model} onChange={(e) => updateAi({ model: e.target.value })} aria-label="Model" disabled={!!job}>
-                {(models.includes(aiSettings.model) ? models : [aiSettings.model, ...models]).map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <Input value={aiSettings.model} onChange={(e) => updateAi({ model: e.target.value })} placeholder="qwen3.8:27b" spellCheck={false} disabled={!!job} />
-            )}
-            {modelsPending && !models && <p className="mt-1 text-[11px] text-label-3">Listing the models on this computer…{permissionHint}</p>}
-            {modelsError && <p className="mt-1 text-[11px] text-sys-orange">{modelsError}</p>}
-          </Field>
-          <Field label="Ollama server">
-            <Input value={aiSettings.endpoint} onChange={(e) => updateAi({ endpoint: e.target.value })} placeholder="http://localhost:11434" spellCheck={false} disabled={!!job} />
-          </Field>
-        </div>
-        <p className="text-[11px] text-label-3">Everything runs on this machine; nothing leaves it. Default settings: {DEFAULT_REEL_SETTINGS.count} reels of about {DEFAULT_REEL_SETTINGS.targetSeconds} s.</p>
+        <AiModelFields settings={aiSettings} onChange={updateAi} disabled={!!job} permissionHint={permissionHint} models={models} modelsError={modelsError} modelsPending={modelsPending} onRefresh={() => void refreshModels()} />
+        <p className="text-[11px] text-label-3">Default settings: {DEFAULT_REEL_SETTINGS.count} reels of about {DEFAULT_REEL_SETTINGS.targetSeconds} s.</p>
       </PanelSection>
       <PanelSection title={`Reels${reels.length ? ` (${reels.length})` : ""}`}>
         {reels.length === 0 ? (

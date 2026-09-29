@@ -10,10 +10,11 @@ import { layoutClips } from "@/lib/models/timeline";
 import type { CaptionCue, WordTiming } from "@/lib/models/project";
 import { buildCues, cuesEditedSince, mergeCues, regroupCues, splitCue, sortCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
 import { findHighlights, type Highlight } from "@/lib/edit/highlights";
-import { findAiHighlights, loadAiSettings, loadHighlightFinder, localAiEnabled, saveAiSettings, saveHighlightFinder, type AiSettings } from "@/lib/edit/aiHighlights";
+import { activeModel, findAiHighlights, loadAiSettings, loadHighlightFinder, localAiEnabled, saveAiSettings, saveHighlightFinder, type AiSettings } from "@/lib/edit/aiHighlights";
+import { AiModelFields } from "./AiModelFields";
 import { keepOnly } from "@/lib/edit/magicCut";
 import { getPreset } from "@/lib/captions/presets";
-import { Sparkle, Wand, RefreshCw } from "lucide-react";
+import { Sparkle, Wand } from "lucide-react";
 import { loadReelSettings, makeReels } from "@/lib/edit/reelMaker";
 import { listOllamaModels } from "@/lib/edit/aiHighlights";
 import { WHISPER_MODELS, DEFAULT_WHISPER_MODEL, sliceSamples, wordsToProjectTime, type DevicePreference } from "@/lib/speech/transcriber";
@@ -29,7 +30,7 @@ import { formatTime, nowMs } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
-import { Field, Input, inputClass } from "@/components/ui/Field";
+import { Field, inputClass } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { Toggle } from "@/components/ui/Toggle";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -303,6 +304,7 @@ export function SubtitlesPanel() {
   const [models, setModels] = useState<string[] | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const refreshModels = async (endpoint = aiSettings.endpoint) => {
+    if (aiSettings.provider !== "ollama") return;
     setModelsError(null);
     try {
       setModels(await listOllamaModels(endpoint));
@@ -372,7 +374,7 @@ export function SubtitlesPanel() {
     setAiElapsed(0);
     const controller = new AbortController();
     aiAbortRef.current = controller;
-    setAiJob({ message: `Sending the transcript to ${aiSettings.model}`, started: nowMs() });
+    setAiJob({ message: `Sending the transcript to ${activeModel(aiSettings)}`, started: nowMs() });
     try {
       const found = await findAiHighlights(project.cues, {
         settings: aiSettings,
@@ -584,27 +586,7 @@ export function SubtitlesPanel() {
             <Sparkle size={14} /> Find
           </Button>
         </div>
-        {finder === "ai" && !aiJob && (
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Model" right={<button type="button" className="text-sys-blue hover:underline" onClick={() => refreshModels()} title="Refresh local models"><RefreshCw size={11} className="inline" /> refresh</button>}>
-              {models && models.length ? (
-                <Select value={aiSettings.model} onChange={(e) => updateAiSettings({ model: e.target.value })} aria-label="Model">
-                  {(models.includes(aiSettings.model) ? models : [aiSettings.model, ...models]).map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </Select>
-              ) : (
-                <Input value={aiSettings.model} onChange={(e) => updateAiSettings({ model: e.target.value })} placeholder="qwen3.8:27b" spellCheck={false} />
-              )}
-              {modelsError && <p className="mt-1 text-[11px] text-sys-orange">{modelsError}</p>}
-            </Field>
-            <Field label="Ollama server">
-              <Input value={aiSettings.endpoint} onChange={(e) => updateAiSettings({ endpoint: e.target.value })} placeholder="http://localhost:11434" spellCheck={false} />
-            </Field>
-          </div>
-        )}
+        {finder === "ai" && !aiJob && <AiModelFields settings={aiSettings} onChange={updateAiSettings} models={models} modelsError={modelsError} onRefresh={() => void refreshModels()} />}
         {aiJob && (
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={null} />

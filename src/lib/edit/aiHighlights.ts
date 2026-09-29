@@ -10,27 +10,48 @@
 import type { CaptionCue } from "@/lib/models/project";
 import { sentencesFromCues, type Highlight, type Sentence } from "./highlights";
 
+export type AiProvider = "ollama" | "openai";
+
 export interface AiSettings {
+  /** Where the model runs: Ollama on this computer (default, private) or an OpenAI-compatible HTTP API. */
+  provider: AiProvider;
   /** Ollama server, e.g. http://localhost:11434 */
   endpoint: string;
   /** Ollama model name, e.g. qwen3.8:27b */
   model: string;
+  /** OpenAI-compatible base URL, e.g. https://api.openai.com/v1 (also Groq, OpenRouter, LM Studio, Ollama's /v1). */
+  apiBase: string;
+  /** The user's own key for that API; kept in this browser only. */
+  apiKey: string;
+  /** Model name at that API, e.g. gpt-4o-mini. */
+  apiModel: string;
 }
 
-export const DEFAULT_AI_SETTINGS: AiSettings = { endpoint: "http://localhost:11434", model: "qwen3.8:27b" };
+export const DEFAULT_AI_SETTINGS: AiSettings = { provider: "ollama", endpoint: "http://localhost:11434", model: "qwen3.8:27b", apiBase: "https://api.openai.com/v1", apiKey: "", apiModel: "gpt-4o-mini" };
 const SETTINGS_KEY = "reelflow.ai";
+
+const str = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() ? v.trim() : fallback);
 
 export function loadAiSettings(): AiSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const parsed = raw ? (JSON.parse(raw) as Partial<AiSettings>) : {};
     return {
-      endpoint: typeof parsed.endpoint === "string" && parsed.endpoint.trim() ? parsed.endpoint.trim() : DEFAULT_AI_SETTINGS.endpoint,
-      model: typeof parsed.model === "string" && parsed.model.trim() ? parsed.model.trim() : DEFAULT_AI_SETTINGS.model,
+      provider: parsed.provider === "openai" ? "openai" : "ollama",
+      endpoint: str(parsed.endpoint, DEFAULT_AI_SETTINGS.endpoint),
+      model: str(parsed.model, DEFAULT_AI_SETTINGS.model),
+      apiBase: str(parsed.apiBase, DEFAULT_AI_SETTINGS.apiBase).replace(/\/+$/, ""),
+      apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey.trim() : "",
+      apiModel: str(parsed.apiModel, DEFAULT_AI_SETTINGS.apiModel),
     };
   } catch {
     return { ...DEFAULT_AI_SETTINGS };
   }
+}
+
+/** The model name a run will use for the chosen provider. */
+export function activeModel(s: AiSettings): string {
+  return s.provider === "openai" ? s.apiModel : s.model;
 }
 
 export function saveAiSettings(settings: AiSettings): void {
@@ -186,7 +207,87 @@ export interface FindAiOptions extends AiRequestOptions {
   onProgress?: (message: string) => void;
 }
 
-/** Asks the local model for the best moments of the transcript. Throws readable errors. */
+/** Parses the model's JSON answer into clips; throws a readable error when it is not JSON. */
+export function parseClips(content: string): AiClip[] {
+  try {
+    return (JSON.parse(content) as { clips?: AiClip[] }).clips ?? [];
+  } catch {
+    // Some providers wrap JSON in a code fence despite being asked not to.
+    const m = content.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        return (JSON.parse(m[0]) as { clips?: AiClip[] }).clips ?? [];
+      } catch {
+        /* fall through */
+      }
+    }
+    throw new Error("The model's answer wasn't valid JSON. Try again.");
+  }
+}
+
+/** Request body for an OpenAI-compatible chat completion (json_schema first; callers may retry with json_object). */
+export function openAiRequestBody(model: string, system: string, user: string, mode: "json_schema" | "json_object"): Record<string, unknown> {
+  return {
+    model,
+    temperature: 0.2,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: mode === "json_object" ? `${user}\n\nAnswer with a JSON object of the form {"clips":[{"startLine":0,"endLine":0,"title":"","hook":"","reason":"","score":0}]} and nothing else.` : user },
+    ],
+    response_format: mode === "json_schema" ? { type: "json_schema", json_schema: { name: "clips", schema: AI_CLIPS_SCHEMA } } : { type: "json_object" },
+  };
+}
+
+/** Sends the transcript to an OpenAI-compatible API with the user's own key. The transcript (not the video) leaves the device. */
+async function findViaOpenAi(system: string, user: string, opts: FindAiOptions): Promise<AiClip[]> {
+  const { apiBase, apiKey, apiModel } = opts.settings;
+  if (!apiKey) throw new Error("Add your API key in the Model section first.");
+  const base = apiBase.replace(/\/+$/, "");
+  const call = async (mode: "json_schema" | "json_object") => {
+    let res: Response;
+    try {
+      res = await fetch(`${base}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        signal: opts.signal,
+        body: JSON.stringify(openAiRequestBody(apiModel, system, user, mode)),
+      });
+    } catch (e) {
+      if (opts.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+      throw new Error(`Couldn't reach ${base}. Check the base URL and your connection.`, { cause: e });
+    }
+    return res;
+  };
+  opts.onProgress?.(`Sending the transcript to ${apiModel} at ${new URL(base).host}`);
+  let res = await call("json_schema");
+  if (res.status === 400) {
+    // Providers without structured outputs: ask for a plain JSON object instead.
+    const text = await res.text().catch(() => "");
+    if (/response_format|json_schema/i.test(text)) res = await call("json_object");
+    else throw new Error(`The API rejected the request (400)${text ? `: ${text.slice(0, 200)}` : ""}`);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    if (res.status === 401) throw new Error("The API key was rejected (401). Check it in the Model section.");
+    if (res.status === 404) throw new Error(`The model "${apiModel}" wasn't found at ${base} (404). Pick one from the list.`);
+    if (res.status === 429) throw new Error("The API is rate-limiting or out of quota (429). Try again in a minute.");
+    throw new Error(`The API returned ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+  }
+  opts.onProgress?.(`${apiModel} is choosing clips`);
+  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = data.choices?.[0]?.message?.content ?? "";
+  return parseClips(content);
+}
+
+/** Model ids an OpenAI-compatible API offers for this key (GET /models). */
+export async function listOpenAiModels(apiBase: string, apiKey: string, signal?: AbortSignal): Promise<string[]> {
+  const res = await fetch(`${apiBase.replace(/\/+$/, "")}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal });
+  if (!res.ok) throw new Error(res.status === 401 ? "The API key was rejected." : `The API returned ${res.status}`);
+  const data = (await res.json()) as { data?: { id: string }[] };
+  return (data.data ?? []).map((m) => m.id).sort();
+}
+
+/** Asks the chosen model for the best moments of the transcript. Throws readable errors. */
 export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions): Promise<Highlight[]> {
   const sentences = sentencesFromCues(cues);
   if (sentences.length < 3) throw new Error(cues.length ? "The transcript is too short to cut reels from: it needs at least three sentences of speech." : "There isn't enough speech in the captions yet. Generate captions first.");
@@ -195,6 +296,7 @@ export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions):
   if (promptTokens > MAX_PROMPT_TOKENS) {
     throw new Error(`This transcript is too long for one pass (about ${Math.round(promptTokens / 1000)}k tokens). Trim the video to under about an hour and try again.`);
   }
+  if (opts.settings.provider === "openai") return clipsToHighlights(await findViaOpenAi(system, user, opts), sentences, opts);
   const endpoint = opts.settings.endpoint.replace(/\/+$/, "");
   const model = opts.settings.model;
   opts.onProgress?.(`Sending the transcript to ${model}`);
@@ -258,13 +360,7 @@ export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions):
     throw e;
   }
 
-  let clips: AiClip[];
-  try {
-    clips = (JSON.parse(content) as { clips?: AiClip[] }).clips ?? [];
-  } catch {
-    throw new Error("The model's answer wasn't valid JSON. Try again.");
-  }
-  return clipsToHighlights(clips, sentences, opts);
+  return clipsToHighlights(parseClips(content), sentences, opts);
 }
 
 /** Names of the models Ollama has installed (GET /api/tags); throws when the server is unreachable. */

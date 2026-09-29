@@ -13,7 +13,7 @@ import { getAsset, listProjects, saveProject } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { ffmpegEngine } from "@/lib/ffmpegEngine";
 import { autoReframe } from "@/lib/tracking/autoReframe";
-import { findAiHighlights, type AiSettings } from "./aiHighlights";
+import { activeModel, findAiHighlights, type AiSettings } from "./aiHighlights";
 import type { Highlight } from "./highlights";
 import { uid } from "@/lib/utils/id";
 
@@ -190,12 +190,12 @@ async function makeReel(source: VideoProject, h: Highlight, index: number, o: Ma
   return reel;
 }
 
-/** Finds the best moments with the local model and cuts each into its own reel project. */
+/** Finds the best moments with the chosen model (Ollama by default) and cuts each into its own reel project. */
 export async function makeReels(o: MakeReelsOptions): Promise<MakeReelsResult> {
   const { project } = o;
   if (!project.clips.length) throw new Error("Add a video first.");
   if (!project.cues.length) throw new Error("Generate captions first; the model reads the transcript.");
-  o.onProgress?.(`Asking ${o.settings.model} for the ${o.count} best moments`, null);
+  o.onProgress?.(`Asking ${activeModel(o.settings)} for the ${o.count} best moments`, null);
   const highlights = await findAiHighlights(project.cues, {
     settings: o.settings,
     count: o.count,

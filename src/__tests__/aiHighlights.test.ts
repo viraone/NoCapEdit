@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildAiPrompt, clipsToHighlights, contextFor, findAiHighlights, transcriptLines, type AiClip } from "@/lib/edit/aiHighlights";
+import { activeModel, buildAiPrompt, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, loadAiSettings, openAiRequestBody, parseClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
 import type { Sentence } from "@/lib/edit/highlights";
 import type { CaptionCue } from "@/lib/models/project";
 
@@ -61,7 +61,7 @@ describe("contextFor", () => {
 describe("findAiHighlights", () => {
   afterEach(() => vi.unstubAllGlobals());
   const cues: CaptionCue[] = sentences.map((s, i) => ({ id: `c${i}`, start: s.start, end: s.end, text: s.text }));
-  const settings = { endpoint: "http://localhost:11434/", model: "qwen3.8:27b" };
+  const settings: AiSettings = { ...DEFAULT_AI_SETTINGS, endpoint: "http://localhost:11434/", model: "qwen3.8:27b" };
 
   /** A streamed Ollama /api/chat reply that spells the JSON out in small pieces. */
   function ollamaStream(json: string): Response {
@@ -106,5 +106,98 @@ describe("findAiHighlights", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new DOMException("aborted", "AbortError"))));
     await expect(findAiHighlights(cues, { settings, ...opts, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
     await expect(findAiHighlights(cues.slice(0, 2), { settings, ...opts })).rejects.toThrow(/too short to cut reels|enough speech/);
+  });
+
+  describe("OpenAI-compatible provider", () => {
+    const cloud: AiSettings = { ...settings, provider: "openai", apiBase: "https://api.example.com/v1/", apiKey: "sk-test", apiModel: "gpt-4o-mini" };
+    const answer = (content: string, status = 200) => new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status });
+
+    it("posts the transcript as a chat completion with the schema and the user's key", async () => {
+      const fetchMock = vi.fn(async () => answer(JSON.stringify({ clips: [clip(1, 4, 8, { title: "Best bit" })] })));
+      vi.stubGlobal("fetch", fetchMock);
+      const progress: string[] = [];
+      const out = await findAiHighlights(cues, { settings: cloud, ...opts, onProgress: (m) => progress.push(m) });
+      expect(out[0]).toMatchObject({ start: 5, end: 25, title: "Best bit", score: 8 });
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("https://api.example.com/v1/chat/completions");
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer sk-test");
+      const body = JSON.parse(String(init.body));
+      expect(body.model).toBe("gpt-4o-mini");
+      expect(body.response_format.type).toBe("json_schema");
+      expect(body.messages[1].content).toContain("[3] 15.0-20.0 Sentence 3.");
+      expect(progress[0]).toContain("gpt-4o-mini");
+      expect(progress[0]).toContain("api.example.com");
+    });
+
+    it("falls back to json_object when the API has no structured outputs, and reads fenced JSON", async () => {
+      const fenced = "```json\n" + JSON.stringify({ clips: [clip(1, 4, 7)] }) + "\n```";
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('{"error":{"message":"response_format json_schema is not supported"}}', { status: 400 }))
+        .mockResolvedValueOnce(answer(fenced));
+      vi.stubGlobal("fetch", fetchMock);
+      const out = await findAiHighlights(cues, { settings: cloud, ...opts });
+      expect(out).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const second = JSON.parse(String((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body));
+      expect(second.response_format).toEqual({ type: "json_object" });
+      expect(second.messages[1].content).toContain('{"clips":[');
+    });
+
+    it("explains a rejected key, a missing model and a missing key", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })));
+      await expect(findAiHighlights(cues, { settings: cloud, ...opts })).rejects.toThrow(/API key was rejected/);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
+      await expect(findAiHighlights(cues, { settings: cloud, ...opts })).rejects.toThrow(/"gpt-4o-mini" wasn't found/);
+      vi.stubGlobal("fetch", vi.fn());
+      await expect(findAiHighlights(cues, { settings: { ...cloud, apiKey: "" }, ...opts })).rejects.toThrow(/Add your API key/);
+    });
+
+    it("never touches the cloud when Ollama is the provider", async () => {
+      const fetchMock = vi.fn(async () => ollamaStream(JSON.stringify({ clips: [clip(1, 4, 8)] })));
+      vi.stubGlobal("fetch", fetchMock);
+      await findAiHighlights(cues, { settings: { ...cloud, provider: "ollama" }, ...opts });
+      expect(String((fetchMock.mock.calls[0] as unknown as [string])[0])).toBe("http://localhost:11434/api/chat");
+    });
+  });
+});
+
+describe("AI settings", () => {
+  const store = new Map<string, string>();
+  const localStorageMock = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+  afterEach(() => {
+    store.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults to Ollama on this computer with the local model", () => {
+    vi.stubGlobal("localStorage", localStorageMock);
+    expect(loadAiSettings()).toEqual(DEFAULT_AI_SETTINGS);
+    expect(DEFAULT_AI_SETTINGS.provider).toBe("ollama");
+    expect(activeModel(DEFAULT_AI_SETTINGS)).toBe("qwen3.8:27b");
+  });
+
+  it("keeps settings saved before the provider option existed on the local model", () => {
+    vi.stubGlobal("localStorage", localStorageMock);
+    store.set("reelflow.ai", JSON.stringify({ endpoint: "http://localhost:11434", model: "qwen3.8:27b" }));
+    const s = loadAiSettings();
+    expect(s.provider).toBe("ollama");
+    expect(activeModel(s)).toBe("qwen3.8:27b");
+    expect(s.apiKey).toBe("");
+  });
+
+  it("only uses the cloud model when the provider was switched on purpose", () => {
+    vi.stubGlobal("localStorage", localStorageMock);
+    store.set("reelflow.ai", JSON.stringify({ provider: "openai", apiBase: "https://api.openai.com/v1/", apiKey: " sk-x ", apiModel: "gpt-4o-mini" }));
+    const s = loadAiSettings();
+    expect(s).toMatchObject({ provider: "openai", apiBase: "https://api.openai.com/v1", apiKey: "sk-x", model: "qwen3.8:27b" });
+    expect(activeModel(s)).toBe("gpt-4o-mini");
+  });
+
+  it("parses plain, fenced and broken answers", () => {
+    expect(parseClips('{"clips":[]}')).toEqual([]);
+    expect(parseClips('Sure!\n```json\n{"clips":[{"startLine":1,"endLine":2,"score":5}]}\n```')).toHaveLength(1);
+    expect(() => parseClips("no json here")).toThrow(/valid JSON/);
+    expect(openAiRequestBody("m", "sys", "usr", "json_schema").response_format).toMatchObject({ type: "json_schema" });
   });
 });
