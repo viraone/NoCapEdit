@@ -7,7 +7,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clapperboard, RefreshCw, FolderOpen, Share2, Trash2, Square, Captions } from "lucide-react";
+import { Clapperboard, RefreshCw, FolderOpen, Share2, Trash2, Square, Captions, Play } from "lucide-react";
+import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
 import { DEFAULT_REEL_SETTINGS, listReels, loadReelSettings, makeReels, saveReelSettings, type ReelSettings } from "@/lib/edit/reelMaker";
@@ -40,6 +41,7 @@ export function ReelsPanel() {
   const [note, setNote] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const hasCues = project.cues.length > 0;
+  const [preview, setPreview] = useState<VideoProject | null>(null);
 
   const updateAi = (patch: Partial<AiSettings>) => {
     const next = { ...aiSettings, ...patch };
@@ -214,13 +216,22 @@ export function ReelsPanel() {
         ) : (
           <ul className="space-y-1.5" data-reel-list>
             {reels.map((r) => (
-              <li key={r.id} data-reel={r.id} className="flex items-center gap-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2">
-                <div className="h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6">
+              <li
+                key={r.id}
+                data-reel={r.id}
+                className="flex cursor-pointer items-center gap-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2 select-none hover:border-sys-gray3"
+                title="Double-click to watch this reel here"
+                onDoubleClick={() => setPreview(r)}
+              >
+                <button type="button" className="group relative h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6" onClick={() => setPreview(r)} aria-label="Play this reel">
                   {thumbs[r.id] ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={thumbs[r.id]} alt="" className="h-full w-full object-cover" />
                   ) : null}
-                </div>
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-white opacity-80 group-hover:opacity-100">
+                    <Play size={14} fill="currentColor" />
+                  </span>
+                </button>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[12px] font-semibold">{r.reel?.title}</p>
                   <p className="text-[11px] tabular-nums text-label-3">
@@ -250,6 +261,7 @@ export function ReelsPanel() {
           </ul>
         )}
       </PanelSection>
+      {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
     </>
   );
 }
