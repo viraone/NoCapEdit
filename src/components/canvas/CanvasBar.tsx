@@ -32,7 +32,7 @@ export function CanvasBar() {
       <label className="pill cursor-pointer">
         <span className="h-3 w-3 rounded-full bg-[conic-gradient(#ffd60a,#ff375f,#bf5af2,#0a84ff,#ffd60a)]" />
         <select
-          className="max-w-52 cursor-pointer appearance-none bg-transparent pr-3 font-semibold focus:outline-none"
+          className="max-w-72 cursor-pointer appearance-none truncate bg-transparent pr-6 font-semibold focus:outline-none"
           value={project.formatId}
           onChange={(e) =>
             update((p) => {
@@ -53,7 +53,7 @@ export function CanvasBar() {
             </optgroup>
           ))}
         </select>
-        <span className="-ml-3 text-label-2">⌄</span>
+        <span className="-ml-5 text-label-2">⌄</span>
       </label>
 
       <div className="pill gap-1 px-1.5">
