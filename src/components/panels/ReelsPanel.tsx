@@ -28,7 +28,7 @@ export function ReelsPanel() {
   const project = useProject();
   const router = useRouter();
   const format = getFormat(project.formatId);
-  const [aiAvailable] = useState(localAiEnabled);
+  const [aiAvailable, setAiAvailable] = useState(localAiEnabled);
   const [aiSettings, setAiSettings] = useState<AiSettings>(loadAiSettings);
   const [settings, setSettings] = useState<ReelSettings>(loadReelSettings);
   const [models, setModels] = useState<string[] | null>(null);
@@ -137,9 +137,32 @@ export function ReelsPanel() {
   if (!aiAvailable) {
     return (
       <>
-        <PanelHeader title="Reels" />
+        <PanelHeader title="Reels" description="Reels are cut by a model served by Ollama on your own machine; nothing leaves it." />
         <PanelSection>
-          <EmptyState icon={<Clapperboard size={20} />} title="Local AI only" description="Reels are cut by a model served by Ollama on this machine. Open the editor on localhost (or set reelflow.localAi) to use it." />
+          <EmptyState
+            icon={<Clapperboard size={20} />}
+            title="Uses Ollama on this computer"
+            description="Install Ollama, pull a model (ollama pull qwen3.8:27b) and start it with OLLAMA_ORIGINS set to this site's address so the browser may call it. Then enable local AI here."
+            action={
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  try {
+                    localStorage.setItem("reelflow.localAi", "1");
+                  } catch {
+                    /* storage unavailable */
+                  }
+                  setAiAvailable(true);
+                }}
+              >
+                Enable local AI in this browser
+              </Button>
+            }
+          />
+          <p className="text-[11px] leading-snug text-label-3">
+            Terminal, before opening this site: <code className="rounded bg-sys-gray4 px-1">OLLAMA_ORIGINS={typeof location !== "undefined" ? location.origin : "https://nocapedit.com"} ollama serve</code> (or set that variable for the Ollama app).
+          </p>
         </PanelSection>
       </>
     );
