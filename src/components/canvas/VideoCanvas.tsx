@@ -9,6 +9,7 @@ import { CanvasRenderer } from "@/components/CanvasRenderer";
 import { getFormat, SAFE_ZONES } from "@/lib/models/formats";
 import { layoutClips, locateFrame } from "@/lib/models/timeline";
 import { clamp } from "@/lib/utils/math";
+import { ZOOM_MAX, ZOOM_MIN } from "@/lib/models/project";
 import { Button } from "@/components/ui/Button";
 import { SafeZoneGuide } from "./SafeZoneGuide";
 
@@ -167,16 +168,19 @@ export function VideoCanvas() {
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
-    if (tool === "trim" && proj.clips.length) {
+    if (proj.clips.length) {
       const loc = locateFrame(layoutClips(proj.clips), engine.time);
       if (loc) {
+        // The picture can be dragged around the frame in every tool (like
+        // Fill/Fit editors do); a plain click without a drag still clears the
+        // selection, and the Trim tool keeps selecting the clip on press.
         const clip = loc.primary.clip;
-        select({ kind: "clip", id: clip.id });
+        if (tool === "trim") select({ kind: "clip", id: clip.id });
         dragRef.current = { kind: "pan", id: clip.id, elKind: null, startX: e.clientX, startY: e.clientY, origin: { x: clip.pan.x, y: clip.pan.y, size: clip.zoom, rect: null }, alt: false, moved: false };
         beginTransaction();
         e.currentTarget.setPointerCapture(e.pointerId);
+        return;
       }
-      return;
     }
     select(null);
   };
@@ -189,6 +193,8 @@ export function VideoCanvas() {
     if (Math.abs(dx) + Math.abs(dy) > 1) d.moved = true;
 
     if (d.kind === "pan") {
+      if (!d.moved) return;
+      if (!panning) setPanning(true);
       update(
         (p) => {
           const c = p.clips.find((c) => c.id === d.id);
@@ -269,9 +275,16 @@ export function VideoCanvas() {
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLElement>) => {
-    if (!dragRef.current) return;
+    const d = dragRef.current;
+    if (!d) return;
     dragRef.current = null;
     setGuides([]);
+    setPanning(false);
+    if (d.kind === "pan") {
+      // A drag selects the clip it moved; a click on empty canvas deselects.
+      if (d.moved) select({ kind: "clip", id: d.id! });
+      else if (tool !== "trim") select(null);
+    }
     endTransaction();
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -308,6 +321,48 @@ export function VideoCanvas() {
   };
 
   const selectionLabel = selection?.kind === "cue" ? "Caption" : selection?.kind === "overlay" ? "Overlay" : "";
+  const [panning, setPanning] = useState(false);
+  const [hovering, setHovering] = useState(false);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  // Pinch (trackpad) or ⌘/Ctrl + scroll zooms the picture around the frame. A
+  // burst of wheel events is one undo step: the transaction closes after a pause.
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const proj = projectRef.current;
+      const loc = proj.clips.length ? locateFrame(layoutClips(proj.clips), engine.time) : null;
+      if (!loc) return;
+      e.preventDefault();
+      const id = loc.primary.clip.id;
+      if (!timer) beginTransaction();
+      else clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        endTransaction();
+      }, 400);
+      // A mouse notch (deltaY ≈ 100) is ~22 %; trackpad pinches arrive as many small deltas.
+      const factor = Math.exp(-clamp(e.deltaY, -100, 100) * 0.002);
+      update(
+        (p) => {
+          const c = p.clips.find((c) => c.id === id);
+          if (c) c.zoom = clamp(Math.round(c.zoom * factor * 1000) / 1000, ZOOM_MIN, ZOOM_MAX);
+        },
+        { history: false },
+      );
+      select({ kind: "clip", id });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (timer) {
+        clearTimeout(timer);
+        endTransaction();
+      }
+    };
+  }, [update, select, beginTransaction, endTransaction]);
   const isPlaying = useEditor((s) => s.isPlaying);
 
   return (
@@ -323,13 +378,17 @@ export function VideoCanvas() {
           />
         ))}
         <div
+          ref={surfaceRef}
           className="absolute inset-0 touch-none"
-          style={{ cursor: tool === "trim" ? "grab" : "default" }}
+          style={{ cursor: project.clips.length ? (panning ? "grabbing" : "grab") : "default" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
+          onPointerEnter={() => setHovering(true)}
+          onPointerLeave={() => setHovering(false)}
           onDoubleClick={onDoubleClick}
+          data-canvas-surface
         >
           {!isPlaying && project.clips.length > 0 && (
             <button
@@ -372,9 +431,9 @@ export function VideoCanvas() {
           </div>
         )}
       </div>
-      {tool === "trim" && project.clips.length > 0 && (
-        <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-md bg-sys-gray6/90 px-2 py-1 text-[11px] text-label-2">
-          Drag the video to pan · use the Trim panel to zoom
+      {(hovering || panning || tool === "trim") && project.clips.length > 0 && (
+        <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-sys-gray6/90 px-2.5 py-1 text-[11px] text-label-2">
+          Drag the picture to reposition · pinch or ⌘ scroll to zoom
         </p>
       )}
     </div>
