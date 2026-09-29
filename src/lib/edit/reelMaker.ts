@@ -17,6 +17,35 @@ import { findAiHighlights, type AiSettings } from "./aiHighlights";
 import type { Highlight } from "./highlights";
 import { uid } from "@/lib/utils/id";
 
+/** Count and length the user last chose, shared by the Reels and Subtitles panels. */
+export interface ReelSettings {
+  count: 3 | 5 | 8;
+  targetSeconds: 15 | 30 | 60;
+}
+const REEL_SETTINGS_KEY = "reelflow.reels";
+export const DEFAULT_REEL_SETTINGS: ReelSettings = { count: 8, targetSeconds: 30 };
+
+export function loadReelSettings(): ReelSettings {
+  try {
+    const raw = localStorage.getItem(REEL_SETTINGS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<ReelSettings>) : {};
+    return {
+      count: [3, 5, 8].includes(parsed.count as number) ? (parsed.count as ReelSettings["count"]) : DEFAULT_REEL_SETTINGS.count,
+      targetSeconds: [15, 30, 60].includes(parsed.targetSeconds as number) ? (parsed.targetSeconds as ReelSettings["targetSeconds"]) : DEFAULT_REEL_SETTINGS.targetSeconds,
+    };
+  } catch {
+    return { ...DEFAULT_REEL_SETTINGS };
+  }
+}
+
+export function saveReelSettings(settings: ReelSettings): void {
+  try {
+    localStorage.setItem(REEL_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 /** Air kept before the first word and after the last, seconds. */
 export const REEL_PADDING = 0.4;
 

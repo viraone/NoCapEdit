@@ -1,5 +1,5 @@
 "use client";
-import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share } from "lucide-react";
+import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
 import { cx } from "@/lib/utils/cx";
 
@@ -12,6 +12,7 @@ const TOOLS: { id: ToolId; label: string; icon: React.ComponentType<{ size?: num
   { id: "text", label: "Text", icon: Type, color: "#ff9f0a" },
   { id: "picture", label: "Picture", icon: ImageIcon, color: "#ff375f" },
   { id: "music", label: "Music", icon: Music, color: "#64d2ff" },
+  { id: "reels", label: "Reels", icon: Clapperboard, color: "#ff375f" },
   { id: "export", label: "Export", icon: Share, color: "#30d158" },
 ];
 

@@ -5,7 +5,7 @@ import { getProject, listProjectAssets, saveProject } from "@/lib/storage/db";
 import { engine } from "@/lib/playback/engine";
 import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/components/timeline/dockLayout";
 
-export type ToolId = "clips" | "trim" | "subtitles" | "style" | "text" | "picture" | "music" | "export";
+export type ToolId = "clips" | "trim" | "subtitles" | "style" | "text" | "picture" | "music" | "reels" | "export";
 
 export interface Selection {
   kind: "clip" | "cue" | "overlay" | "voiceover";
@@ -288,7 +288,10 @@ export const useEditor = create<EditorState>()(
       if (text) noticeTimer = setTimeout(() => set({ notice: null }), 6000);
     },
     requestReels() {
-      set({ tool: "subtitles", reelsRequest: Date.now() });
+      // With captions the Reels panel runs the job; without them the Subtitles
+      // panel generates captions first, then cuts the reels and comes back.
+      const hasCues = (get().project?.cues.length ?? 0) > 0;
+      set({ tool: hasCues ? "reels" : "subtitles", reelsRequest: Date.now() });
     },
     requestEdit(sel) {
       const project = get().project;

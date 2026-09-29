@@ -13,14 +13,9 @@ import { findHighlights, type Highlight } from "@/lib/edit/highlights";
 import { findAiHighlights, loadAiSettings, loadHighlightFinder, localAiEnabled, saveAiSettings, saveHighlightFinder, type AiSettings } from "@/lib/edit/aiHighlights";
 import { keepOnly } from "@/lib/edit/magicCut";
 import { getPreset } from "@/lib/captions/presets";
-import { Sparkle, Wand, Clapperboard, RefreshCw, FolderOpen, Share2 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { listReels, makeReels } from "@/lib/edit/reelMaker";
+import { Sparkle, Wand, RefreshCw } from "lucide-react";
+import { loadReelSettings, makeReels } from "@/lib/edit/reelMaker";
 import { listOllamaModels } from "@/lib/edit/aiHighlights";
-import { getProjectThumb, deleteProject } from "@/lib/storage/db";
-import type { VideoProject } from "@/lib/models/project";
-import { getFormat } from "@/lib/models/formats";
-import { projectDuration } from "@/lib/models/timeline";
 import { WHISPER_MODELS, DEFAULT_WHISPER_MODEL, sliceSamples, wordsToProjectTime, type DevicePreference } from "@/lib/speech/transcriber";
 import { transcribeWithSpeakers, buildSpeakerCues, type SpeakerSegment } from "@/lib/transcriptionEngine";
 import { toProjectTime } from "@/lib/models/timeline";
@@ -323,66 +318,33 @@ export function SubtitlesPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiAvailable]);
 
-  // ---- Reels: every AI pick becomes its own small project tagged with this one.
-  const router = useRouter();
-  const [reelCount, setReelCount] = useState(8);
-  const [reels, setReels] = useState<VideoProject[]>([]);
-  const [reelThumbs, setReelThumbs] = useState<Record<string, string>>({});
-  const [reelJob, setReelJob] = useState<{ message: string; progress: number | null; started: number } | null>(null);
-  const [reelElapsed, setReelElapsed] = useState(0);
-  const [reelError, setReelError] = useState<string | null>(null);
-  const [reelNote, setReelNote] = useState<string | null>(null);
+  // ---- "Make reels" for a project without captions lands here: generate them,
+  // cut the reels with the shared settings, then hand back to the Reels panel.
   const reelAbortRef = useRef<AbortController | null>(null);
-  const refreshReels = async () => {
-    const list = await listReels(project.id);
-    setReels(list);
-    const entries: Record<string, string> = {};
-    for (const r of list) {
-      const t = await getProjectThumb(r.id);
-      if (t) entries[r.id] = URL.createObjectURL(t.blob);
-    }
-    setReelThumbs((old) => {
-      for (const url of Object.values(old)) URL.revokeObjectURL(url);
-      return entries;
-    });
-  };
-  useEffect(() => {
-    const id = setTimeout(() => void refreshReels(), 0);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
-  useEffect(() => {
-    if (!reelJob) return;
-    const id = setInterval(() => setReelElapsed(Math.round((nowMs() - reelJob.started) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, [reelJob]);
-  const makeReelsNow = async () => {
+  const [reelJob, setReelJob] = useState<{ message: string; progress: number | null } | null>(null);
+  const [reelError, setReelError] = useState<string | null>(null);
+  const makeReelsAfterCaptions = async () => {
     if (reelJob || job) return;
     setReelError(null);
-    setReelNote(null);
-    // The model reads the transcript, so captions come first when there are none.
     if (!useEditor.getState().project?.cues.length) {
       await transcribe();
       if (!useEditor.getState().project?.cues.length) return;
     }
     const controller = new AbortController();
     reelAbortRef.current = controller;
-    setReelElapsed(0);
-    setReelJob({ message: "Starting", progress: null, started: nowMs() });
+    setReelJob({ message: "Starting", progress: null });
     try {
-      const current = useEditor.getState().project!;
+      const reelSettings = loadReelSettings();
       const result = await makeReels({
-        project: current,
-        count: reelCount,
-        targetSeconds: highlightLen,
+        project: useEditor.getState().project!,
+        count: reelSettings.count,
+        targetSeconds: reelSettings.targetSeconds,
         settings: aiSettings,
         signal: controller.signal,
         onProgress: (message, progress) => setReelJob((j) => (j ? { ...j, message, progress } : j)),
       });
-      await refreshReels();
-      const short = result.found < reelCount ? ` The model only found ${result.found} moment${result.found === 1 ? "" : "s"} that fit ${highlightLen} s.` : "";
-      const dup = result.skipped ? ` ${result.skipped} already existed and ${result.skipped === 1 ? "was" : "were"} skipped.` : "";
-      setReelNote(`${result.made.length} reel${result.made.length === 1 ? "" : "s"} ready.${short}${dup}`);
+      useEditor.getState().setNotice(`${result.made.length} reel${result.made.length === 1 ? "" : "s"} ready.`);
+      useEditor.getState().setTool("reels");
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) setReelError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -395,7 +357,7 @@ export function SubtitlesPanel() {
   useEffect(() => {
     if (!reelsRequest || reelsRequest === handledReelsRequest.current) return;
     handledReelsRequest.current = reelsRequest;
-    const id = setTimeout(() => void makeReelsNow(), 0);
+    const id = setTimeout(() => void makeReelsAfterCaptions(), 0);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reelsRequest]);
@@ -688,77 +650,18 @@ export function SubtitlesPanel() {
           </div>
         ))}
       </PanelSection>
-      {aiAvailable && (
-        <PanelSection title="Reels" right={reels.length ? <span className="text-[11px] text-label-3">{reels.length} made</span> : undefined}>
-          <p className="text-[11px] leading-snug text-label-2">
-            {aiSettings.model} reads the transcript, picks the best moments and cuts each into its own {getFormat(project.formatId).ratio} reel with captions carried over. Reels open and export on their own.
-          </p>
-          <div className="flex gap-2">
-            <Select value={String(reelCount)} onChange={(e) => setReelCount(Number(e.target.value))} disabled={!!reelJob} aria-label="Number of reels">
-              <option value="3">3 reels</option>
-              <option value="5">5 reels</option>
-              <option value="8">8 reels</option>
-            </Select>
-            <Select value={String(highlightLen)} onChange={(e) => setHighlightLen(Number(e.target.value))} disabled={!!reelJob} aria-label="Reel length">
-              <option value="15">~15 s</option>
-              <option value="30">~30 s</option>
-              <option value="60">~60 s</option>
-            </Select>
-            <Button variant="primary" size="md" onClick={makeReelsNow} disabled={!project.clips.length || !!reelJob || !!job} title={project.cues.length ? "Find the best moments and cut them into reels" : "Generates captions first, then cuts the reels"}>
-              <Clapperboard size={14} /> Make reels
-            </Button>
-          </div>
+      {(reelJob || reelError) && (
+        <PanelSection title="Reels">
           {reelJob && (
             <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5" data-reel-job>
               <ProgressBar value={reelJob.progress} />
-              <p className="text-[11px] text-label-2">
-                {reelJob.message} · {reelElapsed} s
-              </p>
+              <p className="text-[11px] text-label-2">{reelJob.message}</p>
               <Button variant="outline" size="sm" onClick={() => reelAbortRef.current?.abort()}>
                 <Square size={12} /> Cancel
               </Button>
             </div>
           )}
           {reelError && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{reelError}</p>}
-          {reelNote && <p className="text-[11px] text-sys-green">{reelNote}</p>}
-          {reels.length > 0 && (
-            <ul className="space-y-1.5" data-reel-list>
-              {reels.map((r) => (
-                <li key={r.id} data-reel={r.id} className="flex items-center gap-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2">
-                  <div className="h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6">
-                    {reelThumbs[r.id] ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={reelThumbs[r.id]} alt="" className="h-full w-full object-cover" />
-                    ) : null}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12px] font-semibold">{r.reel?.title}</p>
-                    <p className="text-[11px] tabular-nums text-label-3">
-                      Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(r.clips))} · {formatTime(r.reel?.start ?? 0)}–{formatTime(r.reel?.end ?? 0)}
-                    </p>
-                  </div>
-                  <Button variant="ghost" size="iconSm" onClick={() => router.push(`/editor?id=${r.id}`)} title="Open this reel">
-                    <FolderOpen size={13} />
-                  </Button>
-                  <Button variant="ghost" size="iconSm" onClick={() => router.push(`/editor?id=${r.id}&tool=export`)} title="Export this reel">
-                    <Share2 size={13} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="iconSm"
-                    className="text-sys-red"
-                    title="Delete this reel"
-                    onClick={async () => {
-                      await deleteProject(r.id);
-                      void refreshReels();
-                    }}
-                  >
-                    <Trash2 size={13} />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
         </PanelSection>
       )}
       <PanelSection title="Translate">
