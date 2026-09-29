@@ -1,5 +1,7 @@
 "use client";
-import { ZoomIn, ZoomOut, Maximize, Minimize, Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
+import { ZoomIn, ZoomOut, Maximize, Minimize, Eye, EyeOff, Smartphone } from "lucide-react";
+import { PhonePreview } from "./PhonePreview";
 import { useEditor } from "@/store/editorStore";
 import { useTargetClip } from "@/components/panels/shared";
 import { FRAME_FORMATS, getFormat } from "@/lib/models/formats";
@@ -22,6 +24,7 @@ export function CanvasBar() {
       if (c) fn(c);
     });
   const zoom = clip?.zoom ?? 1;
+  const [phone, setPhone] = useState(false);
   const safeOn = project.safeZone !== "none";
 
   return (
@@ -97,6 +100,11 @@ export function CanvasBar() {
       >
         {safeOn ? <Eye size={14} /> : <EyeOff size={14} />} Safe zone
       </button>
+
+      <button type="button" className="pill" data-active={phone ? "true" : "false"} onClick={() => setPhone(true)} title="See the post on an iPhone 16 Pro Max in the Instagram app" disabled={!clip}>
+        <Smartphone size={14} /> Phone
+      </button>
+      {phone && <PhonePreview onClose={() => setPhone(false)} />}
     </div>
   );
 }

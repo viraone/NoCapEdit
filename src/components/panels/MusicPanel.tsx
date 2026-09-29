@@ -22,6 +22,8 @@ import { Field, textareaClass } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { MusicSearch } from "./MusicSearch";
+import { creditLine, licenseLabel } from "@/lib/stock/openverse";
 
 export function MusicPanel() {
   const project = useProject();
@@ -124,6 +126,9 @@ export function MusicPanel() {
           <span className="text-[11px] text-label-3">MP3, WAV, M4A, OGG</span>
         </FileDrop>
         {error && <p className="text-[11px] text-sys-red">{error}</p>}
+      </PanelSection>
+      <PanelSection title="Find free music">
+        <MusicSearch />
       </PanelSection>
       <PanelSection title="Sound effects">
         <TileGrid cols={4}>
@@ -237,6 +242,16 @@ export function MusicPanel() {
         <>
           <PanelSection title="Track" right={<Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => update((p) => void (p.music = null))} title="Remove"><Trash2 size={13} /></Button>}>
             <p className="truncate text-sm">{music.name}</p>
+            {music.credit && (
+              <div className="flex items-center justify-between gap-2 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1.5 text-[11px] text-label-2">
+                <span className="min-w-0 truncate" title={creditLine(music.credit)}>
+                  {licenseLabel(music.credit.license)} · {music.credit.artist}
+                </span>
+                <Button variant="ghost" size="xs" onClick={() => navigator.clipboard?.writeText(creditLine(music.credit!)).then(() => useEditor.getState().setNotice("Copied the music credit."))} title="Copy the attribution line for your caption">
+                  Copy credit
+                </Button>
+              </div>
+            )}
             <p className="text-[11px] text-label-3">{formatTime(music.duration)}</p>
           </PanelSection>
           <PanelSection title="Mix">

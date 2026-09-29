@@ -322,13 +322,24 @@ export function countInputs(args: string[]): number {
 }
 
 /**
+ * x264's automatic lookahead-thread count (chosen from the encoder thread
+ * count) traps this wasm build with "function signature mismatch" at six or
+ * more encoder threads on the fast presets; one explicit lookahead thread is
+ * stable at eight. Applied to every libx264 encode on the threaded core.
+ */
+export const X264_THREAD_PARAMS = "lookahead-threads=1";
+
+/**
  * Inserts the caps into a command line: `-threads d` before every `-i` that
  * has no explicit thread option, `-threads e` before the output (the last
- * token) and the global filter caps up front.
+ * token), the global filter caps up front, and the x264 lookahead pin next to
+ * the encoder (merged into an existing `-x264-params` when there is one).
  */
 export function withThreadCaps(args: string[], plan: ThreadPlan): string[] {
   const out: string[] = ["-filter_threads", String(plan.filter), "-filter_complex_threads", String(plan.filter)];
+  const x264 = args.includes("libx264");
   let explicit = false;
+  let params = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === "-threads" || a.startsWith("-threads:")) explicit = true;
@@ -336,8 +347,17 @@ export function withThreadCaps(args: string[], plan: ThreadPlan): string[] {
       if (!explicit) out.push("-threads", String(plan.decoder));
       explicit = false;
     }
+    if (a === "-x264-params" && i + 1 < args.length) {
+      params = true;
+      out.push(a, args[i + 1].includes("lookahead-threads=") ? args[i + 1] : `${args[i + 1]}:${X264_THREAD_PARAMS}`);
+      i++;
+      continue;
+    }
     const isOutput = i === args.length - 1 && i > 0 && (a === "-" || !a.startsWith("-")) && args[i - 1] !== "-i";
-    if (isOutput && !explicit) out.push("-threads", String(plan.encoder));
+    if (isOutput) {
+      if (!explicit) out.push("-threads", String(plan.encoder));
+      if (x264 && !params) out.push("-x264-params", X264_THREAD_PARAMS);
+    }
     out.push(a);
   }
   return out;

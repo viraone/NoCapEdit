@@ -62,9 +62,9 @@ export function ClipsPanel() {
     <>
       <PanelHeader title="Clips" description="Import recordings, order them and split at the playhead." />
       <PanelSection>
-        <FileDrop accept="video/*" multiple onFiles={onFiles} disabled={!!status} className="flex flex-col items-center gap-1.5">
+        <FileDrop accept="video/*,image/*" multiple onFiles={onFiles} disabled={!!status} className="flex flex-col items-center gap-1.5">
           <Upload size={18} className="text-label-2" />
-          <span className="text-[13px] font-semibold">Add video files</span>
+          <span className="text-[13px] font-semibold">Add video or image files</span>
           <span className="text-[11px] text-label-3">Drag & drop or click · stays on this device</span>
         </FileDrop>
         {status && (

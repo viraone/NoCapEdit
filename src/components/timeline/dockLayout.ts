@@ -3,6 +3,8 @@ import { clamp } from "@/lib/utils/math";
 /** Fixed lane heights of the timeline dock (px). */
 export const RULER_H = 24;
 export const CUE_H = 34;
+/** Clip audio waveforms, on their own lane under the video. */
+export const AUDIO_H = 36;
 export const MUSIC_H = 28;
 /** Transport bar (44) plus the "Timeline" header row (30). */
 export const DOCK_CHROME_H = 44 + 30;
@@ -13,7 +15,7 @@ export const VIDEO_DEFAULT_H = 76;
 /** Thumbnail sprites are 72 px tall; past ~3× they turn to mush. */
 export const VIDEO_MAX_H = 220;
 
-const FIXED_H = DOCK_CHROME_H + RULER_H + CUE_H + MUSIC_H;
+const FIXED_H = DOCK_CHROME_H + RULER_H + CUE_H + AUDIO_H + MUSIC_H;
 export const DOCK_MIN_H = FIXED_H + VIDEO_MIN_H;
 export const DOCK_DEFAULT_H = FIXED_H + VIDEO_DEFAULT_H;
 export const DOCK_MAX_H = FIXED_H + VIDEO_MAX_H;
