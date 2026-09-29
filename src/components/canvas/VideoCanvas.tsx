@@ -71,7 +71,8 @@ export function VideoCanvas() {
   const scale = useMemo(() => {
     if (canvasZoom !== "fit") return canvasZoom;
     if (!size.w || !size.h) return 0.1;
-    return Math.max(0.02, Math.min((size.w - 32) / fw, (size.h - 32) / fh));
+    // Fit with a slim margin so a portrait frame uses nearly the full stage height.
+    return Math.max(0.02, Math.min((size.w - 24) / fw, (size.h - 12) / fh));
   }, [canvasZoom, size, fw, fh]);
   const cssW = fw * scale;
   const cssH = fh * scale;
@@ -366,7 +367,7 @@ export function VideoCanvas() {
   const isPlaying = useEditor((s) => s.isPlaying);
 
   return (
-    <div ref={containerRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-2">
+    <div ref={containerRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-1">
       <div ref={canvasRef} className="relative shrink-0 overflow-hidden rounded-2xl shadow-2xl shadow-black/60" style={{ width: cssW, height: cssH }}>
         <CanvasRenderer project={project} frame={frame} cssWidth={cssW} cssHeight={cssH} tick={tick} images={getImage} onFrame={onFrame} className="block h-full w-full bg-black" />
         <SafeZoneGuide kind={project.safeZone} />
