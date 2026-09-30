@@ -226,9 +226,10 @@ export function ReelsPanel() {
               </span>
             </button>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-semibold">
-                {r.reel?.title}
-                {current && <span className="ml-1.5 rounded bg-sys-blue px-1 py-px text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
+              <p className="flex items-center gap-1.5 text-[12px] font-semibold">
+                {/* The title gives way; the badge is never cut short. */}
+                <span className="min-w-0 truncate">{r.reel?.title}</span>
+                {current && <span className="shrink-0 rounded bg-sys-blue px-1 py-px text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
               </p>
               {empty ? (
                 <p className="text-[11px] text-sys-orange" data-reel-empty>
@@ -281,8 +282,10 @@ export function ReelsPanel() {
       <>
         <PanelHeader title="Reels" description={`You're editing Reel ${project.reel?.index} of ${sourceName ? `"${sourceName}"` : "the source video"}. Click another reel below to switch to it, or go back to the source video to make more.`} />
         <PanelSection>
-          <Button variant="primary" size="md" className="w-full" onClick={() => router.push(backHref)} data-all-reels title="Back to the source video and the list of all its reels">
-            <ArrowLeft size={14} /> All reels{sourceName ? ` · ${sourceName}` : ""}
+          <Button variant="primary" size="md" className="w-full min-w-0" onClick={() => router.push(backHref)} data-all-reels title={`Back to ${sourceName ? `"${sourceName}"` : "the source video"} and the list of all its reels`}>
+            <ArrowLeft size={14} className="shrink-0" />
+            {/* A long source name ellipsizes instead of running past the end of the button. */}
+            <span className="min-w-0 truncate">All reels{sourceName ? ` · ${sourceName}` : ""}</span>
           </Button>
           <p className="text-[11px] text-label-3">The source video keeps the full transcript; Make reels there adds to this list. The same link sits at the top of the screen.</p>
         </PanelSection>
