@@ -105,7 +105,7 @@ export function ReelPreview({ reel, onClose }: { reel: VideoProject; onClose: ()
             Reel {reel.reel?.index} · {reel.reel?.score}/10 · {formatTime(duration)} · {format.name} · from {formatTime(reel.reel?.start ?? 0)} in the source
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => router.push(`/editor?id=${reel.id}`)} title="Open this reel in the editor">
+        <Button variant="secondary" size="sm" onClick={() => router.push(`/editor?id=${reel.id}&tool=reels`)} title="Open this reel in the editor">
           <FolderOpen size={13} /> Open
         </Button>
         <Button variant="primary" size="sm" onClick={() => router.push(`/editor?id=${reel.id}&tool=export`)} title="Export this reel">

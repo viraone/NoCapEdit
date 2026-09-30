@@ -105,8 +105,8 @@ export function TopBar() {
           <Folder size={16} />
         </Link>
         {project.sourceProjectId && (
-          <Link href={`/editor?id=${project.sourceProjectId}&tool=reels`} className="flex items-center gap-1 rounded-md bg-sys-pink/15 px-2 py-1 text-[11px] font-semibold text-sys-pink hover:bg-sys-pink/25" title="Back to the video this reel was cut from" data-back-to-source>
-            <ArrowLeft size={12} /> Back to source · Reels
+          <Link href={`/editor?id=${project.sourceProjectId}&tool=reels`} className="flex items-center gap-1 rounded-md bg-sys-pink/15 px-2 py-1 text-[11px] font-semibold text-sys-pink hover:bg-sys-pink/25" title="Back to the source video and the list of all its reels" data-back-to-source>
+            <ArrowLeft size={12} /> All reels
           </Link>
         )}
         <div ref={menuRef} className="relative">

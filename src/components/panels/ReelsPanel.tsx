@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play } from "lucide-react";
+import { ArrowLeft, Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
@@ -17,7 +17,7 @@ import { AiModelFields } from "./AiModelFields";
 import { getFormat } from "@/lib/models/formats";
 import { projectDuration } from "@/lib/models/timeline";
 import type { VideoProject } from "@/lib/models/project";
-import { deleteProject, getProjectThumb } from "@/lib/storage/db";
+import { deleteProject, getProject, getProjectThumb } from "@/lib/storage/db";
 import { formatTime, nowMs } from "@/lib/utils/time";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
@@ -29,6 +29,10 @@ export function ReelsPanel() {
   const project = useProject();
   const router = useRouter();
   const format = getFormat(project.formatId);
+  /** Inside a reel the panel lists its siblings from the source video instead of cutting more. */
+  const isReel = !!(project.sourceProjectId && project.reel);
+  const listOwner = isReel ? project.sourceProjectId! : project.id;
+  const [sourceName, setSourceName] = useState<string | null>(null);
   const [aiAvailable, setAiAvailable] = useState(localAiEnabled);
   const [aiSettings, setAiSettings] = useState<AiSettings>(loadAiSettings);
   const [settings, setSettings] = useState<ReelSettings>(loadReelSettings);
@@ -73,8 +77,9 @@ export function ReelsPanel() {
     }
   };
   const refreshReels = async () => {
-    const list = await listReels(project.id);
+    const list = await listReels(listOwner);
     setReels(list);
+    if (isReel) setSourceName((await getProject(listOwner))?.name ?? null);
     const entries: Record<string, string> = {};
     for (const r of list) {
       const t = await getProjectThumb(r.id);
@@ -143,6 +148,87 @@ export function ReelsPanel() {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reelsRequest]);
+
+  /** The reel rows: thumbnail previews here, open in the editor, export, delete. In a reel, the one being edited is marked and a single click opens a sibling. */
+  const reelList = () => (
+    <ul className="space-y-1.5" data-reel-list>
+      {reels.map((r) => {
+        const current = isReel && r.id === project.id;
+        // Land on the Reels tool so the list of siblings and the way back stay in view.
+        const open = () => !current && router.push(`/editor?id=${r.id}&tool=reels`);
+        return (
+          <li
+            key={r.id}
+            data-reel={r.id}
+            data-current={current || undefined}
+            className={`flex items-center gap-2 rounded-lg border p-2 select-none ${current ? "border-sys-blue bg-sys-blue/10" : "cursor-pointer border-sys-gray4 bg-sys-gray5 hover:border-sys-gray3"}`}
+            title={current ? "You're editing this reel" : isReel ? "Click to open this reel" : "Double-click to open this reel in the editor; press the thumbnail to preview it here"}
+            onClick={isReel ? open : undefined}
+            onDoubleClick={open}
+          >
+            <button type="button" className="group relative h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6" onClick={(e) => (e.stopPropagation(), setPreview(r))} aria-label="Play this reel">
+              {thumbs[r.id] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={thumbs[r.id]} alt="" className="h-full w-full object-cover" />
+              ) : null}
+              <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-white opacity-80 group-hover:opacity-100">
+                <Play size={14} fill="currentColor" />
+              </span>
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] font-semibold">
+                {r.reel?.title}
+                {current && <span className="ml-1.5 rounded bg-sys-blue px-1 py-px text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
+              </p>
+              <p className="text-[11px] tabular-nums text-label-3">
+                Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(r.clips))} · from {formatTime(r.reel?.start ?? 0)}
+              </p>
+            </div>
+            {!current && (
+              <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), router.push(`/editor?id=${r.id}&tool=reels`))} title="Open this reel">
+                <FolderOpen size={13} />
+              </Button>
+            )}
+            <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), router.push(`/editor?id=${r.id}&tool=export`))} title="Export this reel">
+              <Share2 size={13} />
+            </Button>
+            {!current && (
+              <Button
+                variant="ghost"
+                size="iconSm"
+                className="text-sys-red"
+                title="Delete this reel"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await deleteProject(r.id);
+                  void refreshReels();
+                }}
+              >
+                <Trash2 size={13} />
+              </Button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  if (isReel) {
+    const backHref = `/editor?id=${project.sourceProjectId}&tool=reels`;
+    return (
+      <>
+        <PanelHeader title="Reels" description={`You're editing Reel ${project.reel?.index} of ${sourceName ? `"${sourceName}"` : "the source video"}. Click another reel below to switch to it, or go back to the source video to make more.`} />
+        <PanelSection>
+          <Button variant="primary" size="md" className="w-full" onClick={() => router.push(backHref)} data-all-reels title="Back to the source video and the list of all its reels">
+            <ArrowLeft size={14} /> All reels{sourceName ? ` · ${sourceName}` : ""}
+          </Button>
+          <p className="text-[11px] text-label-3">The source video keeps the full transcript; Make reels there adds to this list. The same link sits at the top of the screen.</p>
+        </PanelSection>
+        <PanelSection title={`All reels (${reels.length})`}>{reels.length ? reelList() : <p className="text-[11px] text-label-3">Loading…</p>}</PanelSection>
+        {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
+      </>
+    );
+  }
 
   if (!aiAvailable) {
     return (
@@ -230,51 +316,7 @@ export function ReelsPanel() {
         {reels.length === 0 ? (
           <EmptyState icon={<Clapperboard size={20} />} title="No reels yet" description="Press Make reels; each one shows up here and on the start screen. Double-click a reel to edit it, press its thumbnail to preview." />
         ) : (
-          <ul className="space-y-1.5" data-reel-list>
-            {reels.map((r) => (
-              <li
-                key={r.id}
-                data-reel={r.id}
-                className="flex cursor-pointer items-center gap-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2 select-none hover:border-sys-gray3"
-                title="Double-click to open this reel in the editor; press the thumbnail to preview it here"
-                onDoubleClick={() => router.push(`/editor?id=${r.id}`)}
-              >
-                <button type="button" className="group relative h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6" onClick={() => setPreview(r)} aria-label="Play this reel">
-                  {thumbs[r.id] ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={thumbs[r.id]} alt="" className="h-full w-full object-cover" />
-                  ) : null}
-                  <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-white opacity-80 group-hover:opacity-100">
-                    <Play size={14} fill="currentColor" />
-                  </span>
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px] font-semibold">{r.reel?.title}</p>
-                  <p className="text-[11px] tabular-nums text-label-3">
-                    Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(r.clips))} · from {formatTime(r.reel?.start ?? 0)}
-                  </p>
-                </div>
-                <Button variant="ghost" size="iconSm" onClick={() => router.push(`/editor?id=${r.id}`)} title="Open this reel">
-                  <FolderOpen size={13} />
-                </Button>
-                <Button variant="ghost" size="iconSm" onClick={() => router.push(`/editor?id=${r.id}&tool=export`)} title="Export this reel">
-                  <Share2 size={13} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="iconSm"
-                  className="text-sys-red"
-                  title="Delete this reel"
-                  onClick={async () => {
-                    await deleteProject(r.id);
-                    void refreshReels();
-                  }}
-                >
-                  <Trash2 size={13} />
-                </Button>
-              </li>
-            ))}
-          </ul>
+          reelList()
         )}
       </PanelSection>
       {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
