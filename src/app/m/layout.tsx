@@ -8,7 +8,7 @@
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <style>{`html, body { font-size: 16px; background: #000; }`}</style>
+      <style>{`html, body { font-size: 16px; background: #000; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif; }`}</style>
       {children}
     </>
   );

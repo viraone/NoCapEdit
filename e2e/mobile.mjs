@@ -78,6 +78,10 @@ try {
   const exportBtn = page.getByRole("button", { name: /export video/i });
   await exportBtn.waitFor({ timeout: 8 * 60_000 });
   lap("captions ready");
+  await page.getByRole("tab", { name: /text/i }).click();
+  await page.waitForTimeout(400);
+  const selectedTab = await page.locator('[role="tab"][aria-selected="true"]').last().innerText();
+  if (!/text/i.test(selectedTab)) throw new Error(`Expected the Text tab to be selected, got "${selectedTab}"`);
   const cueCount = await page.locator("ul li input").count();
   const cueTimes = await page.locator("ul li button").allInnerTexts();
   const cueTexts = await page.locator("ul li input").evaluateAll((els) => els.map((e) => e.value));
@@ -96,7 +100,8 @@ try {
   lap(`preview plays (scrubber at ${Number(shown).toFixed(1)}s)`);
 
   // Pick a different look, then export.
-  await page.getByRole("button", { name: /^beast/i }).click();
+  await page.getByRole("tab", { name: /looks/i }).click();
+  await page.getByRole("button", { name: /^beast$/i }).click();
   await exportBtn.click();
   await page.getByText(/rendering in real time/i).waitFor({ timeout: 30_000 });
   lap("exporting");
@@ -107,7 +112,7 @@ try {
   await saveBtn.waitFor({ timeout: 5 * 60_000 });
   lap("export done");
   await page.screenshot({ path: join(outDir, "mobile-5-done.png") });
-  const summary = await page.locator("main p", { hasText: /MB/ }).first().innerText();
+  const summary = await page.getByText(/\d+(\.\d+)? MB/).first().innerText();
   console.log("result:", summary);
 
   const outFile = join(outDir, `mobile-export-${engine === chromium ? "chromium" : "webkit"}.mp4`);

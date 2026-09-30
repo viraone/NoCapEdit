@@ -11,9 +11,29 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Check, Download, Film, Loader2, Monitor, Pause, Play, RotateCcw, Share2, Sparkles, Upload, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  ChevronUp,
+  Download,
+  Film,
+  Loader2,
+  Minus,
+  Monitor,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  Share2,
+  Sparkles,
+  Square,
+  Type,
+  Upload,
+  Wand2,
+  X,
+} from "lucide-react";
 import "@/lib/fonts"; // registers next/font family names for canvas text on the client
-import { Button } from "@/components/ui/Button";
 import { cx } from "@/lib/utils/cx";
 import { AudioExtractError, extractAudio, isIOS, type AudioStrategy, type SourceAudio } from "@/lib/mobile/audio";
 import { hasWebGPU, transcribeSamples, WHISPER_MODELS } from "@/lib/speech/transcriber";
@@ -50,6 +70,12 @@ function markInflight(stage: string | null) {
     /* storage blocked: the notice is a nicety */
   }
 }
+/** iPhone Safari tab (not yet on the Home Screen) → worth a one-line tip. */
+function readHomeScreenTip(): boolean {
+  if (!isIOS()) return false;
+  const standalone = (navigator as Navigator & { standalone?: boolean }).standalone || window.matchMedia("(display-mode: standalone)").matches;
+  return !standalone;
+}
 
 /** Beyond this the phone can't realistically hold the audio + captions. */
 const MAX_SECONDS = 15 * 60;
@@ -65,6 +91,110 @@ function fmtTime(s: number): string {
   const sec = Math.floor(s % 60);
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
+
+// ---------------------------------------------------------------------------
+// Shared bits of chrome
+
+/** Primary call-to-action: brand gradient pill. */
+function PrimaryButton({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={cx(
+        "inline-flex h-[54px] w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-brand-500 to-sys-indigo text-[17px] font-semibold text-white shadow-[0_10px_30px_-10px_rgba(10,132,255,0.7)] transition active:scale-[0.98] disabled:opacity-50",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryButton({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={cx(
+        "inline-flex h-12 items-center justify-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.06] px-5 text-[15px] font-semibold text-white transition active:bg-white/10 disabled:opacity-50",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The screen's main action, pinned to the bottom of the viewport. Sits
+ * above the home indicator and, on iPhone, above Safari's floating address
+ * bar, which otherwise covers a button that scrolls to the very bottom.
+ */
+function ActionBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sticky bottom-0 z-20 -mx-4 mt-4 bg-gradient-to-t from-black via-black/95 to-transparent px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-6">
+      {children}
+    </div>
+  );
+}
+
+/** iOS-style segmented control. */
+function Segmented<T extends string | number>({
+  value,
+  options,
+  onChange,
+  className,
+  size = "md",
+}: {
+  value: T;
+  options: { value: T; label: React.ReactNode; aria?: string }[];
+  onChange: (v: T) => void;
+  className?: string;
+  size?: "sm" | "md";
+}) {
+  return (
+    <div className={cx("inline-flex rounded-full bg-white/[0.06] p-1", className)} role="tablist">
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={String(o.value)}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-label={o.aria}
+            onClick={() => onChange(o.value)}
+            className={cx(
+              "flex-1 rounded-full font-semibold transition",
+              size === "sm" ? "px-3 py-1 text-[13px]" : "px-3.5 py-1.5 text-[14px]",
+              active ? "bg-white text-black shadow-sm" : "text-label-2 active:text-white",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={() => onChange(!on)}
+      className={cx("relative h-[30px] w-[50px] shrink-0 rounded-full transition", on ? "bg-sys-green" : "bg-white/15")}
+    >
+      <span className={cx("absolute top-[3px] h-6 w-6 rounded-full bg-white shadow transition", on ? "left-[23px]" : "left-[3px]")} />
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 export function MobileEditor() {
   const [step, setStep] = useState<Step>("pick");
@@ -251,32 +381,42 @@ export function MobileEditor() {
     setSaved(await saveVideo(result.blob, name));
   }
 
+  const stepIndex = step === "pick" ? 0 : step === "analysing" || step === "style" ? 1 : 2;
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-black text-white">
-      <header className="flex items-center justify-between px-4 pb-2 pt-[max(1rem,env(safe-area-inset-top))]">
+      <header className="flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/40">
+          <span className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-gradient-to-br from-brand-400 to-sys-indigo text-white shadow-lg shadow-brand-500/30">
             <Film size={18} />
           </span>
           <div className="leading-tight">
-            <p className="text-[15px] font-semibold tracking-tight">NoCap Edit</p>
-            <p className="text-[11px] text-label-2">Mobile · on-device</p>
+            <p className="text-[16px] font-semibold tracking-tight">NoCap Edit</p>
+            <p className="text-[11px] text-label-2">On-device captions</p>
           </div>
         </div>
-        {step !== "pick" ? (
-          <button type="button" onClick={reset} className="rounded-full bg-sys-gray5 p-2 text-label-2 active:bg-sys-gray4" aria-label="Start over">
-            <X size={16} />
-          </button>
-        ) : (
-          <Link href="/" className="flex items-center gap-1 rounded-full bg-sys-gray5 px-3 py-1.5 text-xs text-label-2">
-            <Monitor size={13} /> Desktop
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Step dots: Pick · Style · Save */}
+          <div className="flex items-center gap-1.5" aria-label={`Step ${stepIndex + 1} of 3`}>
+            {[0, 1, 2].map((i) => (
+              <span key={i} className={cx("h-1.5 rounded-full transition-all", i === stepIndex ? "w-5 bg-white" : i < stepIndex ? "w-1.5 bg-white/60" : "w-1.5 bg-white/20")} />
+            ))}
+          </div>
+          {step !== "pick" ? (
+            <button type="button" onClick={reset} className="ml-1 flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-label-2 active:bg-white/15" aria-label="Start over">
+              <X size={16} />
+            </button>
+          ) : (
+            <Link href="/" className="ml-1 flex h-9 items-center gap-1.5 rounded-full bg-white/[0.08] px-3 text-[12px] text-label-2">
+              <Monitor size={13} /> Desktop
+            </Link>
+          )}
+        </div>
       </header>
 
       <main className="flex flex-1 flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {error && (
-          <div className="mb-3 flex items-start gap-2 rounded-2xl border border-sys-red/30 bg-sys-red/10 p-3 text-sm text-sys-red">
+          <div className="mb-3 flex items-start gap-2 rounded-2xl border border-sys-red/30 bg-sys-red/10 p-3 text-[14px] text-sys-red">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div className="min-w-0">
               <p>{error.message}</p>
@@ -286,7 +426,7 @@ export function MobileEditor() {
         )}
 
         {step === "pick" && restartedDuring && !error && (
-          <div className="mb-3 flex items-start gap-2 rounded-2xl border border-sys-orange/30 bg-sys-orange/10 p-3 text-sm text-sys-orange">
+          <div className="mb-3 flex items-start gap-2 rounded-2xl border border-sys-orange/30 bg-sys-orange/10 p-3 text-[14px] text-sys-orange">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div>
               <p>Safari restarted the page while {restartedDuring}.</p>
@@ -328,17 +468,20 @@ export function MobileEditor() {
 
         {/* The export surface: always mounted so refs exist, shown while exporting. */}
         <div className={cx("flex flex-1 flex-col", step === "exporting" ? "" : "hidden")}>
-          <div className="relative overflow-hidden rounded-3xl bg-sys-gray6 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-            <canvas ref={exportCanvasRef} className="block w-full" />
+          <div className="relative overflow-hidden rounded-3xl bg-[#101012] shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+            <canvas ref={exportCanvasRef} className="block max-h-[62dvh] w-full object-contain" />
             <video ref={exportVideoRef} muted playsInline className="pointer-events-none absolute left-0 top-0 h-px w-px opacity-[0.01]" />
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-4 pt-10">
               <StatusLine status={status} />
             </div>
           </div>
-          <p className="mt-3 text-center text-xs text-label-2">Rendering in real time on your phone. Keep the app open — it takes about as long as the clip.</p>
-          <Button variant="secondary" size="lg" className="mt-4 w-full" onClick={() => abortRef.current?.abort()}>
-            Cancel
-          </Button>
+          <p className="mt-3 text-center text-[12px] text-label-2">Rendering in real time on your phone — about as long as the clip. Keep the app open.</p>
+          <div className="flex-1" />
+          <ActionBar>
+            <SecondaryButton className="w-full" onClick={() => abortRef.current?.abort()}>
+              <Square size={14} /> Stop
+            </SecondaryButton>
+          </ActionBar>
         </div>
 
         {step === "done" && result && resultUrl && (
@@ -371,13 +514,22 @@ function PickScreen({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const unsupported = support && !support.ok;
+  const homeScreenTip = useSyncExternalStore(noopSubscribe, readHomeScreenTip, () => false);
   return (
     <div className="flex flex-1 flex-col">
-      <div className="relative mt-2 overflow-hidden rounded-3xl bg-sys-gray6 p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_50px_rgba(0,0,0,0.5)]">
-        <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-56 w-[28rem] -translate-x-1/2 rounded-full bg-sys-blue/20 blur-3xl" />
+      <div className="relative overflow-hidden rounded-[28px] bg-[#101012] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_24px_60px_rgba(0,0,0,0.55)]">
+        <div aria-hidden className="pointer-events-none absolute -left-16 -top-24 h-64 w-64 rounded-full bg-brand-500/30 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute -right-20 top-10 h-56 w-56 rounded-full bg-sys-indigo/25 blur-3xl" />
         <div className="relative">
-          <h1 className="text-[28px] font-semibold leading-tight tracking-tight">Captions for your video, in a tap.</h1>
-          <p className="mt-2 text-[15px] text-label-2">Pick a clip from Photos. It never leaves your phone.</p>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-label-2">
+            <Sparkles size={12} className="text-sys-yellow" /> Whisper on your phone · nothing uploaded
+          </span>
+          <h1 className="mt-4 text-[32px] font-bold leading-[1.05] tracking-tight">
+            Captions,
+            <br />
+            in a tap.
+          </h1>
+          <p className="mt-3 text-[15px] leading-snug text-label-2">Pick a clip, choose a look, save it back to Photos. About a minute for a five-minute video.</p>
           <input
             ref={inputRef}
             type="file"
@@ -389,54 +541,66 @@ function PickScreen({
               if (f) onPick(f);
             }}
           />
-          <Button variant="primary" size="lg" className="mt-6 w-full" onClick={() => inputRef.current?.click()} disabled={!!unsupported}>
+          <PrimaryButton className="mt-6" onClick={() => inputRef.current?.click()} disabled={!!unsupported}>
             <Upload size={18} /> Choose a video
-          </Button>
-          <p className="mt-2 text-center text-[11px] text-label-3">
-            Pick <span className="text-label-2">Photo Library</span> for your camera roll, or <span className="text-label-2">Choose File</span> for a clip saved in Files.
+          </PrimaryButton>
+          <p className="mt-2.5 text-center text-[11px] leading-snug text-label-3">
+            <span className="text-label-2">Photo Library</span> for your camera roll · <span className="text-label-2">Choose File</span> for a clip in Files
           </p>
           {unsupported && (
-            <p className="mt-3 flex items-start gap-2 text-sm text-sys-orange">
+            <p className="mt-3 flex items-start gap-2 text-[13px] text-sys-orange">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" /> {support?.reason}
             </p>
           )}
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl bg-sys-gray6 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-label-2">Speech model</p>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <ModelChoice active={accurate} onClick={() => onAccurate(true)} title="Accurate" note="~80 MB · crowds, rooms, noise" />
-          <ModelChoice active={!accurate} onClick={() => onAccurate(false)} title="Fast" note="~45 MB · quiet, clear speech" />
+      {/* Three steps */}
+      <ol className="mt-4 grid grid-cols-3 gap-2">
+        {[
+          { n: 1, icon: Upload, label: "Pick a clip" },
+          { n: 2, icon: Wand2, label: "Choose a look" },
+          { n: 3, icon: Share2, label: "Save to Photos" },
+        ].map(({ n, icon: Icon, label }) => (
+          <li key={n} className="rounded-2xl bg-white/[0.04] p-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08] text-label-2">
+              <Icon size={15} />
+            </span>
+            <p className="mt-2 text-[12px] font-medium leading-tight">
+              <span className="text-label-3">{n}. </span>
+              {label}
+            </p>
+          </li>
+        ))}
+      </ol>
+
+      <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/[0.04] p-3 pl-4">
+        <div className="min-w-0">
+          <p className="text-[14px] font-semibold">Speech model</p>
+          <p className="text-[11px] text-label-2">{accurate ? "Best for crowds, rooms, noise · 80 MB once" : "Quiet, clear speech · 45 MB once"}</p>
         </div>
+        <Segmented
+          size="sm"
+          value={accurate ? "accurate" : "fast"}
+          options={[
+            { value: "accurate", label: "Accurate" },
+            { value: "fast", label: "Fast" },
+          ]}
+          onChange={(v) => onAccurate(v === "accurate")}
+        />
       </div>
 
-      <ul className="mt-4 space-y-2 text-[13px] text-label-2">
-        <li className="flex items-center gap-2"><Check size={14} className="text-sys-green" /> Whisper runs on your phone, nothing is uploaded</li>
-        <li className="flex items-center gap-2"><Check size={14} className="text-sys-green" /> 20 caption looks, word-by-word highlight</li>
-        <li className="flex items-center gap-2"><Check size={14} className="text-sys-green" /> Saves straight to Photos</li>
-      </ul>
+      {homeScreenTip && (
+        <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-[11px] text-label-3">
+          <ChevronUp size={12} /> Share → <span className="text-label-2">Add to Home Screen</span> to use it like an app
+        </p>
+      )}
+
       <p className="mt-auto pt-6 text-center text-[11px] text-label-3">
-        Best on Safari 17+ / Chrome. For timelines, transitions and more, use the desktop editor.
+        For timelines, transitions and more, use the desktop editor.
         <span className="mt-1 block font-mono text-[10px] text-label-3/70">build {process.env.NEXT_PUBLIC_BUILD_SHA ?? "dev"}</span>
       </p>
     </div>
-  );
-}
-
-function ModelChoice({ active, onClick, title, note }: { active: boolean; onClick: () => void; title: string; note: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cx(
-        "rounded-xl border px-3 py-2.5 text-left transition",
-        active ? "border-sys-blue bg-sys-blue/15" : "border-white/5 bg-sys-gray5 active:bg-sys-gray4",
-      )}
-    >
-      <p className="text-sm font-semibold">{title}</p>
-      <p className="text-[11px] text-label-2">{note}</p>
-    </button>
   );
 }
 
@@ -444,18 +608,18 @@ function StatusLine({ status }: { status: { message: string; progress: number | 
   const pct = status.progress === null ? null : Math.round(status.progress * 100);
   return (
     <div>
-      <div className="flex items-center justify-between text-sm">
+      <div className="flex items-center justify-between text-[15px]">
         <span className="flex items-center gap-2 font-medium">
-          <Loader2 size={14} className="animate-spin text-sys-blue" /> {status.message}
+          <Loader2 size={15} className="animate-spin text-brand-400" /> {status.message}
         </span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/10">
         <div
-          className={cx("h-full rounded-full bg-sys-blue transition-[width]", pct === null && "w-1/3 animate-pulse")}
+          className={cx("h-full rounded-full bg-gradient-to-r from-brand-500 to-sys-indigo transition-[width]", pct === null && "w-1/3 animate-pulse")}
           style={pct === null ? undefined : { width: `${pct}%` }}
         />
       </div>
-      {status.detail && <p className="mt-1.5 truncate text-xs text-label-2">{status.detail}</p>}
+      {status.detail && <p className="mt-1.5 truncate text-[12px] text-label-2">{status.detail}</p>}
     </div>
   );
 }
@@ -473,25 +637,39 @@ function ProgressScreen({
 }) {
   return (
     <div className="flex flex-1 flex-col">
-      <div className="relative overflow-hidden rounded-3xl bg-sys-gray6 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_50px_rgba(0,0,0,0.5)]">
-        <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 h-56 w-[28rem] -translate-x-1/2 rounded-full bg-sys-blue/20 blur-3xl" />
+      <div className="relative overflow-hidden rounded-[28px] bg-[#101012] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_24px_60px_rgba(0,0,0,0.55)]">
+        <div aria-hidden className="pointer-events-none absolute -left-16 -top-24 h-64 w-64 rounded-full bg-brand-500/25 blur-3xl" />
         <div className="relative">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sys-gray5 text-sys-yellow shadow-inner shadow-black/40">
-            <Sparkles size={26} className="animate-pulse" />
+          <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] text-sys-yellow">
+            <span className="absolute inset-0 animate-ping rounded-2xl bg-sys-yellow/10" />
+            <Sparkles size={26} />
           </span>
-          <p className="mt-4 text-xl font-semibold tracking-tight">{title}</p>
+          <p className="mt-4 text-[22px] font-bold tracking-tight">{title}</p>
           <div className="mt-4">
             <StatusLine status={status} />
           </div>
         </div>
       </div>
-      <p className="mt-3 text-center text-xs text-label-2">{note}</p>
-      <Button variant="secondary" size="lg" className="mt-4 w-full" onClick={onCancel}>Cancel</Button>
+      <p className="mt-3 px-2 text-center text-[12px] leading-snug text-label-2">{note}</p>
+      <div className="flex-1" />
+      <ActionBar>
+        <SecondaryButton className="w-full" onClick={onCancel}>
+          <X size={15} /> Cancel
+        </SecondaryButton>
+      </ActionBar>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
+
+type Tab = "looks" | "style" | "text";
+
+const POSITION_PRESETS: { label: string; y: number }[] = [
+  { label: "Top", y: 0.16 },
+  { label: "Middle", y: 0.5 },
+  { label: "Bottom", y: 0.8 },
+];
 
 function StyleScreen({
   fileUrl,
@@ -514,9 +692,12 @@ function StyleScreen({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [tab, setTab] = useState<Tab>("looks");
+  const [dragging, setDragging] = useState(false);
   const cuesRef = useRef(cues);
   const styleRef = useRef(style);
   useEffect(() => {
@@ -576,19 +757,23 @@ function StyleScreen({
       draw();
       setTime(video.currentTime);
     };
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
     video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("seeked", onSeeked);
     // Metadata may already be in by the time this effect runs (blob URLs
     // load instantly) — the event would be missed, so apply it now too.
     if (video.readyState >= 1) onMeta();
-    video.addEventListener("play", () => setPlaying(true));
-    video.addEventListener("pause", () => setPlaying(false));
+    video.addEventListener("play", onPlay);
+    video.addEventListener("pause", onPause);
     video.addEventListener("timeupdate", onSeeked);
     return () => {
       stopped = true;
       cancelAnimationFrame(raf);
       video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
       video.removeEventListener("timeupdate", onSeeked);
     };
   }, [draw]);
@@ -614,21 +799,78 @@ function StyleScreen({
     v.currentTime = t;
   };
 
+  /** Where the video's picture sits inside the (object-contain) frame box. */
+  const contentBox = () => {
+    const el = frameRef.current;
+    const video = videoRef.current;
+    if (!el || !video || !video.videoWidth) return null;
+    const rect = el.getBoundingClientRect();
+    const aspect = video.videoWidth / video.videoHeight;
+    const w = Math.min(rect.width, rect.height * aspect);
+    const h = Math.min(rect.height, rect.width / aspect);
+    return { left: rect.left + (rect.width - w) / 2, top: rect.top + (rect.height - h) / 2, w, h };
+  };
+
+  // Tap = play/pause. Drag = move the caption. Decided by travel distance.
+  const gesture = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const onPointerDown = (e: React.PointerEvent) => {
+    gesture.current = { x: e.clientX, y: e.clientY, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g) return;
+    if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) < 8) return;
+    g.moved = true;
+    setDragging(true);
+    const box = contentBox();
+    if (!box) return;
+    const fx = (e.clientX - box.left) / box.w;
+    const fy = (e.clientY - box.top) / box.h;
+    const x = Math.abs(fx - 0.5) < 0.06 ? 0.5 : Math.min(0.85, Math.max(0.15, fx));
+    const y = Math.min(0.95, Math.max(0.08, fy));
+    setStyle({ ...styleRef.current, x, y });
+  };
+  const onPointerUp = () => {
+    const g = gesture.current;
+    gesture.current = null;
+    setDragging(false);
+    if (g && !g.moved) togglePlay();
+  };
+
+  const summary = `${preset.name} · ${wordsPerCue} word${wordsPerCue === 1 ? "" : "s"} · ${cues.length} captions`;
+
   return (
     <div className="flex flex-1 flex-col">
-      <div className="relative overflow-hidden rounded-3xl bg-sys-gray6 shadow-[0_20px_50px_rgba(0,0,0,0.5)]" onClick={togglePlay}>
-        <video ref={videoRef} src={`${fileUrl}#t=0.1`} playsInline preload="auto" className="block max-h-[52dvh] w-full bg-black object-contain" />
+      {/* Preview */}
+      <div
+        ref={frameRef}
+        className={cx("relative touch-none select-none overflow-hidden rounded-[24px] bg-black shadow-[0_20px_50px_rgba(0,0,0,0.6)]", dragging && "ring-2 ring-brand-400")}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <video ref={videoRef} src={`${fileUrl}#t=0.1`} playsInline preload="auto" className="block max-h-[56dvh] w-full bg-black object-contain" />
         <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
-        {!playing && (
-          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/60 p-4 backdrop-blur">
-            <Play size={24} className="translate-x-0.5" />
+        {!playing && !dragging && (
+          <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 backdrop-blur">
+            <Play size={26} className="translate-x-0.5" />
           </span>
         )}
-        <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 pb-2 pt-8 text-xs tabular-nums" onClick={(e) => e.stopPropagation()}>
-          <button type="button" onClick={togglePlay} className="rounded-full bg-white/15 p-1.5 backdrop-blur" aria-label={playing ? "Pause" : "Play"}>
-            {playing ? <Pause size={14} /> : <Play size={14} />}
+        {dragging && (
+          <span className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-medium backdrop-blur">
+            Drag to place captions
+          </span>
+        )}
+        <div
+          className="absolute inset-x-0 bottom-0 flex items-center gap-2.5 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-10 text-[12px] tabular-nums"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button type="button" onClick={togglePlay} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 backdrop-blur" aria-label={playing ? "Pause" : "Play"}>
+            {playing ? <Pause size={14} /> : <Play size={14} className="translate-x-px" />}
           </button>
-          <span>{fmtTime(time)}</span>
+          <span className="w-9 text-right">{fmtTime(time)}</span>
           <input
             type="range"
             min={0}
@@ -639,122 +881,172 @@ function StyleScreen({
             className="h-1 flex-1 accent-white"
             aria-label="Scrub"
           />
-          <span className="text-label-2">{fmtTime(duration)}</span>
+          <span className="w-9 text-label-2">{fmtTime(duration)}</span>
         </div>
       </div>
+      <p className="mt-2 text-center text-[11px] text-label-3">Tap to play · drag the caption to move it</p>
 
-      {/* Looks */}
-      <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-label-2">Look</p>
-      <div className="-mx-4 mt-2 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-        {CAPTION_PRESETS.map((p) => {
-          const active = p.id === style.presetId;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => setStyle({ ...style, presetId: p.id })}
-              className={cx(
-                "flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border transition",
-                active ? "border-sys-blue bg-sys-blue/15" : "border-white/5 bg-sys-gray6 active:bg-sys-gray5",
-              )}
-            >
-              <span
-                className="max-w-full truncate px-1 text-[15px] leading-none"
-                style={{
-                  fontFamily: fontFamily(p.font),
-                  fontWeight: p.weight,
-                  fontStyle: p.italic ? "italic" : undefined,
-                  color: p.color,
-                  textTransform: p.uppercase ? "uppercase" : undefined,
-                  background: p.box?.color,
-                  borderRadius: 4,
-                  WebkitTextStroke: p.stroke ? `0.6px ${p.stroke.color}` : undefined,
-                  textShadow: p.shadow ? `0 1px 2px ${p.shadow.color}` : p.glow ? `0 0 6px ${p.glow.color}` : undefined,
-                }}
-              >
-                {p.name}
-              </span>
-              <span className="text-[10px] text-label-2">{p.category}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Tabs */}
+      <Segmented
+        className="mt-3 w-full"
+        value={tab}
+        options={[
+          { value: "looks", label: <span className="inline-flex items-center gap-1.5"><Wand2 size={14} /> Looks</span> },
+          { value: "style", label: <span className="inline-flex items-center gap-1.5"><Type size={14} /> Style</span> },
+          { value: "text", label: <span className="inline-flex items-center gap-1.5"><Check size={14} /> Text</span> },
+        ]}
+        onChange={setTab}
+      />
 
-      {/* Tweaks */}
-      <div className="mt-3 grid grid-cols-2 gap-3 rounded-2xl bg-sys-gray6 p-3 text-xs">
-        <label className="space-y-1">
-          <span className="flex justify-between text-label-2"><span>Size</span><span className="tabular-nums">{Math.round(style.sizeScale * 100)}%</span></span>
-          <input type="range" min={0.6} max={1.6} step={0.05} value={style.sizeScale} onChange={(e) => setStyle({ ...style, sizeScale: Number(e.target.value) })} className="w-full accent-sys-blue" />
-        </label>
-        <label className="space-y-1">
-          <span className="flex justify-between text-label-2"><span>Position</span><span className="tabular-nums">{Math.round(style.y * 100)}%</span></span>
-          <input type="range" min={0.3} max={0.9} step={0.01} value={style.y} onChange={(e) => setStyle({ ...style, y: Number(e.target.value) })} className="w-full accent-sys-blue" />
-        </label>
-        <div className="col-span-2 flex items-center justify-between">
-          <span className="text-label-2">Words per caption</span>
-          <div className="inline-flex rounded-full bg-sys-gray5 p-0.5">
-            {[1, 2, 3, 4].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setWordsPerCue(n)}
-                className={cx("rounded-full px-3 py-1 text-xs font-medium", wordsPerCue === n ? "bg-white text-black" : "text-label-2")}
-              >
-                {n}
-              </button>
-            ))}
+      <div className="mt-3 min-h-[13rem]">
+        {tab === "looks" && (
+          <div className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]">
+            {CAPTION_PRESETS.map((p) => {
+              const active = p.id === style.presetId;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setStyle({ ...style, presetId: p.id })}
+                  aria-label={p.name}
+                  className={cx(
+                    "relative flex h-[76px] w-[104px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border bg-[#141416] transition active:scale-[0.97]",
+                    active ? "border-brand-400 shadow-[0_0_0_3px_rgba(64,156,255,0.25)]" : "border-white/[0.06]",
+                  )}
+                >
+                  {active && (
+                    <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-400 text-black">
+                      <Check size={11} strokeWidth={3} />
+                    </span>
+                  )}
+                  <span
+                    className="max-w-full truncate px-1.5 text-[16px] leading-none"
+                    style={{
+                      fontFamily: fontFamily(p.font),
+                      fontWeight: p.weight,
+                      fontStyle: p.italic ? "italic" : undefined,
+                      color: p.color,
+                      textTransform: p.uppercase ? "uppercase" : undefined,
+                      background: p.box?.color,
+                      borderRadius: 4,
+                      padding: p.box ? "2px 5px" : undefined,
+                      WebkitTextStroke: p.stroke ? `0.6px ${p.stroke.color}` : undefined,
+                      textShadow: p.shadow ? `0 1px 2px ${p.shadow.color}` : p.glow ? `0 0 6px ${p.glow.color}` : undefined,
+                    }}
+                  >
+                    {p.name}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider text-label-3">{p.category}</span>
+                </button>
+              );
+            })}
           </div>
-        </div>
-        <div className="col-span-2 flex items-center justify-between">
-          <span className="text-label-2">Highlight the spoken word</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={style.highlight}
-            onClick={() => setStyle({ ...style, highlight: !style.highlight })}
-            className={cx("relative h-6 w-11 rounded-full transition", style.highlight ? "bg-sys-green" : "bg-sys-gray4")}
-          >
-            <span className={cx("absolute top-0.5 h-5 w-5 rounded-full bg-white transition", style.highlight ? "left-[22px]" : "left-0.5")} />
-          </button>
-        </div>
-      </div>
+        )}
 
-      {/* Transcript */}
-      <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-label-2">Captions · tap to fix a word</p>
-      <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-2xl bg-sys-gray6 p-2">
-        {cues.map((cue, i) => (
-          <li key={cue.id} className={cx("flex items-center gap-2 rounded-xl px-2 py-1.5", i === activeIndex && "bg-sys-blue/15")}>
-            <button type="button" onClick={() => seekTo(cue.start + 0.01)} className="w-10 shrink-0 text-left text-[11px] tabular-nums text-label-2">
-              {fmtTime(cue.start)}
-            </button>
-            <input
-              value={cue.text}
-              onChange={(e) => setCues(cues.map((c) => (c.id === cue.id ? { ...c, text: e.target.value } : c)))}
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-              style={{ fontFamily: fontFamily(preset.font) }}
-            />
-          </li>
-        ))}
-      </ul>
+        {tab === "style" && (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] p-3 pl-4">
+              <span className="text-[14px] font-medium">Position</span>
+              <Segmented
+                size="sm"
+                value={POSITION_PRESETS.find((p) => Math.abs(p.y - style.y) < 0.06)?.label ?? "custom"}
+                options={POSITION_PRESETS.map((p) => ({ value: p.label, label: p.label }))}
+                onChange={(label) => {
+                  const p = POSITION_PRESETS.find((x) => x.label === label);
+                  if (p) setStyle({ ...style, x: 0.5, y: p.y });
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] p-3 pl-4">
+              <span className="text-[14px] font-medium">Size</span>
+              <div className="flex items-center gap-2">
+                <button type="button" aria-label="Smaller" onClick={() => setStyle({ ...style, sizeScale: Math.max(0.6, +(style.sizeScale - 0.1).toFixed(2)) })} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] active:bg-white/15">
+                  <Minus size={15} />
+                </button>
+                <span className="w-12 text-center text-[14px] tabular-nums">{Math.round(style.sizeScale * 100)}%</span>
+                <button type="button" aria-label="Larger" onClick={() => setStyle({ ...style, sizeScale: Math.min(1.8, +(style.sizeScale + 0.1).toFixed(2)) })} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] active:bg-white/15">
+                  <Plus size={15} />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] p-3 pl-4">
+              <span className="text-[14px] font-medium">Words per caption</span>
+              <Segmented size="sm" value={wordsPerCue} options={[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))} onChange={setWordsPerCue} />
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] p-3 pl-4">
+              <div>
+                <p className="text-[14px] font-medium">Highlight the spoken word</p>
+                <p className="text-[11px] text-label-2">Karaoke-style accent as each word is said</p>
+              </div>
+              <Toggle on={style.highlight} onChange={(v) => setStyle({ ...style, highlight: v })} label="Highlight the spoken word" />
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] p-3 pl-4">
+              <div>
+                <p className="text-[14px] font-medium">ALL CAPS</p>
+                <p className="text-[11px] text-label-2">{style.uppercase === null ? "Following the look" : style.uppercase ? "On" : "Off"}</p>
+              </div>
+              <Toggle on={style.uppercase ?? !!preset.uppercase} onChange={(v) => setStyle({ ...style, uppercase: v })} label="All caps" />
+            </div>
+          </div>
+        )}
+
+        {tab === "text" && (
+          <TranscriptPanel cues={cues} setCues={setCues} activeIndex={activeIndex} playing={playing} seekTo={seekTo} font={fontFamily(preset.font)} />
+        )}
+      </div>
 
       <ActionBar>
-        <Button variant="primary" size="lg" className="w-full" onClick={onExport}>
+        <PrimaryButton onClick={onExport}>
           <Sparkles size={18} /> Export video
-        </Button>
+        </PrimaryButton>
+        <p className="mt-2 text-center text-[11px] text-label-3">{summary}</p>
       </ActionBar>
     </div>
   );
 }
 
-/**
- * The screen's main action, pinned to the bottom of the viewport. Sits
- * above the home indicator and, on iPhone, above Safari's floating address
- * bar, which otherwise covers a button that scrolls to the very bottom.
- */
-function ActionBar({ children }: { children: React.ReactNode }) {
+function TranscriptPanel({
+  cues,
+  setCues,
+  activeIndex,
+  playing,
+  seekTo,
+  font,
+}: {
+  cues: CaptionCue[];
+  setCues: (c: CaptionCue[]) => void;
+  activeIndex: number;
+  playing: boolean;
+  seekTo: (t: number) => void;
+  font: string;
+}) {
+  const activeRef = useRef<HTMLLIElement>(null);
+  // Follow playback: keep the spoken line in view.
+  useEffect(() => {
+    if (playing && activeRef.current) activeRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeIndex, playing]);
+
   return (
-    <div className="sticky bottom-0 z-20 -mx-4 mt-4 bg-gradient-to-t from-black via-black/95 to-transparent px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-6">
-      {children}
+    <div className="overflow-hidden rounded-2xl bg-white/[0.04]">
+      <p className="px-4 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wider text-label-3">Tap a time to jump · edit any word</p>
+      <ul className="max-h-[38dvh] overflow-y-auto px-2 pb-2">
+        {cues.map((cue, i) => {
+          const active = i === activeIndex;
+          return (
+            <li key={cue.id} ref={active ? activeRef : undefined} className={cx("flex items-center gap-2 rounded-xl px-2 py-2", active && "bg-brand-500/20")}>
+              <button type="button" onClick={() => seekTo(cue.start + 0.01)} className={cx("w-11 shrink-0 text-left text-[12px] tabular-nums", active ? "text-brand-400" : "text-label-3")}>
+                {fmtTime(cue.start)}
+              </button>
+              <input
+                value={cue.text}
+                onChange={(e) => setCues(cues.map((c) => (c.id === cue.id ? { ...c, text: e.target.value } : c)))}
+                className="min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+                style={{ fontFamily: font }}
+              />
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -780,28 +1072,35 @@ function DoneScreen({
   const mb = (result.blob.size / 1_048_576).toFixed(1);
   return (
     <div className="flex flex-1 flex-col">
-      <div className="overflow-hidden rounded-3xl bg-sys-gray6 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-        <video src={`${resultUrl}#t=0.1`} controls playsInline preload="auto" className="block max-h-[52dvh] w-full bg-black object-contain" />
+      <div className="overflow-hidden rounded-[24px] bg-black shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
+        <video src={`${resultUrl}#t=0.1`} controls playsInline preload="auto" className="block max-h-[56dvh] w-full bg-black object-contain" />
       </div>
-      <p className="mt-3 text-center text-xs text-label-2">
-        {result.width}×{result.height} · {fmtTime(result.seconds)} · {mb} MB · {result.audio === "none" ? "no audio" : "with audio"}
-      </p>
+      <div className="mt-3 flex items-center justify-center gap-2 text-[12px] text-label-2">
+        <span className="inline-flex items-center gap-1 rounded-full bg-sys-green/15 px-2 py-0.5 font-medium text-sys-green"><Check size={12} /> Ready</span>
+        <span>{result.width}×{result.height}</span>
+        <span>·</span>
+        <span>{fmtTime(result.seconds)}</span>
+        <span>·</span>
+        <span>{mb} MB</span>
+        <span>·</span>
+        <span>{result.audio === "none" ? "no audio" : "with audio"}</span>
+      </div>
       {result.audio === "none" && (
-        <p className="mt-2 flex items-start gap-2 rounded-xl bg-sys-orange/10 p-3 text-xs text-sys-orange">
+        <p className="mt-2 flex items-start gap-2 rounded-xl bg-sys-orange/10 p-3 text-[12px] text-sys-orange">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> This browser couldn&rsquo;t encode audio, so the export is silent. Safari 17+ or Chrome keeps the sound.
         </p>
       )}
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Button variant="secondary" size="lg" onClick={onEdit}><ArrowLeft size={16} /> Adjust</Button>
-        <Button variant="secondary" size="lg" onClick={onNew}><RotateCcw size={16} /> New video</Button>
+        <SecondaryButton onClick={onEdit}><ArrowLeft size={16} /> Adjust</SecondaryButton>
+        <SecondaryButton onClick={onNew}><RotateCcw size={16} /> New video</SecondaryButton>
       </div>
       <div className="flex-1" />
       <ActionBar>
-        <Button variant="primary" size="lg" className="w-full" onClick={onSave}>
+        <PrimaryButton onClick={onSave}>
           {share ? <Share2 size={18} /> : <Download size={18} />} {share ? "Save to Photos" : "Download MP4"}
-        </Button>
+        </PrimaryButton>
         {saved && (
-          <p className="mt-2 flex items-center justify-center gap-1.5 text-sm text-sys-green">
+          <p className="mt-2 flex items-center justify-center gap-1.5 text-[13px] text-sys-green">
             <Check size={16} /> {saved === "shared" ? "Choose “Save Video” in the share sheet." : "Downloaded."}
           </p>
         )}
