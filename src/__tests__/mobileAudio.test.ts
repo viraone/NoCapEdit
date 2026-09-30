@@ -42,3 +42,34 @@ describe("mobile audio", () => {
     expect(out[100]).toBeCloseTo(input[300], 2);
   });
 });
+
+import { MonoResampler } from "@/lib/mobile/audio";
+
+describe("MonoResampler", () => {
+  it("matches a one-shot resample when fed in uneven chunks", () => {
+    const input = new Float32Array(48000).map((_, i) => Math.sin(i / 37) * 0.8);
+    const whole = resampleLinear(input, 48000, 16000);
+    const r = new MonoResampler(48000, 16000);
+    let at = 0;
+    for (const size of [1024, 1, 2049, 4096, 7, 40000, 823]) {
+      r.push(input.subarray(at, at + size));
+      at += size;
+    }
+    expect(at).toBe(48000);
+    const out = r.finish();
+    expect(Math.abs(out.length - whole.length)).toBeLessThanOrEqual(1);
+    for (let i = 0; i < Math.min(out.length, whole.length); i += 97) expect(out[i]).toBeCloseTo(whole[i], 5);
+  });
+
+  it("handles a non-integer ratio across chunk boundaries", () => {
+    const input = new Float32Array(44100).map((_, i) => i / 44100);
+    const r = new MonoResampler(44100, 16000);
+    for (let at = 0; at < input.length; at += 1000) r.push(input.subarray(at, at + 1000));
+    const out = r.finish();
+    expect(out.length).toBeGreaterThan(15990);
+    expect(out.length).toBeLessThanOrEqual(16001);
+    // A ramp stays a ramp: sample k sits at time k/16000.
+    expect(out[8000]).toBeCloseTo(0.5, 3);
+    expect(out[15000]).toBeCloseTo(15000 / 16000, 3);
+  });
+});

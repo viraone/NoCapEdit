@@ -19,8 +19,9 @@
 import { ArrayBufferTarget, Muxer, StreamTarget } from "mp4-muxer";
 import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import { drawCue } from "@/lib/captions/renderer";
-import { resampleLinear } from "@/lib/mobile/audio";
-import { cropRect, DEFAULT_REFRAME, outputFrame, type Reframe } from "@/lib/mobile/reframe";
+import { isIOS, resampleLinear } from "@/lib/mobile/audio";
+import { BlobFileSink } from "@/lib/mobile/blobFileSink";
+import { cropRect, DEFAULT_REFRAME, outputFrame, placeWholeFrame, type Reframe } from "@/lib/mobile/reframe";
 
 export interface LiteProgress {
   phase: "prepare" | "audio" | "video" | "mux";
@@ -61,7 +62,14 @@ export interface LiteExportResult {
   height: number;
   audio: "aac" | "ffmpeg" | "none";
   seconds: number;
+  /** Which exporter produced it: the WebCodecs decode pipeline
+   * (lib/mobile/fastExport.ts) or this file's real-time playback capture. */
+  engine: "fast" | "realtime";
 }
+
+/** decodeAudioData needs the whole file as an ArrayBuffer; past this it
+ * costs more memory than the ffmpeg mux fallback. */
+const WEB_AUDIO_MAX_BYTES = 120 * 1024 * 1024;
 
 const H264_CANDIDATES = ["avc1.64002A", "avc1.640028", "avc1.4D402A", "avc1.42E02A", "avc1.42E01E"];
 
@@ -142,44 +150,6 @@ function aacSpecificConfig(sampleRate: number, channels: number): Uint8Array {
   return new Uint8Array([(objectType << 3) | (freqIndex >> 1), ((freqIndex & 1) << 7) | (channels << 3)]);
 }
 
-/**
- * Receives a classic (non-fragmented) MP4 from a chunked StreamTarget
- * without holding the file in the JS heap. Everything past the first
- * HEAD_BYTES goes straight into Blob storage as it arrives; the head stays
- * a mutable buffer because that is where the muxer seeks back at the end to
- * patch the mdat box size (the only non-sequential write mp4-muxer makes).
- */
-class BlobFileSink {
-  private static readonly HEAD_BYTES = 16 * 1024 * 1024;
-  private head = new Uint8Array(BlobFileSink.HEAD_BYTES);
-  private headLength = 0;
-  private tail: Blob[] = [];
-  private tailStart = BlobFileSink.HEAD_BYTES;
-  private tailEnd = BlobFileSink.HEAD_BYTES;
-
-  write(data: Uint8Array, position: number) {
-    const end = position + data.byteLength;
-    if (position < BlobFileSink.HEAD_BYTES) {
-      const inHead = Math.min(data.byteLength, BlobFileSink.HEAD_BYTES - position);
-      this.head.set(data.subarray(0, inHead), position);
-      this.headLength = Math.max(this.headLength, position + inHead);
-      if (inHead === data.byteLength) return;
-      data = data.subarray(inHead);
-      position += inHead;
-    }
-    if (position !== this.tailEnd) {
-      throw new Error(`Unsupported out-of-order write at ${position} (file end ${this.tailEnd})`);
-    }
-    this.tail.push(new Blob([data as BlobPart]));
-    this.tailEnd = end;
-  }
-
-  finalize(): Blob {
-    const headLen = this.tail.length ? BlobFileSink.HEAD_BYTES : this.headLength;
-    return new Blob([this.head.subarray(0, headLen) as BlobPart, ...this.tail], { type: "video/mp4" });
-  }
-}
-
 function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
 }
@@ -216,6 +186,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
   const reframe = opts.reframe ?? DEFAULT_REFRAME;
   const { width, height } = outputFrame(video.videoWidth, video.videoHeight, reframe, maxEdge);
   const crop = cropRect(video.videoWidth, video.videoHeight, reframe);
+  const place = placeWholeFrame(video.videoWidth, video.videoHeight, crop, width, height);
   const duration = video.duration;
   canvas.width = width;
   canvas.height = height;
@@ -233,7 +204,9 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
   if (typeof AudioEncoder !== "undefined") {
     if (opts.audio && opts.audio.channels.length) {
       planar = opts.audio.channels.slice(0, 2).map((ch) => resampleTo(ch, opts.audio!.sampleRate, AUDIO_RATE));
-    } else if (opts.audio === undefined) {
+    } else if (opts.audio === undefined && !isIOS() && file.size <= WEB_AUDIO_MAX_BYTES) {
+      // (iOS can't decodeAudioData a video container; there, and for big
+      // files, the ffmpeg mux at the end adds the original audio instead.)
       progress({ phase: "audio", progress: null, message: "Decoding audio" });
       const decoded = await decodeForExport(file, AUDIO_RATE);
       if (decoded) {
@@ -372,7 +345,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
       if (videoError) return finish(videoError);
       const timestamp = Math.round(t * 1e6);
       if (timestamp <= lastTimestamp) return;
-      ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
+      ctx.drawImage(video, place.dx, place.dy, place.dw, place.dh);
       for (const cue of cues) {
         if (t >= cue.start && t < cue.end) drawCue(ctx, cue, style, frame, t, { showTranslated: false });
       }
@@ -437,7 +410,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
     }
   }
 
-  return { blob, width, height, audio: audioMode, seconds: duration };
+  return { blob, width, height, audio: audioMode, seconds: duration, engine: "realtime" };
 }
 
 async function muxOriginalAudio(videoOnly: Blob, source: Blob): Promise<Blob> {

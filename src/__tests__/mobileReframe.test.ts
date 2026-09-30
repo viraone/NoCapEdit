@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aspectOf, cropRect, DEFAULT_REFRAME, outputFrame, panBy, withZoom, type Reframe } from "@/lib/mobile/reframe";
+import { aspectOf, cropRect, DEFAULT_REFRAME, outputFrame, panBy, placeWholeFrame, withZoom, type Reframe } from "@/lib/mobile/reframe";
 
 const reel = (over: Partial<Reframe> = {}): Reframe => ({ format: "9:16", fx: 0.5, fy: 0.5, zoom: 1, ...over });
 
@@ -32,6 +32,19 @@ describe("mobile reframe", () => {
     expect(pinned.fx).toBe(0);
     // No vertical slack at zoom 1: fy stays centred.
     expect(panBy(1920, 1080, reel(), 0, 300).fy).toBe(0.5);
+  });
+
+  it("places the whole frame so the crop fills the output", () => {
+    const crop = cropRect(1920, 1080, reel({ fx: 1 })); // window hard right: x = 1312.5
+    const p = placeWholeFrame(1920, 1080, crop, 1080, 1920);
+    // The crop's left edge lands on x = 0 and its width spans the canvas.
+    expect(p.dx + crop.x * (1080 / crop.w)).toBeCloseTo(0);
+    expect(p.dw).toBeCloseTo(1920 * (1080 / 607.5));
+    expect(p.dh).toBeCloseTo(1920);
+    expect(p.dy).toBeCloseTo(0);
+    // Original: drawn 1:1 at the origin.
+    const whole = cropRect(1280, 720, DEFAULT_REFRAME);
+    expect(placeWholeFrame(1280, 720, whole, 1280, 720)).toEqual({ dx: -0, dy: -0, dw: 1280, dh: 720 });
   });
 
   it("clamps zoom to 1…4", () => {

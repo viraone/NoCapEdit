@@ -4,7 +4,8 @@
 //
 //   node e2e/mobile.mjs            # Chromium
 //   BROWSER=webkit node e2e/mobile.mjs
-//   AUDIO=ffmpeg node e2e/mobile.mjs   # force the iOS audio-extraction fallback
+//   AUDIO=ffmpeg|webaudio|webcodecs node e2e/mobile.mjs   # force one audio-extraction path
+//   EXPORT=fast|realtime node e2e/mobile.mjs   # force one exporter (default: fast, falling back to realtime)
 //   STREAM=1 node e2e/mobile.mjs       # force the long-clip streaming export
 //   CLIP=path/to/clip.mp4 node e2e/mobile.mjs   # use another input clip
 //   FRAME=9:16 node e2e/mobile.mjs     # reframe to a shape, drag the video, check the export's aspect
@@ -46,13 +47,18 @@ page.on("console", (m) => {
   if (m.type() === "error" || m.type() === "warning") console.log(`[${m.type()}] ${m.text().slice(0, 300)}`);
 });
 page.on("pageerror", (e) => console.log("[pageerror]", e.message));
+// The mobile flow should not need the 32 MB ffmpeg core any more; say so if it loads.
+page.on("request", (r) => {
+  if (r.url().includes("ffmpeg-core.wasm")) console.log("[ffmpeg core requested]", r.method());
+});
 
 const t0 = Date.now();
 const lap = (label) => console.log(`${((Date.now() - t0) / 1000).toFixed(1)}s  ${label}`);
 
 try {
   const query = new URLSearchParams();
-  if (process.env.AUDIO === "ffmpeg") query.set("audio", "ffmpeg");
+  if (process.env.AUDIO) query.set("audio", process.env.AUDIO);
+  if (process.env.EXPORT) query.set("export", process.env.EXPORT);
   if (process.env.STREAM === "1") query.set("stream", "1");
   if (process.env.ASR) query.set("asr", process.env.ASR);
   if (process.env.THREADS) query.set("threads", process.env.THREADS);
@@ -119,17 +125,20 @@ try {
   await page.getByRole("tab", { name: /looks/i }).click();
   await page.getByRole("button", { name: /^beast$/i }).click();
   await exportBtn.click();
-  await page.getByText(/rendering in real time/i).waitFor({ timeout: 30_000 });
+  // The fast exporter can finish a short clip before this screen is even
+  // painted, so seeing it is best-effort.
+  await page.getByText(/rendering on your phone/i).waitFor({ timeout: 5_000 }).catch(() => undefined);
   lap("exporting");
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: join(outDir, "mobile-4-exporting.png") });
+  await page.screenshot({ path: join(outDir, "mobile-4-exporting.png") }).catch(() => undefined);
 
   const saveBtn = page.getByRole("button", { name: /save to photos|download mp4/i });
   await saveBtn.waitFor({ timeout: 5 * 60_000 });
   lap("export done");
   await page.screenshot({ path: join(outDir, "mobile-5-done.png") });
   const summary = await page.getByText(/\d+(\.\d+)? MB/).first().innerText();
-  console.log("result:", summary);
+  const engineUsed = await page.locator("[data-export-engine]").getAttribute("data-export-engine");
+  console.log("result:", summary, "· engine:", engineUsed);
+  if (process.env.EXPORT && engineUsed !== process.env.EXPORT) throw new Error(`Expected the ${process.env.EXPORT} exporter, got ${engineUsed}`);
 
   const outFile = join(outDir, `mobile-export-${engine === chromium ? "chromium" : "webkit"}.mp4`);
   if (engine === chromium) {
@@ -164,6 +173,15 @@ try {
     const [rw, rh] = process.env.FRAME.split(":").map(Number);
     const got = video.width / video.height;
     if (Math.abs(got - rw / rh) > 0.02) throw new Error(`Expected a ${process.env.FRAME} export, got ${video.width}×${video.height}`);
+    // The shape alone can't tell a crop from a squeeze (WebKit once drew the
+    // whole frame squashed into the new shape). The speech fixture's left
+    // edge is a red bar; a real centre crop dragged left never shows it.
+    if (!process.env.CLIP) {
+      const px = execFileSync("ffmpeg", ["-v", "error", "-ss", "3", "-i", outFile, "-frames:v", "1", "-vf", "crop=4:4:6:ih/2", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]);
+      const [r, g, b] = [px[0], px[1], px[2]];
+      if (r > 180 && g < 90 && b < 90) throw new Error(`Reframed export looks squeezed, not cropped (left edge is red: ${r},${g},${b})`);
+      console.log(`crop check: left edge rgb(${r},${g},${b})`);
+    }
   }
   console.log("MOBILE E2E OK");
 } finally {

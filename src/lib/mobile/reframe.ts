@@ -81,6 +81,19 @@ export function outputFrame(sourceWidth: number, sourceHeight: number, r: Refram
   return { width: even(height * aspect), height };
 }
 
+/**
+ * Where to draw the *whole* source frame on an output canvas so that the
+ * crop rectangle exactly fills it (the canvas clips the rest). Used
+ * instead of drawImage's source-rectangle form: WebKit ignores the source
+ * rectangle when the image is a decoded VideoFrame and squeezes the entire
+ * picture into the destination.
+ */
+export function placeWholeFrame(sourceWidth: number, sourceHeight: number, crop: Rect, outWidth: number, outHeight: number): { dx: number; dy: number; dw: number; dh: number } {
+  const scaleX = outWidth / crop.w;
+  const scaleY = outHeight / crop.h;
+  return { dx: -crop.x * scaleX, dy: -crop.y * scaleY, dw: sourceWidth * scaleX, dh: sourceHeight * scaleY };
+}
+
 /** Moves the crop window by a drag expressed in *source* pixels (the video
  * follows the finger, so the window moves the opposite way). */
 export function panBy(sourceWidth: number, sourceHeight: number, r: Reframe, dxSource: number, dySource: number): Reframe {

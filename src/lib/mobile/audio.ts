@@ -23,14 +23,19 @@ const WEB_AUDIO_MAX_BYTES = 120 * 1024 * 1024;
 
 export interface SourceAudio {
   sampleRate: number;
-  /** Planar float channels at `sampleRate` (1 or 2). */
-  channels: Float32Array[];
+  /** Planar float channels at `sampleRate` (1 or 2), for the real-time
+   * exporter. Null when the audio was stream-decoded with WebCodecs: only
+   * the speech track is kept then (the fast exporter copies the original
+   * audio itself), which saves a lot of memory on a phone. */
+  channels: Float32Array[] | null;
   /** Mono 16 kHz, what Whisper expects. */
   speech: Float32Array;
-  source: "webaudio" | "ffmpeg";
+  source: "webcodecs" | "webaudio" | "ffmpeg";
 }
 
-export type AudioStrategy = "auto" | "ffmpeg";
+/** "auto" tries WebCodecs, then Web Audio, then ffmpeg. The others force
+ * one path (each still falls through to ffmpeg), for testing. */
+export type AudioStrategy = "auto" | "webcodecs" | "webaudio" | "ffmpeg";
 
 export function isIOS(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -57,6 +62,96 @@ export function resampleLinear(input: Float32Array, from: number, to: number): F
     out[i] = input[i0] * (1 - frac) + input[i1] * frac;
   }
   return out;
+}
+
+/**
+ * Mono linear resampler that accepts audio in chunks, so a long clip can be
+ * decoded and downsampled as a stream instead of buffering the whole track
+ * at its native rate first.
+ */
+export class MonoResampler {
+  private readonly ratio: number;
+  /** Position of the next output sample, relative to the start of the next chunk (−1 = the previous chunk's last sample). */
+  private offset = 0;
+  private prev = 0;
+  private parts: Float32Array[] = [];
+  length = 0;
+
+  constructor(from: number, to: number) {
+    this.ratio = from / to;
+  }
+
+  push(input: Float32Array) {
+    const n = input.length;
+    if (n === 0) return;
+    const out = new Float32Array(Math.ceil((n - this.offset) / this.ratio) + 2);
+    let k = 0;
+    let p = this.offset;
+    for (;;) {
+      const i0 = Math.floor(p);
+      const frac = p - i0;
+      if (i0 > n - 1 || (i0 === n - 1 && frac > 0)) break; // needs the next chunk
+      const a = i0 < 0 ? this.prev : input[i0];
+      const b = frac === 0 ? a : input[i0 + 1];
+      out[k++] = a + (b - a) * frac;
+      p += this.ratio;
+    }
+    this.prev = input[n - 1];
+    this.offset = p - n;
+    this.parts.push(out.subarray(0, k));
+    this.length += k;
+  }
+
+  finish(): Float32Array {
+    const all = new Float32Array(this.length);
+    let at = 0;
+    for (const part of this.parts) {
+      all.set(part, at);
+      at += part.length;
+    }
+    this.parts = [];
+    return all;
+  }
+}
+
+/** Decodes the audio track with WebCodecs (via Mediabunny's demuxer) as a
+ * stream: no whole-file ArrayBuffer, no ffmpeg download. Safari 26+ and
+ * Chromium have AudioDecoder; older Safari falls through. */
+async function viaWebCodecs(file: Blob, onStatus?: (m: string) => void): Promise<{ speech: Float32Array } | { error: string }> {
+  if (typeof AudioDecoder === "undefined") return { error: "no AudioDecoder in this browser" };
+  let stage = "opening the file";
+  try {
+    const mb = await import("mediabunny");
+    const input = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS });
+    try {
+      const track = await input.getPrimaryAudioTrack();
+      if (!track) return { error: "no audio track" };
+      if (!(await track.canDecode())) return { error: `can't decode ${track.codec ?? "this audio"}` };
+      stage = "decoding audio";
+      onStatus?.("Reading audio");
+      const duration = await input.computeDuration([track]).catch(() => 0);
+      const sink = new mb.AudioBufferSink(track);
+      let resampler: MonoResampler | null = null;
+      let lastPct = -1;
+      for await (const { buffer, timestamp } of sink.buffers()) {
+        resampler ??= new MonoResampler(buffer.sampleRate, SPEECH_RATE);
+        const chans: Float32Array[] = [];
+        for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
+        resampler.push(mixDown(chans));
+        const pct = duration > 0 ? Math.min(99, Math.floor((timestamp / duration) * 100)) : -1;
+        if (pct >= 0 && pct !== lastPct && pct % 5 === 0) {
+          lastPct = pct;
+          onStatus?.(`Reading audio · ${pct}%`);
+        }
+      }
+      if (!resampler || resampler.length === 0) return { error: "decoded zero samples" };
+      return { speech: resampler.finish() };
+    } finally {
+      input.dispose();
+    }
+  } catch (e) {
+    return { error: `${stage}: ${describe(e)}` };
+  }
 }
 
 function describe(e: unknown): string {
@@ -153,11 +248,17 @@ async function viaFfmpeg(file: Blob, onStatus?: (m: string) => void): Promise<At
   }
 }
 
-/** Both extraction paths failed; `message` carries each path's reason. */
+/** Every extraction path failed; `message` carries each path's reason. */
 export class AudioExtractError extends Error {
-  constructor(public readonly reasons: { webaudio?: string; ffmpeg?: string }) {
+  constructor(public readonly reasons: { webcodecs?: string; webaudio?: string; ffmpeg?: string }) {
     super(
-      [reasons.webaudio && `Web Audio — ${reasons.webaudio}`, reasons.ffmpeg && `ffmpeg — ${reasons.ffmpeg}`].filter(Boolean).join(" · "),
+      [
+        reasons.webcodecs && `WebCodecs — ${reasons.webcodecs}`,
+        reasons.webaudio && `Web Audio — ${reasons.webaudio}`,
+        reasons.ffmpeg && `ffmpeg — ${reasons.ffmpeg}`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
     );
     this.name = "AudioExtractError";
   }
@@ -167,16 +268,25 @@ export async function extractAudio(
   file: Blob,
   opts: { strategy?: AudioStrategy; onStatus?: (message: string) => void } = {},
 ): Promise<SourceAudio> {
-  const reasons: { webaudio?: string; ffmpeg?: string } = {};
+  const strategy = opts.strategy ?? "auto";
+  const reasons: { webcodecs?: string; webaudio?: string; ffmpeg?: string } = {};
+
+  if (strategy === "auto" || strategy === "webcodecs") {
+    const r = await viaWebCodecs(file, opts.onStatus);
+    if ("speech" in r) return { sampleRate: EXPORT_RATE, channels: null, speech: r.speech, source: "webcodecs" };
+    reasons.webcodecs = r.error;
+  }
+
   let channels: Float32Array[] | null = null;
   let source: SourceAudio["source"] = "webaudio";
-  const tryWebAudio = opts.strategy !== "ffmpeg" && !isIOS() && file.size <= WEB_AUDIO_MAX_BYTES;
-  if (tryWebAudio) {
-    const r = await viaWebAudio(file);
-    if ("channels" in r) channels = r.channels;
-    else reasons.webaudio = r.error;
-  } else if (opts.strategy !== "ffmpeg") {
-    reasons.webaudio = isIOS() ? "skipped on iOS" : "skipped (file over 120 MB)";
+  if (strategy === "auto" || strategy === "webaudio") {
+    if (!isIOS() && file.size <= WEB_AUDIO_MAX_BYTES) {
+      const r = await viaWebAudio(file);
+      if ("channels" in r) channels = r.channels;
+      else reasons.webaudio = r.error;
+    } else {
+      reasons.webaudio = isIOS() ? "skipped on iOS" : "skipped (file over 120 MB)";
+    }
   }
   if (!channels) {
     const r = await viaFfmpeg(file, opts.onStatus);

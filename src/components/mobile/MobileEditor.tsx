@@ -46,6 +46,7 @@ import { drawCue } from "@/lib/captions/renderer";
 import { ensureFontsLoaded, fontFamily } from "@/lib/captions/fonts";
 import { defaultSubtitleStyle, type CaptionCue, type SubtitleStyle, type WordTiming } from "@/lib/models/project";
 import { checkLiteSupport, exportCaptionedVideo, type LiteExportResult, type LiteProgress, type LiteSupport } from "@/lib/mobile/exportLite";
+import { fastExportCaptionedVideo } from "@/lib/mobile/fastExport";
 import { acquireWakeLock, canShareFiles, saveVideo } from "@/lib/mobile/share";
 import { probeVideo } from "@/lib/media/probe";
 import { aspectOf, cropRect, DEFAULT_REFRAME, FRAME_FORMATS, MAX_ZOOM, outputFrame, panBy, withZoom, type Reframe } from "@/lib/mobile/reframe";
@@ -274,7 +275,8 @@ export function MobileEditor() {
         throw new Error(`This clip is ${fmtTime(info.duration)} long. On a phone, keep it under 15 minutes — trim it in Photos first.`);
       }
       // `?audio=ffmpeg` forces the iOS fallback path, for testing it elsewhere.
-      const strategy: AudioStrategy = new URLSearchParams(window.location.search).get("audio") === "ffmpeg" ? "ffmpeg" : "auto";
+      const audioParam = new URLSearchParams(window.location.search).get("audio");
+      const strategy: AudioStrategy = audioParam === "ffmpeg" || audioParam === "webcodecs" || audioParam === "webaudio" ? audioParam : "auto";
       const decoded = await extractAudio(picked, {
         strategy,
         onStatus: (m) => {
@@ -351,19 +353,48 @@ export function MobileEditor() {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const streaming = duration > LONG_SECONDS || new URLSearchParams(window.location.search).get("stream") === "1";
-      const out = await exportCaptionedVideo({
-        file,
-        audio: sourceAudio,
-        streaming,
-        reframe,
-        cues,
-        style,
-        video: exportVideoRef.current,
-        canvas: exportCanvasRef.current,
-        signal: controller.signal,
-        onProgress: (p: LiteProgress) => setStatus({ message: p.message, progress: p.progress }),
-      });
+      const params = new URLSearchParams(window.location.search);
+      const streaming = duration > LONG_SECONDS || params.get("stream") === "1";
+      const engine = params.get("export"); // "fast" | "realtime" force one path (testing)
+      const onProgress = (p: LiteProgress) => setStatus({ message: p.message, progress: p.progress });
+      let out: LiteExportResult | null = null;
+
+      // Fast path: decode the file directly and render many times faster
+      // than real time. Anything it can't handle falls back to playing
+      // the clip through once and capturing it.
+      if (engine !== "realtime") {
+        try {
+          out = await fastExportCaptionedVideo({
+            file,
+            streaming,
+            reframe,
+            cues,
+            style,
+            canvas: exportCanvasRef.current,
+            signal: controller.signal,
+            onProgress,
+          });
+        } catch (e) {
+          if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) throw e;
+          if (engine === "fast") throw e;
+          console.warn("[nocap mobile] fast export unavailable, using real-time export", e);
+          setStatus({ message: "Switching to compatibility export", progress: null });
+        }
+      }
+      if (!out) {
+        out = await exportCaptionedVideo({
+          file,
+          audio: sourceAudio?.channels ? { sampleRate: sourceAudio.sampleRate, channels: sourceAudio.channels } : undefined,
+          streaming,
+          reframe,
+          cues,
+          style,
+          video: exportVideoRef.current,
+          canvas: exportCanvasRef.current,
+          signal: controller.signal,
+          onProgress,
+        });
+      }
       setResult(out);
       setStep("done");
     } catch (e) {
@@ -482,7 +513,7 @@ export function MobileEditor() {
               <StatusLine status={status} />
             </div>
           </div>
-          <p className="mt-3 text-center text-[12px] text-label-2">Rendering in real time on your phone — about as long as the clip. Keep the app open.</p>
+          <p className="mt-3 text-center text-[12px] text-label-2">Rendering on your phone. Keep the app open until it finishes.</p>
           <div className="flex-1" />
           <ActionBar>
             <SecondaryButton className="w-full" onClick={() => abortRef.current?.abort()}>
@@ -1199,7 +1230,7 @@ function DoneScreen({
         <video src={`${resultUrl}#t=0.1`} controls playsInline preload="auto" className="block max-h-[56dvh] w-full bg-black object-contain" />
       </div>
       <div className="mt-3 flex items-center justify-center gap-2 text-[12px] text-label-2">
-        <span className="inline-flex items-center gap-1 rounded-full bg-sys-green/15 px-2 py-0.5 font-medium text-sys-green"><Check size={12} /> Ready</span>
+        <span data-export-engine={result.engine} className="inline-flex items-center gap-1 rounded-full bg-sys-green/15 px-2 py-0.5 font-medium text-sys-green"><Check size={12} /> Ready</span>
         <span>{result.width}×{result.height}</span>
         <span>·</span>
         <span>{fmtTime(result.seconds)}</span>
