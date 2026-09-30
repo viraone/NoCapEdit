@@ -198,6 +198,83 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
 }
 
 // ---------------------------------------------------------------------------
+// TEMP — export timer for on-device testing. Starts when Export is tapped,
+// stays pinned on screen, logs each stage. To remove: delete this block,
+// the `timing` state and its updates in MobileEditor, and <ExportTimer />.
+
+interface ExportTiming {
+  startedAt: number;
+  endedAt: number | null;
+  /** Stage changes, in order, each stamped with performance.now(). */
+  marks: { label: string; at: number }[];
+  outcome: "running" | "done" | "stopped" | "failed";
+  engine: string | null;
+  clipSeconds: number;
+}
+
+function fmtElapsed(ms: number): string {
+  const total = Math.max(0, ms) / 1000;
+  const m = Math.floor(total / 60);
+  const sec = total - m * 60;
+  return `${m}:${sec.toFixed(1).padStart(4, "0")}`;
+}
+
+function ExportTimer({ timing }: { timing: ExportTiming }) {
+  const [now, setNow] = useState(timing.startedAt);
+  const [open, setOpen] = useState(true);
+  const running = timing.endedAt === null;
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => setNow(performance.now()), 100);
+    return () => window.clearInterval(id);
+  }, [running]);
+
+  const end = timing.endedAt ?? Math.max(now, timing.startedAt);
+  const elapsed = end - timing.startedAt;
+  const speed = timing.outcome === "done" && elapsed > 0 && timing.clipSeconds > 0 ? timing.clipSeconds / (elapsed / 1000) : null;
+  const tone =
+    timing.outcome === "done" ? "border-sys-green/40 text-sys-green" : timing.outcome === "running" ? "border-brand-400/50 text-white" : "border-sys-orange/40 text-sys-orange";
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.75rem)] z-40 flex justify-center px-4" data-export-timer>
+      <div className={cx("pointer-events-auto w-full max-w-[448px] rounded-2xl border bg-black/85 px-3 py-2 font-mono text-[12px] shadow-xl backdrop-blur", tone)}>
+        <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 text-left">
+          <span className="flex items-center gap-2">
+            <span className={cx("h-2 w-2 rounded-full", running ? "animate-pulse bg-brand-400" : timing.outcome === "done" ? "bg-sys-green" : "bg-sys-orange")} />
+            <span className="text-[15px] font-semibold tabular-nums" data-export-elapsed>{fmtElapsed(elapsed)}</span>
+            <span className="text-label-2">
+              {running ? timing.marks[timing.marks.length - 1]?.label ?? "Starting" : timing.outcome === "done" ? "Export finished" : timing.outcome === "stopped" ? "Stopped" : "Failed"}
+            </span>
+          </span>
+          <span className="shrink-0 text-label-3">{open ? "hide" : "log"}</span>
+        </button>
+        {open && (
+          <div className="mt-1.5 space-y-0.5 border-t border-white/10 pt-1.5 text-[11px] text-label-2">
+            {timing.marks.map((m, i) => {
+              const next = timing.marks[i + 1]?.at ?? end;
+              return (
+                <div key={`${m.label}-${m.at}`} className="flex justify-between gap-3 tabular-nums">
+                  <span className="truncate">{m.label}</span>
+                  <span>{fmtElapsed(next - m.at)}</span>
+                </div>
+              );
+            })}
+            {!running && (
+              <div className="flex justify-between gap-3 border-t border-white/10 pt-1 tabular-nums text-white">
+                <span>
+                  {timing.engine ? `${timing.engine} engine` : "total"} · clip {fmtTime(timing.clipSeconds)}
+                </span>
+                <span>{speed ? `${speed.toFixed(1)}× real time` : fmtElapsed(elapsed)}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 export function MobileEditor() {
   const [step, setStep] = useState<Step>("pick");
@@ -216,6 +293,7 @@ export function MobileEditor() {
   const [result, setResult] = useState<LiteExportResult | null>(null);
   const [saved, setSaved] = useState<"shared" | "downloaded" | null>(null);
   const restartedDuring = useSyncExternalStore(noopSubscribe, readInflight, () => null);
+  const [timing, setTiming] = useState<ExportTiming | null>(null); // TEMP: export timer
   const abortRef = useRef<AbortController | null>(null);
   const exportVideoRef = useRef<HTMLVideoElement>(null);
   const exportCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -254,6 +332,7 @@ export function MobileEditor() {
     setResult(null);
     setSaved(null);
     setError(null);
+    setTiming(null);
   };
 
   async function analyse(picked: File) {
@@ -349,6 +428,20 @@ export function MobileEditor() {
     setStep("exporting");
     markInflight("exporting");
     setStatus({ message: "Preparing", progress: null });
+    // TEMP: export timer — the clock starts on the tap.
+    const startedAt = performance.now();
+    let lastStage = "Preparing";
+    setTiming({ startedAt, endedAt: null, marks: [{ label: lastStage, at: startedAt }], outcome: "running", engine: null, clipSeconds: duration });
+    const mark = (label: string) => {
+      if (label === lastStage) return;
+      lastStage = label;
+      const at = performance.now();
+      setTiming((t) => (t ? { ...t, marks: [...t.marks, { label, at }] } : t));
+    };
+    const finishTiming = (outcome: ExportTiming["outcome"], engineUsed: string | null) => {
+      const at = performance.now();
+      setTiming((t) => (t ? { ...t, endedAt: at, outcome, engine: engineUsed } : t));
+    };
     const releaseLock = await acquireWakeLock();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -356,7 +449,10 @@ export function MobileEditor() {
       const params = new URLSearchParams(window.location.search);
       const streaming = duration > LONG_SECONDS || params.get("stream") === "1";
       const engine = params.get("export"); // "fast" | "realtime" force one path (testing)
-      const onProgress = (p: LiteProgress) => setStatus({ message: p.message, progress: p.progress });
+      const onProgress = (p: LiteProgress) => {
+        mark(p.message);
+        setStatus({ message: p.message, progress: p.progress });
+      };
       let out: LiteExportResult | null = null;
 
       // Fast path: decode the file directly and render many times faster
@@ -378,6 +474,7 @@ export function MobileEditor() {
           if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) throw e;
           if (engine === "fast") throw e;
           console.warn("[nocap mobile] fast export unavailable, using real-time export", e);
+          mark(`Fallback to real-time (${e instanceof Error ? e.message.slice(0, 60) : "error"})`);
           setStatus({ message: "Switching to compatibility export", progress: null });
         }
       }
@@ -395,14 +492,17 @@ export function MobileEditor() {
           onProgress,
         });
       }
+      finishTiming("done", out.engine);
       setResult(out);
       setStep("done");
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") {
+        finishTiming("stopped", null);
         setStep("style");
         return;
       }
       console.error("[nocap mobile] export failed", e);
+      finishTiming("failed", null);
       setError({ message: e instanceof Error ? e.message : String(e) });
       setStep("style");
     } finally {
@@ -449,6 +549,8 @@ export function MobileEditor() {
           )}
         </div>
       </header>
+
+      {timing && <ExportTimer timing={timing} />}
 
       <main className="flex flex-1 flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {error && (

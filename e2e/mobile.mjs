@@ -137,7 +137,9 @@ try {
   await page.screenshot({ path: join(outDir, "mobile-5-done.png") });
   const summary = await page.getByText(/\d+(\.\d+)? MB/).first().innerText();
   const engineUsed = await page.locator("[data-export-engine]").getAttribute("data-export-engine");
+  const timerText = await page.locator("[data-export-timer]").innerText().catch(() => "");
   console.log("result:", summary, "· engine:", engineUsed);
+  if (timerText) console.log("timer:", timerText.replace(/\s*\n\s*/g, " | "));
   if (process.env.EXPORT && engineUsed !== process.env.EXPORT) throw new Error(`Expected the ${process.env.EXPORT} exporter, got ${engineUsed}`);
 
   const outFile = join(outDir, `mobile-export-${engine === chromium ? "chromium" : "webkit"}.mp4`);
