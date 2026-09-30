@@ -234,10 +234,40 @@ describe("findAiHighlights", () => {
       expect(geminiRequestBody("sys", "usr").generationConfig).toMatchObject({ responseMimeType: "application/json" });
     });
 
+  });
+
+  describe("xAI provider", () => {
+    const grok: AiSettings = { ...settings, provider: "xai", xaiKey: "xai-test", xaiModel: "grok-4" };
+    const answer = (content: string) => new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+
+    it("posts the transcript to api.x.ai as an OpenAI-style chat completion with the user's key", async () => {
+      const fetchMock = vi.fn(async () => answer(JSON.stringify({ clips: [clip(1, 4, 6, { title: "Best bit" })] })));
+      vi.stubGlobal("fetch", fetchMock);
+      const progress: string[] = [];
+      const out = await findAiHighlights(cues, { settings: grok, ...opts, onProgress: (m) => progress.push(m) });
+      expect(out[0]).toMatchObject({ start: 5, end: 25, title: "Best bit", score: 6 });
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("https://api.x.ai/v1/chat/completions");
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer xai-test");
+      const body = JSON.parse(String(init.body));
+      expect(body.model).toBe("grok-4");
+      expect(body.response_format.type).toBe("json_schema");
+      expect(progress[0]).toContain("grok-4 at api.x.ai");
+    });
+
+    it("names xAI in errors and ignores the OpenAI-compatible key", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })));
+      await expect(findAiHighlights(cues, { settings: grok, ...opts })).rejects.toThrow(/xAI rejected the API key \(401\)/);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 429 })));
+      await expect(findAiHighlights(cues, { settings: grok, ...opts })).rejects.toThrow(/xAI is rate-limiting/);
+      vi.stubGlobal("fetch", vi.fn());
+      await expect(findAiHighlights(cues, { settings: { ...grok, xaiKey: "", apiKey: "sk-other" }, ...opts })).rejects.toThrow(/Add your xAI API key/);
+    });
+
     it("never touches the cloud when Ollama is the provider", async () => {
       const fetchMock = vi.fn(async () => ollamaStream(JSON.stringify({ clips: [clip(1, 4, 8)] })));
       vi.stubGlobal("fetch", fetchMock);
-      await findAiHighlights(cues, { settings: { ...gem, provider: "ollama", apiKey: "sk-test", anthropicKey: "sk-ant-test" }, ...opts });
+      await findAiHighlights(cues, { settings: { ...grok, provider: "ollama", apiKey: "sk-test", anthropicKey: "sk-ant-test", geminiKey: "AIza-test" }, ...opts });
       expect(String((fetchMock.mock.calls[0] as unknown as [string])[0])).toBe("http://localhost:11434/api/chat");
     });
   });
@@ -283,6 +313,10 @@ describe("AI settings", () => {
     const g = loadAiSettings();
     expect(g).toMatchObject({ provider: "gemini", geminiKey: "AIza-x", geminiModel: "gemini-2.5-flash", model: "qwen3.8:27b" });
     expect(activeModel(g)).toBe("gemini-2.5-flash");
+    store.set("reelflow.ai", JSON.stringify({ provider: "xai", xaiKey: "xai-x" }));
+    const x = loadAiSettings();
+    expect(x).toMatchObject({ provider: "xai", xaiKey: "xai-x", xaiModel: "grok-4", model: "qwen3.8:27b" });
+    expect(activeModel(x)).toBe("grok-4");
   });
 
   it("parses plain, fenced and broken answers", () => {

@@ -10,7 +10,7 @@
 import type { CaptionCue } from "@/lib/models/project";
 import { sentencesFromCues, type Highlight, type Sentence } from "./highlights";
 
-export type AiProvider = "ollama" | "openai" | "anthropic" | "gemini";
+export type AiProvider = "ollama" | "openai" | "anthropic" | "gemini" | "xai";
 
 export interface AiSettings {
   /** Where the model runs: Ollama on this computer (default, private) or an OpenAI-compatible HTTP API. */
@@ -33,6 +33,10 @@ export interface AiSettings {
   geminiKey: string;
   /** Gemini model id, e.g. gemini-2.5-flash. */
   geminiModel: string;
+  /** The user's xAI key; kept in this browser only. */
+  xaiKey: string;
+  /** Grok model id, e.g. grok-4. */
+  xaiModel: string;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -46,7 +50,10 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   anthropicModel: "claude-sonnet-5-5",
   geminiKey: "",
   geminiModel: "gemini-2.5-flash",
+  xaiKey: "",
+  xaiModel: "grok-4",
 };
+export const XAI_API = "https://api.x.ai/v1";
 export const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
 export const ANTHROPIC_API = "https://api.anthropic.com/v1";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -59,7 +66,7 @@ export function loadAiSettings(): AiSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const parsed = raw ? (JSON.parse(raw) as Partial<AiSettings>) : {};
     return {
-      provider: parsed.provider === "openai" || parsed.provider === "anthropic" || parsed.provider === "gemini" ? parsed.provider : "ollama",
+      provider: parsed.provider === "openai" || parsed.provider === "anthropic" || parsed.provider === "gemini" || parsed.provider === "xai" ? parsed.provider : "ollama",
       endpoint: str(parsed.endpoint, DEFAULT_AI_SETTINGS.endpoint),
       model: str(parsed.model, DEFAULT_AI_SETTINGS.model),
       apiBase: str(parsed.apiBase, DEFAULT_AI_SETTINGS.apiBase).replace(/\/+$/, ""),
@@ -69,6 +76,8 @@ export function loadAiSettings(): AiSettings {
       anthropicModel: str(parsed.anthropicModel, DEFAULT_AI_SETTINGS.anthropicModel),
       geminiKey: typeof parsed.geminiKey === "string" ? parsed.geminiKey.trim() : "",
       geminiModel: str(parsed.geminiModel, DEFAULT_AI_SETTINGS.geminiModel),
+      xaiKey: typeof parsed.xaiKey === "string" ? parsed.xaiKey.trim() : "",
+      xaiModel: str(parsed.xaiModel, DEFAULT_AI_SETTINGS.xaiModel),
     };
   } catch {
     return { ...DEFAULT_AI_SETTINGS };
@@ -84,6 +93,8 @@ export function activeModel(s: AiSettings): string {
       return s.anthropicModel;
     case "gemini":
       return s.geminiModel;
+    case "xai":
+      return s.xaiModel;
     default:
       return s.model;
   }
@@ -278,10 +289,18 @@ export function openAiRequestBody(model: string, system: string, user: string, m
   };
 }
 
+interface OpenAiCompatibleTarget {
+  apiBase: string;
+  apiKey: string;
+  apiModel: string;
+  /** How errors name the service, e.g. "The API" or "xAI". */
+  label: string;
+}
+
 /** Sends the transcript to an OpenAI-compatible API with the user's own key. The transcript (not the video) leaves the device. */
-async function findViaOpenAi(system: string, user: string, opts: FindAiOptions): Promise<AiClip[]> {
-  const { apiBase, apiKey, apiModel } = opts.settings;
-  if (!apiKey) throw new Error("Add your API key in the Model section first.");
+async function findViaOpenAiCompatible(system: string, user: string, opts: FindAiOptions, target: OpenAiCompatibleTarget): Promise<AiClip[]> {
+  const { apiBase, apiKey, apiModel, label } = target;
+  if (!apiKey) throw new Error(label === "The API" ? "Add your API key in the Model section first." : `Add your ${label} API key in the Model section first.`);
   const base = apiBase.replace(/\/+$/, "");
   const call = async (mode: "json_schema" | "json_object") => {
     let res: Response;
@@ -304,20 +323,30 @@ async function findViaOpenAi(system: string, user: string, opts: FindAiOptions):
     // Providers without structured outputs: ask for a plain JSON object instead.
     const text = await res.text().catch(() => "");
     if (/response_format|json_schema/i.test(text)) res = await call("json_object");
-    else throw new Error(`The API rejected the request (400)${text ? `: ${text.slice(0, 200)}` : ""}`);
+    else throw new Error(`${label} rejected the request (400)${text ? `: ${text.slice(0, 200)}` : ""}`);
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    if (res.status === 401) throw new Error("The API key was rejected (401). Check it in the Model section.");
+    if (res.status === 401) throw new Error(`${label === "The API" ? "The API key was rejected" : `${label} rejected the API key`} (401). Check it in the Model section.`);
     if (res.status === 404) throw new Error(`The model "${apiModel}" wasn't found at ${base} (404). Pick one from the list.`);
-    if (res.status === 429) throw new Error("The API is rate-limiting or out of quota (429). Try again in a minute.");
-    throw new Error(`The API returned ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+    if (res.status === 429) throw new Error(`${label} is rate-limiting or out of quota (429). Try again in a minute.`);
+    throw new Error(`${label} returned ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
   }
   opts.onProgress?.(`${apiModel} is choosing clips`);
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const content = data.choices?.[0]?.message?.content ?? "";
   return parseClips(content);
 }
+
+const findViaOpenAi = (system: string, user: string, opts: FindAiOptions) =>
+  findViaOpenAiCompatible(system, user, opts, { apiBase: opts.settings.apiBase, apiKey: opts.settings.apiKey, apiModel: opts.settings.apiModel, label: "The API" });
+
+/** xAI's API is OpenAI-compatible, so Grok takes the same path with a fixed base URL. */
+const findViaXai = (system: string, user: string, opts: FindAiOptions) =>
+  findViaOpenAiCompatible(system, user, opts, { apiBase: XAI_API, apiKey: opts.settings.xaiKey, apiModel: opts.settings.xaiModel, label: "xAI" });
+
+/** Grok model ids this key can use (GET /v1/models at api.x.ai). */
+export const listXaiModels = (apiKey: string, signal?: AbortSignal) => listOpenAiModels(XAI_API, apiKey, signal);
 
 /** Model ids an OpenAI-compatible API offers for this key (GET /models). */
 export async function listOpenAiModels(apiBase: string, apiKey: string, signal?: AbortSignal): Promise<string[]> {
@@ -483,6 +512,7 @@ export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions):
   if (opts.settings.provider === "openai") return clipsToHighlights(await findViaOpenAi(system, user, opts), sentences, opts);
   if (opts.settings.provider === "anthropic") return clipsToHighlights(await findViaAnthropic(system, user, opts), sentences, opts);
   if (opts.settings.provider === "gemini") return clipsToHighlights(await findViaGemini(system, user, opts), sentences, opts);
+  if (opts.settings.provider === "xai") return clipsToHighlights(await findViaXai(system, user, opts), sentences, opts);
   const endpoint = opts.settings.endpoint.replace(/\/+$/, "");
   const model = opts.settings.model;
   opts.onProgress?.(`Sending the transcript to ${model}`);
