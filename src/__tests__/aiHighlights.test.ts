@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activeModel, anthropicRequestBody, buildAiPrompt, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, isCloudProvider, loadAiSettings, openAiRequestBody, parseAnthropicClips, parseClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
+import { activeModel, anthropicRequestBody, buildAiPrompt, geminiRequestBody, parseGeminiClips, toGeminiSchema, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, isCloudProvider, loadAiSettings, openAiRequestBody, parseAnthropicClips, parseClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
 import type { Sentence } from "@/lib/edit/highlights";
 import type { CaptionCue } from "@/lib/models/project";
 
@@ -193,10 +193,51 @@ describe("findAiHighlights", () => {
       expect(anthropicRequestBody("m", "sys", "usr").max_tokens).toBe(4096);
     });
 
+  });
+
+  describe("Gemini provider", () => {
+    const gem: AiSettings = { ...settings, provider: "gemini", geminiKey: "AIza-test", geminiModel: "gemini-2.5-flash" };
+    const answer = (text: string, status = 200) => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }] }), { status });
+
+    it("posts the transcript to generateContent with a JSON response schema and the user's key", async () => {
+      const fetchMock = vi.fn(async () => answer(JSON.stringify({ clips: [clip(1, 4, 7, { title: "Best bit" })] })));
+      vi.stubGlobal("fetch", fetchMock);
+      const progress: string[] = [];
+      const out = await findAiHighlights(cues, { settings: gem, ...opts, onProgress: (m) => progress.push(m) });
+      expect(out[0]).toMatchObject({ start: 5, end: 25, title: "Best bit", score: 7 });
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent");
+      expect((init.headers as Record<string, string>)["x-goog-api-key"]).toBe("AIza-test");
+      const body = JSON.parse(String(init.body));
+      expect(body.systemInstruction.parts[0].text).toContain("clips");
+      expect(body.contents[0].parts[0].text).toContain("[3] 15.0-20.0 Sentence 3.");
+      expect(body.generationConfig.responseMimeType).toBe("application/json");
+      expect(body.generationConfig.responseSchema.type).toBe("OBJECT");
+      expect(body.generationConfig.responseSchema.properties.clips.items.properties.score.type).toBe("INTEGER");
+      expect(body.generationConfig.responseSchema.required).toEqual(["clips"]);
+      expect(progress[0]).toContain("gemini-2.5-flash");
+    });
+
+    it("converts the schema, reads blocked or truncated answers, and explains errors", async () => {
+      expect(toGeminiSchema({ type: "object", additionalProperties: false, properties: { a: { type: "array", items: { type: "string" } } } })).toEqual({ type: "OBJECT", properties: { a: { type: "ARRAY", items: { type: "STRING" } } } });
+      expect(() => parseGeminiClips({ promptFeedback: { blockReason: "SAFETY" } })).toThrow(/declined/);
+      expect(() => parseGeminiClips({ candidates: [{ finishReason: "MAX_TOKENS" }] })).toThrow(/stopped early/);
+      expect(parseGeminiClips({ candidates: [{ content: { parts: [{ text: '{"clips":' }, { text: "[]}" }] } }] })).toEqual([]);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}', { status: 400 })));
+      await expect(findAiHighlights(cues, { settings: gem, ...opts })).rejects.toThrow(/rejected the API key/);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":{"code":404,"message":"models/nope is not found"}}', { status: 404 })));
+      await expect(findAiHighlights(cues, { settings: { ...gem, geminiModel: "nope" }, ...opts })).rejects.toThrow(/"nope" wasn't found/);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":{"code":429,"message":"quota"}}', { status: 429 })));
+      await expect(findAiHighlights(cues, { settings: gem, ...opts })).rejects.toThrow(/429/);
+      vi.stubGlobal("fetch", vi.fn());
+      await expect(findAiHighlights(cues, { settings: { ...gem, geminiKey: "" }, ...opts })).rejects.toThrow(/Google AI Studio API key/);
+      expect(geminiRequestBody("sys", "usr").generationConfig).toMatchObject({ responseMimeType: "application/json" });
+    });
+
     it("never touches the cloud when Ollama is the provider", async () => {
       const fetchMock = vi.fn(async () => ollamaStream(JSON.stringify({ clips: [clip(1, 4, 8)] })));
       vi.stubGlobal("fetch", fetchMock);
-      await findAiHighlights(cues, { settings: { ...claude, provider: "ollama", apiKey: "sk-test" }, ...opts });
+      await findAiHighlights(cues, { settings: { ...gem, provider: "ollama", apiKey: "sk-test", anthropicKey: "sk-ant-test" }, ...opts });
       expect(String((fetchMock.mock.calls[0] as unknown as [string])[0])).toBe("http://localhost:11434/api/chat");
     });
   });
@@ -238,6 +279,10 @@ describe("AI settings", () => {
     const a = loadAiSettings();
     expect(a).toMatchObject({ provider: "anthropic", anthropicKey: "sk-ant-x", anthropicModel: "claude-sonnet-5-5", model: "qwen3.8:27b" });
     expect(activeModel(a)).toBe("claude-sonnet-5-5");
+    store.set("reelflow.ai", JSON.stringify({ provider: "gemini", geminiKey: "AIza-x" }));
+    const g = loadAiSettings();
+    expect(g).toMatchObject({ provider: "gemini", geminiKey: "AIza-x", geminiModel: "gemini-2.5-flash", model: "qwen3.8:27b" });
+    expect(activeModel(g)).toBe("gemini-2.5-flash");
   });
 
   it("parses plain, fenced and broken answers", () => {

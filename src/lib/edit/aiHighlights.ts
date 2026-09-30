@@ -10,7 +10,7 @@
 import type { CaptionCue } from "@/lib/models/project";
 import { sentencesFromCues, type Highlight, type Sentence } from "./highlights";
 
-export type AiProvider = "ollama" | "openai" | "anthropic";
+export type AiProvider = "ollama" | "openai" | "anthropic" | "gemini";
 
 export interface AiSettings {
   /** Where the model runs: Ollama on this computer (default, private) or an OpenAI-compatible HTTP API. */
@@ -29,6 +29,10 @@ export interface AiSettings {
   anthropicKey: string;
   /** Claude model id, e.g. claude-sonnet-5-5. */
   anthropicModel: string;
+  /** The user's Google AI Studio key; kept in this browser only. */
+  geminiKey: string;
+  /** Gemini model id, e.g. gemini-2.5-flash. */
+  geminiModel: string;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -40,7 +44,10 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   apiModel: "gpt-4o-mini",
   anthropicKey: "",
   anthropicModel: "claude-sonnet-5-5",
+  geminiKey: "",
+  geminiModel: "gemini-2.5-flash",
 };
+export const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
 export const ANTHROPIC_API = "https://api.anthropic.com/v1";
 const ANTHROPIC_VERSION = "2023-06-01";
 const SETTINGS_KEY = "reelflow.ai";
@@ -52,7 +59,7 @@ export function loadAiSettings(): AiSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const parsed = raw ? (JSON.parse(raw) as Partial<AiSettings>) : {};
     return {
-      provider: parsed.provider === "openai" || parsed.provider === "anthropic" ? parsed.provider : "ollama",
+      provider: parsed.provider === "openai" || parsed.provider === "anthropic" || parsed.provider === "gemini" ? parsed.provider : "ollama",
       endpoint: str(parsed.endpoint, DEFAULT_AI_SETTINGS.endpoint),
       model: str(parsed.model, DEFAULT_AI_SETTINGS.model),
       apiBase: str(parsed.apiBase, DEFAULT_AI_SETTINGS.apiBase).replace(/\/+$/, ""),
@@ -60,6 +67,8 @@ export function loadAiSettings(): AiSettings {
       apiModel: str(parsed.apiModel, DEFAULT_AI_SETTINGS.apiModel),
       anthropicKey: typeof parsed.anthropicKey === "string" ? parsed.anthropicKey.trim() : "",
       anthropicModel: str(parsed.anthropicModel, DEFAULT_AI_SETTINGS.anthropicModel),
+      geminiKey: typeof parsed.geminiKey === "string" ? parsed.geminiKey.trim() : "",
+      geminiModel: str(parsed.geminiModel, DEFAULT_AI_SETTINGS.geminiModel),
     };
   } catch {
     return { ...DEFAULT_AI_SETTINGS };
@@ -68,7 +77,16 @@ export function loadAiSettings(): AiSettings {
 
 /** The model name a run will use for the chosen provider. */
 export function activeModel(s: AiSettings): string {
-  return s.provider === "openai" ? s.apiModel : s.provider === "anthropic" ? s.anthropicModel : s.model;
+  switch (s.provider) {
+    case "openai":
+      return s.apiModel;
+    case "anthropic":
+      return s.anthropicModel;
+    case "gemini":
+      return s.geminiModel;
+    default:
+      return s.model;
+  }
 }
 
 /** True when the chosen provider sends the transcript off this device. */
@@ -376,6 +394,83 @@ export async function listAnthropicModels(apiKey: string, signal?: AbortSignal):
   return (data.data ?? []).map((m) => m.id);
 }
 
+/** Gemini's response schema is an OpenAPI subset with upper-case types and no `additionalProperties`. */
+export function toGeminiSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(toGeminiSchema);
+  if (!schema || typeof schema !== "object") return schema;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(schema as Record<string, unknown>)) {
+    if (k === "additionalProperties") continue;
+    out[k] = k === "type" && typeof v === "string" ? v.toUpperCase() : toGeminiSchema(v);
+  }
+  return out;
+}
+
+/** Request body for Gemini generateContent, asking for JSON that matches the clips schema. */
+export function geminiRequestBody(system: string, user: string): Record<string, unknown> {
+  return {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json", responseSchema: toGeminiSchema(AI_CLIPS_SCHEMA) },
+  };
+}
+
+/** Pulls the clips out of a generateContent reply. */
+export function parseGeminiClips(data: { candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[]; promptFeedback?: { blockReason?: string } }): AiClip[] {
+  if (data.promptFeedback?.blockReason) throw new Error(`Gemini declined the transcript (${data.promptFeedback.blockReason}).`);
+  const cand = data.candidates?.[0];
+  const text = cand?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  if (!text && cand?.finishReason && cand.finishReason !== "STOP") throw new Error(`Gemini stopped early (${cand.finishReason}). Try again or pick another model.`);
+  return parseClips(text);
+}
+
+/** Sends the transcript to Google's Gemini API with the user's own key. The transcript (not the video) leaves the device. */
+async function findViaGemini(system: string, user: string, opts: FindAiOptions): Promise<AiClip[]> {
+  const { geminiKey, geminiModel } = opts.settings;
+  if (!geminiKey) throw new Error("Add your Google AI Studio API key in the Model section first.");
+  opts.onProgress?.(`Sending the transcript to ${geminiModel} at generativelanguage.googleapis.com`);
+  let res: Response;
+  try {
+    res = await fetch(`${GEMINI_API}/models/${encodeURIComponent(geminiModel)}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+      signal: opts.signal,
+      body: JSON.stringify(geminiRequestBody(system, user)),
+    });
+  } catch (e) {
+    if (opts.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    throw new Error("Couldn't reach generativelanguage.googleapis.com. Check your connection.", { cause: e });
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let detail = "";
+    try {
+      detail = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? "";
+    } catch {
+      detail = text.slice(0, 200);
+    }
+    if (res.status === 400 && /api key/i.test(detail)) throw new Error("Google rejected the API key. Check it in the Model section.");
+    if (res.status === 401 || res.status === 403) throw new Error(`Google refused the request (${res.status})${detail ? `: ${detail}` : ""}`);
+    if (res.status === 404) throw new Error(`The model "${geminiModel}" wasn't found (404). Pick one from the list.`);
+    if (res.status === 429) throw new Error("Gemini is rate-limiting or out of quota (429). Try again in a minute.");
+    throw new Error(`Gemini returned ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+  opts.onProgress?.(`${geminiModel} is choosing clips`);
+  return parseGeminiClips((await res.json()) as Parameters<typeof parseGeminiClips>[0]);
+}
+
+/** Gemini model ids this key can use for generateContent (GET /v1beta/models). */
+export async function listGeminiModels(apiKey: string, signal?: AbortSignal): Promise<string[]> {
+  const res = await fetch(`${GEMINI_API}/models?pageSize=200`, { headers: { "x-goog-api-key": apiKey }, signal });
+  if (!res.ok) throw new Error(res.status === 400 || res.status === 403 ? "Google rejected the API key." : `Google returned ${res.status}`);
+  const data = (await res.json()) as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
+  return (data.models ?? [])
+    .filter((m) => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes("generateContent"))
+    .map((m) => m.name.replace(/^models\//, ""))
+    .filter((id) => /^gemini/.test(id))
+    .sort();
+}
+
 /** Asks the chosen model for the best moments of the transcript. Throws readable errors. */
 export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions): Promise<Highlight[]> {
   const sentences = sentencesFromCues(cues);
@@ -387,6 +482,7 @@ export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions):
   }
   if (opts.settings.provider === "openai") return clipsToHighlights(await findViaOpenAi(system, user, opts), sentences, opts);
   if (opts.settings.provider === "anthropic") return clipsToHighlights(await findViaAnthropic(system, user, opts), sentences, opts);
+  if (opts.settings.provider === "gemini") return clipsToHighlights(await findViaGemini(system, user, opts), sentences, opts);
   const endpoint = opts.settings.endpoint.replace(/\/+$/, "");
   const model = opts.settings.model;
   opts.onProgress?.(`Sending the transcript to ${model}`);

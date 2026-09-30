@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { DEFAULT_AI_SETTINGS, listAnthropicModels, listOllamaModels, listOpenAiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
+import { DEFAULT_AI_SETTINGS, listAnthropicModels, listGeminiModels, listOllamaModels, listOpenAiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
 import { Field, Input } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 
@@ -67,7 +67,8 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
   const cloud = useCloudModels();
   const openai = settings.provider === "openai";
   const anthropic = settings.provider === "anthropic";
-  const pickProvider = (v: string): AiProvider => (v === "openai" || v === "anthropic" ? v : "ollama");
+  const gemini = settings.provider === "gemini";
+  const pickProvider = (v: string): AiProvider => (v === "openai" || v === "anthropic" || v === "gemini" ? v : "ollama");
   const refreshLabel = (title: string, onClick: () => void) => (
     <button type="button" className="text-sys-blue hover:underline" onClick={onClick} title={title} disabled={disabled}>
       <RefreshCw size={11} className="inline" /> refresh
@@ -79,10 +80,25 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         <Select value={settings.provider} onChange={(e) => onChange({ provider: pickProvider(e.target.value) })} aria-label="AI provider" disabled={disabled}>
           <option value="ollama">Ollama on this computer</option>
           <option value="anthropic">Anthropic (Claude)</option>
+          <option value="gemini">Google (Gemini)</option>
           <option value="openai">OpenAI-compatible API</option>
         </Select>
       </Field>
-      {anthropic ? (
+      {gemini ? (
+        <>
+          <Field label="Model" right={refreshLabel("List the Gemini models this key can use", () => void cloud.refresh(() => listGeminiModels(settings.geminiKey, AbortSignal.timeout(20000)), settings.geminiKey))}>
+            <ModelPicker value={settings.geminiModel} models={cloud.models} onChange={(m) => onChange({ geminiModel: m })} placeholder={DEFAULT_AI_SETTINGS.geminiModel} disabled={disabled} />
+            {cloud.pending && <p className="mt-1 text-[11px] text-label-3">Listing models…</p>}
+            {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
+          </Field>
+          <Field label="Google AI Studio API key">
+            <Input type="password" value={settings.geminiKey} onChange={(e) => onChange({ geminiKey: e.target.value })} placeholder="AIza…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
+          </Field>
+          <p className="text-[11px] text-label-3" data-ai-disclaimer>
+            Sends the transcript (not the video) to Google under its terms and is billed to your key, which stays in this browser and is only sent to generativelanguage.googleapis.com. Get a key at aistudio.google.com. The Ollama option keeps everything on this computer.
+          </p>
+        </>
+      ) : anthropic ? (
         <>
           <Field label="Model" right={refreshLabel("List the Claude models this key can use", () => void cloud.refresh(() => listAnthropicModels(settings.anthropicKey, AbortSignal.timeout(20000)), settings.anthropicKey))}>
             <ModelPicker value={settings.anthropicModel} models={cloud.models} onChange={(m) => onChange({ anthropicModel: m })} placeholder={DEFAULT_AI_SETTINGS.anthropicModel} disabled={disabled} />
