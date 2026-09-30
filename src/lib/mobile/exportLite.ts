@@ -79,6 +79,10 @@ export interface ExportStats {
   /** Everything outside the compositing callback: decode, encode, muxing, waiting. */
   msOther: number;
   captionRenders: number;
+  /** Frames handed to the encoder as decoded, because nothing was drawn on them. */
+  passthroughFrames?: number;
+  /** WebGPU route: where the draw time went, ms per composited frame. */
+  gpu?: { submit: number; wait: number; pack: number };
 }
 
 /** decodeAudioData needs the whole file as an ArrayBuffer; past this it

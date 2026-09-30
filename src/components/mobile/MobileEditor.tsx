@@ -275,10 +275,13 @@ function ExportTimer({ timing }: { timing: ExportTiming }) {
                   {timing.stats.source} → {timing.output}
                 </div>
                 <div>
-                  per frame: draw {timing.stats.msVideo.toFixed(1)} · captions {timing.stats.msCaptions.toFixed(1)} · decode+encode {timing.stats.msOther.toFixed(1)} ms
+                  per frame: draw {timing.stats.msVideo.toFixed(1)}
+                  {timing.stats.gpu ? ` (submit ${timing.stats.gpu.submit.toFixed(1)} · wait ${timing.stats.gpu.wait.toFixed(1)} · pack ${timing.stats.gpu.pack.toFixed(1)})` : ""} · captions{" "}
+                  {timing.stats.msCaptions.toFixed(1)} · decode+encode {timing.stats.msOther.toFixed(1)} ms
                 </div>
                 <div>
-                  {timing.stats.frames} frames · {(timing.stats.frames / Math.max(0.001, elapsed / 1000)).toFixed(0)} fps · {timing.stats.captionRenders} caption renders
+                  {timing.stats.frames} frames{timing.stats.passthroughFrames ? ` (${timing.stats.passthroughFrames} untouched)` : ""} ·{" "}
+                  {(timing.stats.frames / Math.max(0.001, elapsed / 1000)).toFixed(0)} fps · {timing.stats.captionRenders} caption renders
                 </div>
               </div>
             )}
@@ -494,7 +497,7 @@ export function MobileEditor() {
             canvas: exportCanvasRef.current,
             signal: controller.signal,
             onProgress,
-            debugMode: (["passthrough", "nocaptions", "resize-only", "gl", "2d"] as FastExportDebugMode[]).find((m) => m === params.get("fx")),
+            debugMode: (["passthrough", "nocaptions", "resize-only", "gl", "2d", "rgba"] as FastExportDebugMode[]).find((m) => m === params.get("fx")),
           });
         } catch (e) {
           if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) throw e;

@@ -14,12 +14,14 @@
  * Anything it can't handle throws FastExportUnsupported so the caller can
  * fall back to the real-time exporter.
  */
+import type { VideoSample } from "mediabunny";
 import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import type { Ctx } from "@/lib/captions/renderer";
 import { CaptionLayer } from "@/lib/mobile/captionLayer";
 import { GlCompositor } from "@/lib/mobile/glCompositor";
 import { GpuCompositor } from "@/lib/mobile/gpuCompositor";
 import { BlobFileSink } from "@/lib/mobile/blobFileSink";
+import { BT709_VIDEO_RANGE, looksLikeWebKitDefault, readColorTags, sameTags, writeColorTags } from "@/lib/mobile/mp4Color";
 import { cropRect, DEFAULT_REFRAME, outputFrame, placeWholeFrame, type Reframe } from "@/lib/mobile/reframe";
 import type { ExportStats, LiteExportResult, LiteProgress } from "@/lib/mobile/exportLite";
 
@@ -50,8 +52,9 @@ export interface FastExportOptions {
    * encoder (no compositing at all) — the decode + encode floor.
    * `nocaptions`: composite through the GPU but skip captions.
    * `resize-only`: let the library resize. `gl` / `2d`: force the WebGL
-   * or 2D-canvas compositor instead of WebGPU. */
-  debugMode?: "passthrough" | "nocaptions" | "resize-only" | "gl" | "2d";
+   * or 2D-canvas compositor instead of WebGPU. `rgba`: WebGPU, but hand
+   * the encoder RGBA instead of NV12. */
+  debugMode?: "passthrough" | "nocaptions" | "resize-only" | "gl" | "2d" | "rgba";
 }
 
 export type FastExportDebugMode = NonNullable<FastExportOptions["debugMode"]>;
@@ -90,7 +93,9 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     // and a 2D canvas is the fallback everywhere else.
     let gpu: GpuCompositor | null = null;
     let gl: GlCompositor | null = null;
-    if (opts.debugMode !== "2d" && opts.debugMode !== "gl") gpu = await GpuCompositor.create(out.width, out.height);
+    if (opts.debugMode !== "2d" && opts.debugMode !== "gl") {
+      gpu = await GpuCompositor.create(out.width, out.height, opts.debugMode === "rgba" ? "RGBA" : "NV12");
+    }
     if (!gpu && opts.debugMode !== "2d" && GlCompositor.supported()) {
       try {
         gl = new GlCompositor(out.width, out.height);
@@ -146,8 +151,34 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     // encode, muxing, waiting).
     const spent = { video: 0, captions: 0, other: 0 };
     let frames = 0;
+    let passed = 0;
     let lastEnd = 0;
     let gpuVerified = false;
+    // A frame with nothing drawn on it — no caption showing, no crop, no
+    // scaling, no rotation to bake — can go to the encoder as it was
+    // decoded. Only on the NV12 route, and only when the decoded pictures
+    // are what the compositor makes (BT.709, video range), so the encoder
+    // sees one kind of frame throughout. The matrix comes from the file's
+    // tags; the range from the decoder, which is the one thing WebKit
+    // reports truthfully (it hands out full-range pictures, so there it
+    // never applies).
+    const sourceColor = await track.getColorSpace().catch(() => null);
+    const identity =
+      crop.x === 0 && crop.y === 0 && crop.w === sourceWidth && crop.h === sourceHeight && out.width === sourceWidth && out.height === sourceHeight && !hdr;
+    const sourceIsBt709 = !!sourceColor && (sourceColor.matrix ?? "bt709") === "bt709" && (sourceColor.transfer ?? "bt709") === "bt709";
+    let passable: boolean | null = identity && sourceIsBt709 ? null : false;
+    const canPass = (sample: VideoSample): boolean => {
+      if (passable === null) {
+        const vf = sample.toVideoFrame();
+        try {
+          passable = vf.format === "NV12" && vf.colorSpace?.fullRange === false;
+        } finally {
+          vf.close();
+        }
+      }
+      return passable;
+    };
+    const noLayers = { static: null, active: null, band: { top: 0, height: out.height } };
     const conversion = await mb.Conversion.init({
       input,
       output,
@@ -177,8 +208,16 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
           const noCaptions = opts.debugMode === "nocaptions";
           let t1: number;
           if (gpu) {
-            const layers = noCaptions ? { static: null, active: null, band: { top: 0, height: out.height } } : captions.update(sample.timestamp);
+            const layers = noCaptions ? noLayers : captions.update(sample.timestamp);
             t1 = performance.now();
+            if (!noCaptions && !layers.static && !layers.active && sample.rotation === 0 && !sample.flip && gpu.pixelFormat === "NV12" && canPass(sample)) {
+              spent.captions += t1 - t0;
+              frames += 1;
+              passed += 1;
+              if (previewCtx && frames % PREVIEW_EVERY === 0) sample.draw(previewCtx, 0, 0, canvas.width, canvas.height);
+              lastEnd = performance.now();
+              return sample;
+            }
             const uv = GpuCompositor.uvFor(crop, sample.displayWidth, sample.displayHeight, sample.rotation, sample.flip);
             const composite = () => {
               const vf = sample.toVideoFrame();
@@ -230,7 +269,7 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
             });
           }
           if (gl) {
-            const layers = noCaptions ? { static: null, active: null, band: { top: 0, height: out.height } } : captions.update(sample.timestamp);
+            const layers = noCaptions ? noLayers : captions.update(sample.timestamp);
             t1 = performance.now();
             const vf = sample.toVideoFrame();
             try {
@@ -276,18 +315,32 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
 
     progress({ phase: "mux", progress: null, message: "Finishing" });
-    const blob = sink ? sink.finalize() : new Blob([bufferTarget!.buffer as ArrayBuffer], { type: "video/mp4" });
+    let blob = sink ? sink.finalize() : new Blob([bufferTarget!.buffer as ArrayBuffer], { type: "video/mp4" });
+    if (opts.debugMode !== "passthrough") {
+      // The compositor hands the encoder BT.709 video-range pictures (its
+      // own NV12, or RGB that VideoToolbox converts). WebKit's encoder
+      // labels them sRGB full range regardless, and that label lands in
+      // the file, so players show the export washed out. Put the truth back.
+      const truth = gpu?.pixelFormat === "NV12" ? { ...BT709_VIDEO_RANGE, fullRange: gpu.fullRange } : BT709_VIDEO_RANGE;
+      const tags = await readColorTags(blob).catch(() => null);
+      if (tags && looksLikeWebKitDefault(tags) && !sameTags(tags, truth)) blob = await writeColorTags(blob, truth);
+    }
     const hasAudio = conversion.utilizedTracks.some((t) => t.isAudioTrack());
     const n = Math.max(1, frames);
+    const composited = Math.max(1, frames - passed);
+    const gpuTiming = gpu ? { submit: gpu.timing.submit / composited, wait: gpu.timing.wait / composited, pack: gpu.timing.pack / composited } : undefined;
+    const route = gpu ? `gpu/${gpu.pixelFormat.toLowerCase()}` : gl ? "gl" : "2d";
     gpu?.dispose();
     gl?.dispose();
     const exportStats: ExportStats = {
-      source: `${sourceWidth}×${sourceHeight} ${track.codec ?? "?"} ${Math.round(sourceFps)} fps${hdr ? " HDR" : ""} · ${gpu ? "gpu" : gl ? "gl" : "2d"}${opts.debugMode ? ` · ${opts.debugMode}` : ""}`,
+      source: `${sourceWidth}×${sourceHeight} ${track.codec ?? "?"} ${Math.round(sourceFps)} fps${hdr ? " HDR" : ""} · ${route}${opts.debugMode ? ` · ${opts.debugMode}` : ""}`,
       frames,
-      msVideo: spent.video / n,
+      msVideo: spent.video / composited,
       msCaptions: spent.captions / n,
       msOther: spent.other / n,
       captionRenders: captions.renders,
+      passthroughFrames: passed,
+      gpu: gpuTiming,
     };
     return { blob, width: out.width, height: out.height, audio: hasAudio ? "aac" : "none", seconds: duration, engine: "fast", stats: exportStats };
   } finally {

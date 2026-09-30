@@ -187,6 +187,36 @@ try {
       console.log(`crop check: left edge rgb(${r},${g},${b})`);
     }
   }
+  if (!process.env.FRAME && !process.env.CLIP && process.env.FX !== "resize-only" && process.env.FX !== "passthrough") {
+    // Colour fidelity, end to end (decoder → compositor → encoder → the
+    // MP4's colour tags): the frame at 2 s, as a player would show it, must
+    // match the fixture's on its six colour bars (flat 8×8 patches in the
+    // top half, clear of the captions). A wrong range, or a wrong colr
+    // atom, is off by 50+ on a channel; a BT.601/709 mix-up by about 25.
+    const frame = (file) => execFileSync("ffmpeg", ["-v", "error", "-ss", "2", "-i", file, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]);
+    const a = frame(outFile);
+    const b = frame(clip);
+    if (a.length !== b.length) throw new Error(`Export frame size differs from the source (${a.length} vs ${b.length} bytes)`);
+    const width = video.width;
+    const patch = (buf, cx, cy) => {
+      const sum = [0, 0, 0];
+      for (let y = cy - 4; y < cy + 4; y++) for (let x = cx - 4; x < cx + 4; x++) for (let c = 0; c < 3; c++) sum[c] += buf[(y * width + x) * 3 + c];
+      return sum.map((v) => Math.round(v / 64));
+    };
+    let worst = 0;
+    const report = [];
+    for (const cx of [50, 160, 265, 370, 480, 590]) {
+      const got = patch(a, cx, 120);
+      const want = patch(b, cx, 120);
+      worst = Math.max(worst, ...got.map((v, i) => Math.abs(v - want[i])));
+      report.push(`(${got.join(",")})`);
+    }
+    // The GPU routes make the YUV themselves. Canvas routes leave that to the
+    // browser, and Chrome converts with BT.601 while labelling it BT.709.
+    const limit = /gpu\//.test(timerText) ? 16 : 32;
+    console.log(`colour check: bars ${report.join(" ")} · worst channel error ${worst} (limit ${limit})`);
+    if (worst > limit) throw new Error(`Export colours drift from the source: worst channel error ${worst} (limit ${limit})`);
+  }
   console.log("MOBILE E2E OK");
 } finally {
   await browser.close();
