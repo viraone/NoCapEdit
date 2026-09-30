@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activeModel, buildAiPrompt, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, loadAiSettings, openAiRequestBody, parseClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
+import { activeModel, anthropicRequestBody, buildAiPrompt, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, isCloudProvider, loadAiSettings, openAiRequestBody, parseAnthropicClips, parseClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
 import type { Sentence } from "@/lib/edit/highlights";
 import type { CaptionCue } from "@/lib/models/project";
 
@@ -153,10 +153,50 @@ describe("findAiHighlights", () => {
       await expect(findAiHighlights(cues, { settings: { ...cloud, apiKey: "" }, ...opts })).rejects.toThrow(/Add your API key/);
     });
 
+  });
+
+  describe("Anthropic provider", () => {
+    const claude: AiSettings = { ...settings, provider: "anthropic", anthropicKey: "sk-ant-test", anthropicModel: "claude-sonnet-5-5" };
+    const toolAnswer = (input: unknown, status = 200) => new Response(JSON.stringify({ content: [{ type: "tool_use", name: "clips", input }] }), { status });
+
+    it("posts the transcript to the Messages API as a forced tool call with the user's key", async () => {
+      const fetchMock = vi.fn(async () => toolAnswer({ clips: [clip(1, 4, 9, { title: "Best bit" })] }));
+      vi.stubGlobal("fetch", fetchMock);
+      const progress: string[] = [];
+      const out = await findAiHighlights(cues, { settings: claude, ...opts, onProgress: (m) => progress.push(m) });
+      expect(out[0]).toMatchObject({ start: 5, end: 25, title: "Best bit", score: 9 });
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("https://api.anthropic.com/v1/messages");
+      const headers = init.headers as Record<string, string>;
+      expect(headers["x-api-key"]).toBe("sk-ant-test");
+      expect(headers["anthropic-version"]).toBe("2023-06-01");
+      expect(headers["anthropic-dangerous-direct-browser-access"]).toBe("true");
+      const body = JSON.parse(String(init.body));
+      expect(body.model).toBe("claude-sonnet-5-5");
+      expect(body.tool_choice).toEqual({ type: "tool", name: "clips" });
+      expect(body.tools[0].input_schema.required).toEqual(["clips"]);
+      expect(body.system).toContain("clips");
+      expect(body.messages[0].content).toContain("[3] 15.0-20.0 Sentence 3.");
+      expect(progress[0]).toContain("claude-sonnet-5-5");
+    });
+
+    it("reads a text answer when the model skipped the tool, and explains errors", async () => {
+      expect(parseAnthropicClips({ content: [{ type: "text", text: '{"clips":[{"startLine":1,"endLine":2,"score":5}]}' }] })).toHaveLength(1);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":{"type":"authentication_error","message":"invalid x-api-key"}}', { status: 401 })));
+      await expect(findAiHighlights(cues, { settings: claude, ...opts })).rejects.toThrow(/rejected the API key/);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":{"type":"not_found_error","message":"model: nope"}}', { status: 404 })));
+      await expect(findAiHighlights(cues, { settings: { ...claude, anthropicModel: "nope" }, ...opts })).rejects.toThrow(/"nope" wasn't found/);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":{"type":"invalid_request_error","message":"max_tokens too large"}}', { status: 400 })));
+      await expect(findAiHighlights(cues, { settings: claude, ...opts })).rejects.toThrow(/400: max_tokens too large/);
+      vi.stubGlobal("fetch", vi.fn());
+      await expect(findAiHighlights(cues, { settings: { ...claude, anthropicKey: "" }, ...opts })).rejects.toThrow(/Anthropic API key/);
+      expect(anthropicRequestBody("m", "sys", "usr").max_tokens).toBe(4096);
+    });
+
     it("never touches the cloud when Ollama is the provider", async () => {
       const fetchMock = vi.fn(async () => ollamaStream(JSON.stringify({ clips: [clip(1, 4, 8)] })));
       vi.stubGlobal("fetch", fetchMock);
-      await findAiHighlights(cues, { settings: { ...cloud, provider: "ollama" }, ...opts });
+      await findAiHighlights(cues, { settings: { ...claude, provider: "ollama", apiKey: "sk-test" }, ...opts });
       expect(String((fetchMock.mock.calls[0] as unknown as [string])[0])).toBe("http://localhost:11434/api/chat");
     });
   });
@@ -174,6 +214,8 @@ describe("AI settings", () => {
     vi.stubGlobal("localStorage", localStorageMock);
     expect(loadAiSettings()).toEqual(DEFAULT_AI_SETTINGS);
     expect(DEFAULT_AI_SETTINGS.provider).toBe("ollama");
+    expect(isCloudProvider("ollama")).toBe(false);
+    expect(isCloudProvider("anthropic")).toBe(true);
     expect(activeModel(DEFAULT_AI_SETTINGS)).toBe("qwen3.8:27b");
   });
 
@@ -192,6 +234,10 @@ describe("AI settings", () => {
     const s = loadAiSettings();
     expect(s).toMatchObject({ provider: "openai", apiBase: "https://api.openai.com/v1", apiKey: "sk-x", model: "qwen3.8:27b" });
     expect(activeModel(s)).toBe("gpt-4o-mini");
+    store.set("reelflow.ai", JSON.stringify({ provider: "anthropic", anthropicKey: "sk-ant-x" }));
+    const a = loadAiSettings();
+    expect(a).toMatchObject({ provider: "anthropic", anthropicKey: "sk-ant-x", anthropicModel: "claude-sonnet-5-5", model: "qwen3.8:27b" });
+    expect(activeModel(a)).toBe("claude-sonnet-5-5");
   });
 
   it("parses plain, fenced and broken answers", () => {

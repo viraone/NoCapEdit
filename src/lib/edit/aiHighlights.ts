@@ -10,7 +10,7 @@
 import type { CaptionCue } from "@/lib/models/project";
 import { sentencesFromCues, type Highlight, type Sentence } from "./highlights";
 
-export type AiProvider = "ollama" | "openai";
+export type AiProvider = "ollama" | "openai" | "anthropic";
 
 export interface AiSettings {
   /** Where the model runs: Ollama on this computer (default, private) or an OpenAI-compatible HTTP API. */
@@ -25,9 +25,24 @@ export interface AiSettings {
   apiKey: string;
   /** Model name at that API, e.g. gpt-4o-mini. */
   apiModel: string;
+  /** The user's Anthropic API key; kept in this browser only. */
+  anthropicKey: string;
+  /** Claude model id, e.g. claude-sonnet-5-5. */
+  anthropicModel: string;
 }
 
-export const DEFAULT_AI_SETTINGS: AiSettings = { provider: "ollama", endpoint: "http://localhost:11434", model: "qwen3.8:27b", apiBase: "https://api.openai.com/v1", apiKey: "", apiModel: "gpt-4o-mini" };
+export const DEFAULT_AI_SETTINGS: AiSettings = {
+  provider: "ollama",
+  endpoint: "http://localhost:11434",
+  model: "qwen3.8:27b",
+  apiBase: "https://api.openai.com/v1",
+  apiKey: "",
+  apiModel: "gpt-4o-mini",
+  anthropicKey: "",
+  anthropicModel: "claude-sonnet-5-5",
+};
+export const ANTHROPIC_API = "https://api.anthropic.com/v1";
+const ANTHROPIC_VERSION = "2023-06-01";
 const SETTINGS_KEY = "reelflow.ai";
 
 const str = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() ? v.trim() : fallback);
@@ -37,12 +52,14 @@ export function loadAiSettings(): AiSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const parsed = raw ? (JSON.parse(raw) as Partial<AiSettings>) : {};
     return {
-      provider: parsed.provider === "openai" ? "openai" : "ollama",
+      provider: parsed.provider === "openai" || parsed.provider === "anthropic" ? parsed.provider : "ollama",
       endpoint: str(parsed.endpoint, DEFAULT_AI_SETTINGS.endpoint),
       model: str(parsed.model, DEFAULT_AI_SETTINGS.model),
       apiBase: str(parsed.apiBase, DEFAULT_AI_SETTINGS.apiBase).replace(/\/+$/, ""),
       apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey.trim() : "",
       apiModel: str(parsed.apiModel, DEFAULT_AI_SETTINGS.apiModel),
+      anthropicKey: typeof parsed.anthropicKey === "string" ? parsed.anthropicKey.trim() : "",
+      anthropicModel: str(parsed.anthropicModel, DEFAULT_AI_SETTINGS.anthropicModel),
     };
   } catch {
     return { ...DEFAULT_AI_SETTINGS };
@@ -51,7 +68,12 @@ export function loadAiSettings(): AiSettings {
 
 /** The model name a run will use for the chosen provider. */
 export function activeModel(s: AiSettings): string {
-  return s.provider === "openai" ? s.apiModel : s.model;
+  return s.provider === "openai" ? s.apiModel : s.provider === "anthropic" ? s.anthropicModel : s.model;
+}
+
+/** True when the chosen provider sends the transcript off this device. */
+export function isCloudProvider(p: AiProvider): boolean {
+  return p !== "ollama";
 }
 
 export function saveAiSettings(settings: AiSettings): void {
@@ -287,6 +309,73 @@ export async function listOpenAiModels(apiBase: string, apiKey: string, signal?:
   return (data.data ?? []).map((m) => m.id).sort();
 }
 
+const anthropicHeaders = (apiKey: string): Record<string, string> => ({
+  "Content-Type": "application/json",
+  "x-api-key": apiKey,
+  "anthropic-version": ANTHROPIC_VERSION,
+  // The key is the user's own and lives in their browser; Anthropic requires this opt-in for browser calls.
+  "anthropic-dangerous-direct-browser-access": "true",
+});
+
+/** Request body for the Anthropic Messages API: the clips schema is a forced tool call, so the answer is always structured. */
+export function anthropicRequestBody(model: string, system: string, user: string): Record<string, unknown> {
+  return {
+    model,
+    max_tokens: 4096,
+    temperature: 0.2,
+    system,
+    messages: [{ role: "user", content: user }],
+    tools: [{ name: "clips", description: "Report the chosen clips.", input_schema: AI_CLIPS_SCHEMA }],
+    tool_choice: { type: "tool", name: "clips" },
+  };
+}
+
+/** Pulls the clips out of a Messages API reply (tool_use input first, then any JSON text). */
+export function parseAnthropicClips(data: { content?: { type: string; input?: unknown; text?: string }[] }): AiClip[] {
+  const tool = data.content?.find((c) => c.type === "tool_use");
+  if (tool && tool.input && typeof tool.input === "object") return ((tool.input as { clips?: AiClip[] }).clips ?? []) as AiClip[];
+  const text = data.content?.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n") ?? "";
+  return parseClips(text);
+}
+
+/** Sends the transcript to Anthropic with the user's own key. The transcript (not the video) leaves the device. */
+async function findViaAnthropic(system: string, user: string, opts: FindAiOptions): Promise<AiClip[]> {
+  const { anthropicKey, anthropicModel } = opts.settings;
+  if (!anthropicKey) throw new Error("Add your Anthropic API key in the Model section first.");
+  opts.onProgress?.(`Sending the transcript to ${anthropicModel} at api.anthropic.com`);
+  let res: Response;
+  try {
+    res = await fetch(`${ANTHROPIC_API}/messages`, { method: "POST", headers: anthropicHeaders(anthropicKey), signal: opts.signal, body: JSON.stringify(anthropicRequestBody(anthropicModel, system, user)) });
+  } catch (e) {
+    if (opts.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    throw new Error("Couldn't reach api.anthropic.com. Check your connection.", { cause: e });
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let detail = "";
+    try {
+      detail = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? "";
+    } catch {
+      detail = text.slice(0, 200);
+    }
+    if (res.status === 401) throw new Error("Anthropic rejected the API key (401). Check it in the Model section.");
+    if (res.status === 403) throw new Error(`Anthropic refused the request (403)${detail ? `: ${detail}` : ""}`);
+    if (res.status === 404) throw new Error(`The model "${anthropicModel}" wasn't found (404). Pick one from the list.`);
+    if (res.status === 429) throw new Error("Anthropic is rate-limiting or out of credit (429). Try again in a minute.");
+    throw new Error(`Anthropic returned ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+  opts.onProgress?.(`${anthropicModel} is choosing clips`);
+  return parseAnthropicClips((await res.json()) as { content?: { type: string; input?: unknown; text?: string }[] });
+}
+
+/** Claude model ids this key can use (GET /v1/models). */
+export async function listAnthropicModels(apiKey: string, signal?: AbortSignal): Promise<string[]> {
+  const res = await fetch(`${ANTHROPIC_API}/models?limit=100`, { headers: anthropicHeaders(apiKey), signal });
+  if (!res.ok) throw new Error(res.status === 401 ? "Anthropic rejected the API key." : `Anthropic returned ${res.status}`);
+  const data = (await res.json()) as { data?: { id: string }[] };
+  return (data.data ?? []).map((m) => m.id);
+}
+
 /** Asks the chosen model for the best moments of the transcript. Throws readable errors. */
 export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions): Promise<Highlight[]> {
   const sentences = sentencesFromCues(cues);
@@ -297,6 +386,7 @@ export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions):
     throw new Error(`This transcript is too long for one pass (about ${Math.round(promptTokens / 1000)}k tokens). Trim the video to under about an hour and try again.`);
   }
   if (opts.settings.provider === "openai") return clipsToHighlights(await findViaOpenAi(system, user, opts), sentences, opts);
+  if (opts.settings.provider === "anthropic") return clipsToHighlights(await findViaAnthropic(system, user, opts), sentences, opts);
   const endpoint = opts.settings.endpoint.replace(/\/+$/, "");
   const model = opts.settings.model;
   opts.onProgress?.(`Sending the transcript to ${model}`);

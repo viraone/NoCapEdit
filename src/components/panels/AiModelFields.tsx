@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { DEFAULT_AI_SETTINGS, listOllamaModels, listOpenAiModels, type AiSettings } from "@/lib/edit/aiHighlights";
+import { DEFAULT_AI_SETTINGS, listAnthropicModels, listOllamaModels, listOpenAiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
 import { Field, Input } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 
@@ -24,12 +24,12 @@ export interface AiModelFieldsProps {
   onRefresh?: () => void;
 }
 
-/** Reusable fetch of the OpenAI-compatible model list, with the same shape as the Ollama one. */
-export function useOpenAiModels() {
+/** Reusable fetch of a cloud provider's model list, with the same shape as the Ollama one. */
+export function useCloudModels() {
   const [models, setModels] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const refresh = async (apiBase: string, apiKey: string) => {
+  const refresh = async (load: () => Promise<string[]>, apiKey: string) => {
     setError(null);
     if (!apiKey) {
       setModels(null);
@@ -38,7 +38,7 @@ export function useOpenAiModels() {
     }
     setPending(true);
     try {
-      setModels(await listOpenAiModels(apiBase, apiKey, AbortSignal.timeout(20000)));
+      setModels(await load());
     } catch (e) {
       setModels(null);
       setError(e instanceof Error ? e.message : "Couldn't list models.");
@@ -64,8 +64,10 @@ function ModelPicker({ value, models, onChange, placeholder, disabled }: { value
 }
 
 export function AiModelFields({ settings, onChange, disabled, permissionHint = "", models, modelsError, modelsPending, onRefresh }: AiModelFieldsProps) {
-  const cloud = useOpenAiModels();
+  const cloud = useCloudModels();
   const openai = settings.provider === "openai";
+  const anthropic = settings.provider === "anthropic";
+  const pickProvider = (v: string): AiProvider => (v === "openai" || v === "anthropic" ? v : "ollama");
   const refreshLabel = (title: string, onClick: () => void) => (
     <button type="button" className="text-sys-blue hover:underline" onClick={onClick} title={title} disabled={disabled}>
       <RefreshCw size={11} className="inline" /> refresh
@@ -74,15 +76,30 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
   return (
     <div className="space-y-2">
       <Field label="Provider">
-        <Select value={settings.provider} onChange={(e) => onChange({ provider: e.target.value === "openai" ? "openai" : "ollama" })} aria-label="AI provider" disabled={disabled}>
+        <Select value={settings.provider} onChange={(e) => onChange({ provider: pickProvider(e.target.value) })} aria-label="AI provider" disabled={disabled}>
           <option value="ollama">Ollama on this computer</option>
+          <option value="anthropic">Anthropic (Claude)</option>
           <option value="openai">OpenAI-compatible API</option>
         </Select>
       </Field>
-      {openai ? (
+      {anthropic ? (
+        <>
+          <Field label="Model" right={refreshLabel("List the Claude models this key can use", () => void cloud.refresh(() => listAnthropicModels(settings.anthropicKey, AbortSignal.timeout(20000)), settings.anthropicKey))}>
+            <ModelPicker value={settings.anthropicModel} models={cloud.models} onChange={(m) => onChange({ anthropicModel: m })} placeholder={DEFAULT_AI_SETTINGS.anthropicModel} disabled={disabled} />
+            {cloud.pending && <p className="mt-1 text-[11px] text-label-3">Listing models…</p>}
+            {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
+          </Field>
+          <Field label="Anthropic API key">
+            <Input type="password" value={settings.anthropicKey} onChange={(e) => onChange({ anthropicKey: e.target.value })} placeholder="sk-ant-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
+          </Field>
+          <p className="text-[11px] text-label-3" data-ai-disclaimer>
+            Sends the transcript (not the video) to Anthropic under its terms and is billed to your key, which stays in this browser and is only sent to api.anthropic.com. Get a key at console.anthropic.com. The Ollama option keeps everything on this computer.
+          </p>
+        </>
+      ) : openai ? (
         <>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Model" right={refreshLabel("List the models this key can use", () => void cloud.refresh(settings.apiBase, settings.apiKey))}>
+            <Field label="Model" right={refreshLabel("List the models this key can use", () => void cloud.refresh(() => listOpenAiModels(settings.apiBase, settings.apiKey, AbortSignal.timeout(20000)), settings.apiKey))}>
               <ModelPicker value={settings.apiModel} models={cloud.models} onChange={(m) => onChange({ apiModel: m })} placeholder={DEFAULT_AI_SETTINGS.apiModel} disabled={disabled} />
               {cloud.pending && <p className="mt-1 text-[11px] text-label-3">Listing models…</p>}
               {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
