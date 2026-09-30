@@ -169,17 +169,17 @@ export interface RevealStats {
 
 /**
  * After a one-clip reel's shown range changed from `shown` to `range` (a trim
- * on the timeline, inside the media or after a stretch), keeps the captions,
- * text, stickers and voice-overs on the same picture, brings in the source's
- * captions for the parts that are new, drops what fell off the front, and
- * records the range on the reel. Operates on a draft project.
+ * on the timeline, inside the media or after a stretch), with the reel's
+ * captions, text, stickers and voice-overs already moved to their new times
+ * (the timeline ripple does that for a drag, applyReelStretch for a re-cut):
+ * brings in the source's captions for the parts that are new, drops what
+ * fell off the ends, and records the range on the reel. Operates on a draft
+ * project.
  */
 export function applyReelReveal(p: VideoProject, o: RevealApply): RevealStats | null {
   const clip = p.clips[0];
   if (!p.reel || p.clips.length !== 1) return null;
-  // Project-time shift: positive when video came back before the old start.
   const front = o.shown.start - o.range.start;
-  shiftTimeline(p, front);
   const length = (clip.outPoint - clip.inPoint) / clip.speed;
   p.cues = p.cues
     .map((c) => ({ ...c, start: clamp(c.start, 0, length), end: clamp(c.end, 0, length), words: c.words?.map((w) => ({ ...w, start: clamp(w.start, 0, length), end: clamp(w.end, 0, length) })).filter((w) => w.end > w.start) }))
@@ -217,6 +217,8 @@ export function applyReelStretch(p: VideoProject, o: StretchApply): StretchStats
     reframe: old.reframe ? { ...old.reframe, keyframes: old.reframe.keyframes.map((k) => ({ ...k, t: k.t + delta })) } : old.reframe,
     matte: old.matte ? { ...old.matte, inPoint: old.matte.inPoint + delta, outPoint: old.matte.outPoint + delta } : old.matte,
   };
+  // Project-time shift: positive when video came back before the old start.
+  shiftTimeline(p, shown.start - o.range.start);
   const revealed = applyReelReveal(p, { shown, range: o.range, sourceCues: o.sourceCues })!;
   p.reel = { ...p.reel, media: o.media };
   return { ...revealed, droppedCleanAudio: !!old.audioAssetId };

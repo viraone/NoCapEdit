@@ -32,7 +32,7 @@ export function TransportBar() {
           disabled={!clip}
           onClick={() => {
             let ok = false;
-            update((p) => void (ok = cutBefore(p, useEditor.getState().currentTime)));
+            update((p) => void (ok = cutBefore(p, useEditor.getState().currentTime)), { ripple: true });
             setNotice(ok ? "Removed everything before the playhead." : "Nothing to cut before the playhead.");
           }}
         >
@@ -54,7 +54,7 @@ export function TransportBar() {
           disabled={!clip}
           onClick={() => {
             let ok = false;
-            update((p) => void (ok = cutAfter(p, useEditor.getState().currentTime)));
+            update((p) => void (ok = cutAfter(p, useEditor.getState().currentTime)), { ripple: true });
             setNotice(ok ? "Removed everything after the playhead." : "Nothing to cut after the playhead.");
           }}
         >
@@ -70,10 +70,10 @@ export function TransportBar() {
             <span className="mr-1 flex items-center gap-1.5 truncate text-[12px] text-label-2">
               <Film size={13} /> {clip.name}
             </span>
-            <Button variant="secondary" size="sm" disabled={index <= 0} onClick={() => update((p) => void moveClip(p, clip.id, -1))} title="Move this clip earlier">
+            <Button variant="secondary" size="sm" disabled={index <= 0} onClick={() => update((p) => void moveClip(p, clip.id, -1), { ripple: true })} title="Move this clip earlier">
               <ArrowLeft size={13} /> Earlier
             </Button>
-            <Button variant="secondary" size="sm" disabled={index < 0 || index >= clipCount - 1} onClick={() => update((p) => void moveClip(p, clip.id, 1))} title="Move this clip later">
+            <Button variant="secondary" size="sm" disabled={index < 0 || index >= clipCount - 1} onClick={() => update((p) => void moveClip(p, clip.id, 1), { ripple: true })} title="Move this clip later">
               <ArrowRight size={13} /> Later
             </Button>
             <Button
@@ -81,7 +81,7 @@ export function TransportBar() {
               size="sm"
               onClick={() => {
                 let cleared = 0;
-                update((p) => void (cleared = removeClip(p, clip.id).clearedCaptions));
+                update((p) => void (cleared = removeClip(p, clip.id).clearedCaptions), { ripple: true });
                 select(null);
                 setNotice(cleared ? captionsClearedNotice(cleared) : "Removed the clip.");
               }}

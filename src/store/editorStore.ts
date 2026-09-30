@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { normalizeProject, type VideoProject } from "@/lib/models/project";
+import { rippleTimeline } from "@/lib/models/ripple";
 import { getProject, listProjectAssets, saveProject } from "@/lib/storage/db";
 import { engine } from "@/lib/playback/engine";
 import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/components/timeline/dockLayout";
@@ -48,7 +49,13 @@ export interface EditorState {
 
   loadProject(id: string): Promise<boolean>;
   unload(): void;
-  update(fn: (draft: VideoProject) => void | VideoProject, opts?: { history?: boolean }): void;
+  /**
+   * Applies an edit to a copy of the project. `history: false` skips the undo
+   * step and the no-op check (pointer moves). `ripple`: the edit changes the
+   * clip sequence, so captions, text, stickers and voice-overs follow the
+   * picture, measured from the state a drag began in.
+   */
+  update(fn: (draft: VideoProject) => void | VideoProject, opts?: { history?: boolean; ripple?: boolean }): void;
   /** Opens an undo transaction; false when one is already open (the caller then does not own it). */
   beginTransaction(): boolean;
   /** Closes the transaction; true when it recorded an undo step. */
@@ -220,6 +227,7 @@ export const useEditor = create<EditorState>()(
       if (!project) return;
       const draft = structuredClone(project);
       const next = (fn(draft) ?? draft) as VideoProject;
+      if (opts.ripple) rippleTimeline(txSnapshot ?? project, next);
       // A refused or no-op edit (split outside a clip, zoom at its limit, an
       // already active preset...) records no undo step, keeps redo and does
       // not autosave. Pointer-move updates skip the compare for speed.

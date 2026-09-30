@@ -63,16 +63,18 @@ export function useReelStretch() {
     const held = { inPoint: Math.max(0, drag.to.inPoint), outPoint: Math.min(clip.duration, drag.to.outPoint) };
     const shown = { start: media.start + drag.from.inPoint, end: media.start + drag.from.outPoint };
     const range = { start: media.start + held.inPoint, end: media.start + held.outPoint };
+    // The ripple moves the captions with the picture, measured from where the drag began; then the
+    // source's captions fill any part revealed from the media's slack.
     state.update(
       (p) => {
         const c = p.clips.find((c) => c.id === drag.clipId);
         if (!c) return;
         c.inPoint = held.inPoint;
         c.outPoint = held.outPoint;
-        applyReelReveal(p, { shown, range, sourceCues: source.cues });
       },
-      { history: false },
+      { history: false, ripple: true },
     );
+    state.update((p) => void applyReelReveal(p, { shown, range, sourceCues: source.cues }), { history: false });
     const past = stretchOf({ ...drag.to, duration: clip.duration });
     return past.before > 0 || past.after > 0 ? drag.to : null;
   };

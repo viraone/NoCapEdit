@@ -289,7 +289,8 @@ function ClipBlock({
             if (d.mode === "l") c.inPoint = clamp(d.inPoint + dt, -(slack?.before ?? 0), d.outPoint - 0.1);
             else c.outPoint = clamp(d.outPoint + dt, d.inPoint + 0.1, c.duration + (slack?.after ?? 0));
           },
-          { history: false },
+          // Captions and the rest follow the picture, measured from where the drag began.
+          { history: false, ripple: true },
         );
       }}
       onPointerUp={(e) => {
@@ -308,7 +309,7 @@ function ClipBlock({
           if (d.slot !== null) {
             // Slot k counts the dragged clip itself when it sits before the slot.
             const to = d.slot > layout.index ? d.slot - 1 : d.slot;
-            update((p) => void reorderClip(p, clip.id, to));
+            update((p) => void reorderClip(p, clip.id, to), { ripple: true });
           }
         } else stretch = finishTrim({ inPoint: d.inPoint, outPoint: d.outPoint });
         endTransaction();

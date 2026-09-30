@@ -4,13 +4,13 @@ vi.mock("@/lib/storage/db", () => ({ saveProject: vi.fn(async () => {}), getProj
 
 const db = await import("@/lib/storage/db");
 const { useEditor, flushSave, attachUnloadFlush } = await import("@/store/editorStore");
-const { createProject } = await import("@/lib/models/project");
+const { createClip, createProject } = await import("@/lib/models/project");
 
 describe("autosave flush", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(db.saveProject).mockClear();
-    useEditor.setState({ project: createProject({ name: "a" }), saveState: "saved", past: [], future: [] });
+    useEditor.setState({ project: createProject({ name: "a" }), saveState: "saved", past: [], future: [], txSnapshot: null });
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -124,6 +124,29 @@ describe("autosave flush", () => {
     s.requestReels();
     expect(useEditor.getState().tool).toBe("reels");
     expect(useEditor.getState().reelsRequest).toBeGreaterThanOrEqual(stamp);
+  });
+
+  it("a ripple edit in a drag measures from where the drag began, so moving back restores the captions", () => {
+    const p = createProject({ name: "r" });
+    p.clips = [{ ...createClip({ assetId: "a", name: "c", duration: 10, width: 1920, height: 1080, hasAudio: true }), id: "A" }];
+    p.cues = [{ id: "c", start: 4, end: 6, text: "hi" }];
+    useEditor.setState({ project: p, past: [], future: [] });
+    const s = useEditor.getState();
+    const cue = () => useEditor.getState().project!.cues.map((c) => [c.start, c.end]);
+    s.beginTransaction();
+    s.update((d) => void (d.clips[0].inPoint = 2), { history: false, ripple: true });
+    expect(cue()).toEqual([[2, 4]]);
+    s.update((d) => void (d.clips[0].inPoint = 1), { history: false, ripple: true });
+    expect(cue()).toEqual([[3, 5]]);
+    s.update((d) => void (d.clips[0].inPoint = 5), { history: false, ripple: true });
+    expect(cue()).toEqual([[0, 1]]);
+    s.update((d) => void (d.clips[0].inPoint = 0), { history: false, ripple: true });
+    expect(cue()).toEqual([[4, 6]]);
+    expect(s.endTransaction()).toBe(false);
+    // Outside a drag the edit measures from the current project.
+    s.update((d) => void (d.clips[0].inPoint = 2), { ripple: true });
+    expect(cue()).toEqual([[2, 4]]);
+    expect(useEditor.getState().past.length).toBe(1);
   });
 
   it("records no step for a drag that ends where it began", () => {

@@ -131,13 +131,14 @@ export function TrimPanel() {
     );
   }
 
-  const edit = (fn: (c: Clip) => void, history = true) =>
+  /** Edits the target clip; `ripple` for edits that move the picture, so captions and the rest follow it. */
+  const edit = (fn: (c: Clip) => void, history = true, ripple = false) =>
     update(
       (p) => {
         const c = p.clips.find((c) => c.id === clip.id);
         if (c) fn(c);
       },
-      { history },
+      { history, ripple },
     );
   const format = getFormat(project.formatId);
   const frame = { width: format.width, height: format.height };
@@ -157,21 +158,25 @@ export function TrimPanel() {
   };
   const doCutBefore = () => {
     let ok = false;
-    update((p) => void (ok = cutBefore(p, now())));
+    update((p) => void (ok = cutBefore(p, now())), { ripple: true });
     setNotice(ok ? "Removed everything before the playhead." : "Nothing to cut before the playhead.");
   };
   const doCutAfter = () => {
     let ok = false;
-    update((p) => void (ok = cutAfter(p, now())));
+    update((p) => void (ok = cutAfter(p, now())), { ripple: true });
     setNotice(ok ? "Removed everything after the playhead." : "Nothing to cut after the playhead.");
   };
   const setToPlayhead = (which: "in" | "out") => {
     if (!layout) return;
     const s = toSourceTime(layout, now());
-    edit((c) => {
-      if (which === "in") c.inPoint = Math.min(s, c.outPoint - 0.1);
-      else c.outPoint = Math.max(s, c.inPoint + 0.1);
-    });
+    edit(
+      (c) => {
+        if (which === "in") c.inPoint = Math.min(s, c.outPoint - 0.1);
+        else c.outPoint = Math.max(s, c.inPoint + 0.1);
+      },
+      true,
+      true,
+    );
   };
 
   const runEnhance = async () => {
@@ -296,7 +301,7 @@ export function TrimPanel() {
       <PanelSection title={`Speed  ${clip.speed}×`}>
         <TileGrid cols={4}>
           {SPEEDS.map((s) => (
-            <Tile key={s.value} icon={s.icon} label={s.label} active={Math.abs(clip.speed - s.value) < 1e-6} onClick={() => edit((c) => void (c.speed = s.value))} />
+            <Tile key={s.value} icon={s.icon} label={s.label} active={Math.abs(clip.speed - s.value) < 1e-6} onClick={() => edit((c) => void (c.speed = s.value), true, true)} />
           ))}
         </TileGrid>
       </PanelSection>
@@ -304,7 +309,7 @@ export function TrimPanel() {
       <PanelSection title="Transition to the next clip">
         <TileGrid cols={3}>
           {QUICK_TRANSITIONS.map((t) => (
-            <Tile key={t.id} icon={t.icon} label={t.label} active={quickTransition === t.id} disabled={!hasNext} onClick={() => edit((c) => void (c.transition.type = t.id))} />
+            <Tile key={t.id} icon={t.icon} label={t.label} active={quickTransition === t.id} disabled={!hasNext} onClick={() => edit((c) => void (c.transition.type = t.id), true, true)} />
           ))}
         </TileGrid>
         {!hasNext && <p className="text-[11px] text-label-3">This is the last clip. Transitions apply between clips.</p>}
@@ -399,10 +404,10 @@ export function TrimPanel() {
           <PanelSection title="In / out points">
             <div className="grid grid-cols-2 gap-2">
               <Field label="In" right={<button type="button" className="text-sys-blue hover:underline" onClick={() => setToPlayhead("in")}>playhead</button>}>
-                <NumberInput value={clip.inPoint} min={0} max={clip.outPoint - 0.1} suffix="s" onCommit={(v) => edit((c) => void (c.inPoint = v))} />
+                <NumberInput value={clip.inPoint} min={0} max={clip.outPoint - 0.1} suffix="s" onCommit={(v) => edit((c) => void (c.inPoint = v), true, true)} />
               </Field>
               <Field label="Out" right={<button type="button" className="text-sys-blue hover:underline" onClick={() => setToPlayhead("out")}>playhead</button>}>
-                <NumberInput value={clip.outPoint} min={clip.inPoint + 0.1} max={clip.duration} suffix="s" onCommit={(v) => edit((c) => void (c.outPoint = v))} />
+                <NumberInput value={clip.outPoint} min={clip.inPoint + 0.1} max={clip.duration} suffix="s" onCommit={(v) => edit((c) => void (c.outPoint = v), true, true)} />
               </Field>
             </div>
             <p className="text-[11px] text-label-3">
@@ -410,7 +415,7 @@ export function TrimPanel() {
             </p>
           </PanelSection>
           <PanelSection title="Speed & pitch">
-            <Slider label="Playback speed" value={clip.speed} min={SPEED_MIN} max={SPEED_MAX} step={0.05} format={(v) => `${v.toFixed(2)}×`} onChange={(v) => edit((c) => void (c.speed = v), false)} {...tx} />
+            <Slider label="Playback speed" value={clip.speed} min={SPEED_MIN} max={SPEED_MAX} step={0.05} format={(v) => `${v.toFixed(2)}×`} onChange={(v) => edit((c) => void (c.speed = v), false, true)} {...tx} />
             <Toggle checked={clip.preservePitch} onChange={(v) => edit((c) => void (c.preservePitch = v))} label="Preserve voice pitch" description="Off shifts the pitch with the speed" />
           </PanelSection>
           <PanelSection title="Framing">
@@ -433,7 +438,7 @@ export function TrimPanel() {
           </PanelSection>
           <PanelSection title="Transition">
             <Field label="Type">
-              <Select value={clip.transition.type} onChange={(e) => edit((c) => void (c.transition.type = e.target.value as TransitionType))} disabled={!hasNext}>
+              <Select value={clip.transition.type} onChange={(e) => edit((c) => void (c.transition.type = e.target.value as TransitionType), true, true)} disabled={!hasNext}>
                 {TRANSITIONS.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
@@ -441,7 +446,7 @@ export function TrimPanel() {
                 ))}
               </Select>
             </Field>
-            <Slider label="Duration" value={clip.transition.duration} min={0.2} max={2} step={0.05} format={(v) => `${v.toFixed(2)} s`} onChange={(v) => edit((c) => void (c.transition.duration = v), false)} disabled={!hasNext || clip.transition.type === "none"} {...tx} />
+            <Slider label="Duration" value={clip.transition.duration} min={0.2} max={2} step={0.05} format={(v) => `${v.toFixed(2)} s`} onChange={(v) => edit((c) => void (c.transition.duration = v), false, true)} disabled={!hasNext || clip.transition.type === "none"} {...tx} />
           </PanelSection>
           <PanelSection title="Audio">
             <Slider label="Clip volume" value={clip.volume} min={0} max={2} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => void (c.volume = v), false)} disabled={!clip.hasAudio} {...tx} />

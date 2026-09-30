@@ -26,16 +26,17 @@ export function ClipsPanel() {
   const [recording, setRecording] = useState(false);
   const canRecord = useRecordingSupported();
 
-  const move = (id: string, dir: -1 | 1) => update((p) => void moveClip(p, id, dir));
+  // Clip edits that move the picture take the captions, text, stickers and voice-overs with it.
+  const move = (id: string, dir: -1 | 1) => update((p) => void moveClip(p, id, dir), { ripple: true });
   const splitAtPlayhead = () => {
     let ok = false;
     update((p) => void (ok = splitClipAt(p, useEditor.getState().currentTime) !== null));
     setNotice(ok ? "Split the clip at the playhead." : "Move the playhead inside a clip to split it.");
   };
-  const duplicate = (id: string) => update((p) => void duplicateClip(p, id));
+  const duplicate = (id: string) => update((p) => void duplicateClip(p, id), { ripple: true });
   const remove = (id: string) => {
     let cleared = 0;
-    update((p) => void (cleared = removeClip(p, id).clearedCaptions));
+    update((p) => void (cleared = removeClip(p, id).clearedCaptions), { ripple: true });
     if (selection?.id === id) select(null);
     if (cleared) setNotice(captionsClearedNotice(cleared));
   };

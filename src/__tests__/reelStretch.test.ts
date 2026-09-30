@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyReelReveal, applyReelStretch, mergeStretchedCues, reelMedia, reelSlack, reelSourceRange, stretchOf } from "@/lib/edit/reelStretch";
 import { createClip, createProject, type CaptionCue, type ReelInfo, type VideoProject } from "@/lib/models/project";
+import { rippleTimeline } from "@/lib/models/ripple";
 
 const clip = (duration: number, extra: Partial<ReturnType<typeof createClip>> = {}) => ({
   ...createClip({ assetId: "src", name: "c", duration, width: 1920, height: 1080, hasAudio: true }),
@@ -125,9 +126,17 @@ describe("applyReelReveal", () => {
     expect(p.reel).toMatchObject({ start: 2, end: 8, media: { start: 0, end: 8.19 } });
   });
 
+  /** A timeline drag: the ripple moves the captions with the picture, then the reveal fills the new part. */
+  const drag = (edit: (p: VideoProject) => void) => {
+    const base = reel();
+    const p = structuredClone(base);
+    edit(p);
+    rippleTimeline(base, p);
+    return p;
+  };
+
   it("moves the captions with the picture when the start is dragged out", () => {
-    const p = reel();
-    p.clips[0].inPoint = 1;
+    const p = drag((p) => void (p.clips[0].inPoint = 1));
     const stats = applyReelReveal(p, { shown: { start: 2, end: 6 }, range: { start: 1, end: 6 }, sourceCues: src });
     expect(stats).toEqual({ before: 1, after: 0, addedCues: 0 });
     expect(times(p)).toEqual([
@@ -139,8 +148,7 @@ describe("applyReelReveal", () => {
   });
 
   it("keeps captions on the picture when the start is trimmed in, dropping what fell off", () => {
-    const p = reel();
-    p.clips[0].inPoint = 3.5;
+    const p = drag((p) => void (p.clips[0].inPoint = 3.5));
     applyReelReveal(p, { shown: { start: 2, end: 6 }, range: { start: 3.5, end: 6 }, sourceCues: src });
     expect(times(p)).toEqual([
       ["two", 0, 1.5],
