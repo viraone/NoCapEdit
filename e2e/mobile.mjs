@@ -164,14 +164,34 @@ try {
   }
   lap(`saved ${outFile}`);
 
-  const probe = execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,r_frame_rate,duration", "-of", "json", outFile]).toString();
-  const streams = JSON.parse(probe).streams;
+  const probeStreams = (file) =>
+    JSON.parse(
+      execFileSync("ffprobe", ["-v", "error", "-count_frames", "-show_entries", "stream=codec_type,codec_name,width,height,r_frame_rate,duration,nb_read_frames", "-of", "json", file]).toString(),
+    ).streams;
+  const streams = probeStreams(outFile);
   console.log("streams:", JSON.stringify(streams));
   const video = streams.find((s) => s.codec_type === "video");
   const audio = streams.find((s) => s.codec_type === "audio");
   if (!video || video.codec_name !== "h264") throw new Error("Expected an H.264 video stream");
   if (!audio) console.log("WARNING: no audio stream in export");
   else if (audio.codec_name !== "aac") throw new Error(`Expected AAC audio, got ${audio.codec_name}`);
+  if (process.env.FX !== "resize-only") {
+    // Every decoded frame must come out again (or, above 32 fps, one per
+    // 30 fps slot) and the clip must keep its length: the exporter hands
+    // GPU frames back one call late and has to flush the last one.
+    const source = probeStreams(clip).find((s) => s.codec_type === "video");
+    const [num, den] = source.r_frame_rate.split("/").map(Number);
+    const sourceFps = num / den;
+    const sourceFrames = Number(source.nb_read_frames);
+    const gotFrames = Number(video.nb_read_frames);
+    const wantFrames = sourceFps > 32 ? Math.round((sourceFrames * 30) / sourceFps) : sourceFrames;
+    const slack = sourceFps > 32 ? 3 : 0;
+    console.log(`frames: ${gotFrames} (source ${sourceFrames} @ ${sourceFps.toFixed(2)} fps) · duration ${video.duration}s (source ${source.duration}s)`);
+    if (Math.abs(gotFrames - wantFrames) > slack) throw new Error(`Export has ${gotFrames} frames, expected ${wantFrames}${slack ? ` ± ${slack}` : ""}`);
+    if (Math.abs(Number(video.duration) - Number(source.duration)) > 1 / Math.min(30, sourceFps) + 0.01) {
+      throw new Error(`Export is ${video.duration}s long, source is ${source.duration}s`);
+    }
+  }
   if (process.env.FRAME) {
     const [rw, rh] = process.env.FRAME.split(":").map(Number);
     const got = video.width / video.height;
@@ -216,6 +236,19 @@ try {
     const limit = /gpu\//.test(timerText) ? 16 : 32;
     console.log(`colour check: bars ${report.join(" ")} · worst channel error ${worst} (limit ${limit})`);
     if (worst > limit) throw new Error(`Export colours drift from the source: worst channel error ${worst} (limit ${limit})`);
+    // Timing: the same frame must sit at the same timestamp. The pattern
+    // moves, so a picture that is one frame off has ~0.3% of the top half
+    // changed by more than 40 levels; an aligned export has none.
+    let moved = 0;
+    const half = (width * (video.height / 2)) * 3;
+    for (let i = 0; i < half; i += 3) {
+      const la = (a[i] * 299 + a[i + 1] * 587 + a[i + 2] * 114) / 1000;
+      const lb = (b[i] * 299 + b[i + 1] * 587 + b[i + 2] * 114) / 1000;
+      if (Math.abs(la - lb) > 40) moved += 1;
+    }
+    const movedPct = (moved / (half / 3)) * 100;
+    console.log(`timing check: ${movedPct.toFixed(2)}% of the top half differs from the source frame at 2 s (limit 0.1%)`);
+    if (movedPct > 0.1) throw new Error(`Export frame at 2 s does not match the source frame at 2 s (${movedPct.toFixed(2)}% moved) — frames shifted?`);
   }
   console.log("MOBILE E2E OK");
 } finally {

@@ -19,7 +19,7 @@ import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import type { Ctx } from "@/lib/captions/renderer";
 import { CaptionLayer } from "@/lib/mobile/captionLayer";
 import { GlCompositor } from "@/lib/mobile/glCompositor";
-import { GpuCompositor } from "@/lib/mobile/gpuCompositor";
+import { GpuCompositor, type PendingFrame } from "@/lib/mobile/gpuCompositor";
 import { BlobFileSink } from "@/lib/mobile/blobFileSink";
 import { BT709_VIDEO_RANGE, looksLikeWebKitDefault, readColorTags, sameTags, writeColorTags } from "@/lib/mobile/mp4Color";
 import { cropRect, DEFAULT_REFRAME, outputFrame, placeWholeFrame, type Reframe } from "@/lib/mobile/reframe";
@@ -119,12 +119,17 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     const ctx = gpu || gl ? null : (work.getContext("2d", { alpha: false }) as Ctx | null);
     if (!gpu && !gl && !ctx) throw new Error("Canvas is not available.");
 
-    // 60 fps phone footage is halved; anything at or under 30 keeps its own timing.
+    // 60 fps phone footage is halved; anything at or under 30 keeps its own
+    // timing. The halving is done here, not by the library (keep the first
+    // decoded frame of every output slot), so that every decoded frame
+    // reaches `process` and the last one can be told apart: the GPU route
+    // hands frames back one call late and must flush on the last.
     const stats = await track.computePacketStats(120).catch(() => null);
     const sourceFps = stats?.averagePacketRate ?? 30;
-    const frameRate = sourceFps > 32 ? 30 : undefined;
+    const targetFps = sourceFps > 32 ? 30 : null;
     const bitrate = Math.min(12_000_000, Math.max(2_500_000, Math.round(out.width * out.height * 30 * 0.1)));
     const duration = await input.computeDuration().catch(() => 0);
+    const videoEnd = await track.computeDuration().catch(() => Infinity);
 
     const sink = opts.streaming ? new BlobFileSink() : null;
     const bufferTarget = sink ? null : new mb.BufferTarget();
@@ -152,7 +157,7 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     const spent = { video: 0, captions: 0, other: 0 };
     let frames = 0;
     let passed = 0;
-    let lastEnd = 0;
+    let lastCallEnd = 0;
     let gpuVerified = false;
     // A frame with nothing drawn on it — no caption showing, no crop, no
     // scaling, no rotation to bake — can go to the encoder as it was
@@ -179,6 +184,20 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
       return passable;
     };
     const noLayers = { static: null, active: null, band: { top: 0, height: out.height } };
+    /** The decoded sample itself, re-stamped for the output (a clone: the library closes what we return). */
+    const restamp = (sample: VideoSample, ts: number, dur: number) => {
+      const s = sample.clone();
+      s.setTimestamp(ts);
+      s.setDuration(dur);
+      return s;
+    };
+    // End of the video track in the callback's time base (the conversion
+    // shifts the first timestamp among its tracks to zero); set once the
+    // conversion knows which tracks it uses, before it runs.
+    let trackEnd = Infinity;
+    let lastSlot = -1;
+    // GPU route: frames drawn but not yet collected (at most one between calls).
+    const inflight: PendingFrame[] = [];
     const conversion = await mb.Conversion.init({
       input,
       output,
@@ -188,7 +207,7 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
         codec: "avc",
         bitrate,
         keyFrameInterval: 2,
-        ...(frameRate ? { frameRate } : {}),
+        ...(targetFps && opts.debugMode === "resize-only" ? { frameRate: targetFps } : {}),
         // Bake rotation into the pixels before `process`, so the crop
         // rectangle is in the same upright coordinates the preview used.
         allowTransformationMetadata: false,
@@ -197,79 +216,104 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
           : opts.debugMode === "passthrough"
             ? { processedWidth: sourceWidth, processedHeight: sourceHeight }
             : { processedWidth: out.width, processedHeight: out.height }),
-        process: opts.debugMode === "resize-only" ? undefined : (sample) => {
+        process: opts.debugMode === "resize-only" ? undefined : async (sample) => {
           const t0 = performance.now();
-          if (lastEnd) spent.other += t0 - lastEnd;
+          if (lastCallEnd) spent.other += t0 - lastCallEnd;
+          const isLast = sample.timestamp + sample.duration >= trackEnd - 1e-4;
+          const done = (): void => {
+            lastCallEnd = performance.now();
+          };
+          // Output timing: the sample's own, or its slot on the 30 fps grid.
+          let ts = sample.timestamp;
+          let dur = sample.duration;
+          if (targetFps) {
+            const slot = Math.floor(ts * targetFps + 1e-6);
+            if (slot === lastSlot) {
+              // Same output slot as the previous frame: dropped. A dropped
+              // last frame still flushes what the GPU route holds.
+              const ready: VideoFrame[] = [];
+              if (isLast) while (inflight.length) ready.push(await inflight.shift()!.frame);
+              done();
+              return ready.length ? ready : null;
+            }
+            lastSlot = slot;
+            ts = slot / targetFps;
+            dur = 1 / targetFps;
+          }
           if (opts.debugMode === "passthrough") {
             frames += 1;
-            lastEnd = performance.now();
-            return sample;
+            done();
+            return restamp(sample, ts, dur);
           }
           const noCaptions = opts.debugMode === "nocaptions";
           let t1: number;
           if (gpu) {
-            const layers = noCaptions ? noLayers : captions.update(sample.timestamp);
+            const layers = noCaptions ? noLayers : captions.update(ts);
             t1 = performance.now();
+            spent.captions += t1 - t0;
             if (!noCaptions && !layers.static && !layers.active && sample.rotation === 0 && !sample.flip && gpu.pixelFormat === "NV12" && canPass(sample)) {
-              spent.captions += t1 - t0;
               frames += 1;
               passed += 1;
               if (previewCtx && frames % PREVIEW_EVERY === 0) sample.draw(previewCtx, 0, 0, canvas.width, canvas.height);
-              lastEnd = performance.now();
-              return sample;
+              // Keep the order: anything still in flight goes out first.
+              const ready = inflight.length ? await inflight.shift()!.frame : null;
+              done();
+              return ready ? [ready, restamp(sample, ts, dur)] : restamp(sample, ts, dur);
             }
             const uv = GpuCompositor.uvFor(crop, sample.displayWidth, sample.displayHeight, sample.rotation, sample.flip);
-            const composite = () => {
+            const us = { timestamp: Math.round(ts * 1e6), duration: Math.round(dur * 1e6) };
+            const draw = () => {
               const vf = sample.toVideoFrame();
               try {
-                gpu!.draw(vf, uv, layers);
+                return gpu!.draw(vf, uv, layers, us.timestamp, us.duration);
               } finally {
                 vf.close();
               }
-              // Pixels come back from a GPU buffer, never a canvas: the cost lands in "draw".
-              return gpu!.readFrame(sample.microsecondTimestamp, sample.microsecondDuration);
             };
-            const finish = (outFrame: VideoFrame) => {
-              spent.video += performance.now() - t1;
-              spent.captions += t1 - t0;
-              frames += 1;
-              if (previewCtx && frames % PREVIEW_EVERY === 0) previewCtx.drawImage(outFrame, 0, 0, canvas.width, canvas.height);
-              lastEnd = performance.now();
-              return outFrame;
-            };
-            if (gpuVerified) return composite().then(finish);
-            // First real frame: a decoder-backed VideoFrame is the one thing
-            // the self-test couldn't try. Draw it under an error scope; if
-            // WebGPU rejects it, switch to WebGL and redo this frame there.
-            gpu.beginCheck();
-            return composite().then(async (first) => {
-              const err = await gpu!.endCheck();
-              if (!err) {
-                gpuVerified = true;
-                return finish(first);
+            let pending: PendingFrame;
+            if (gpuVerified) {
+              pending = draw();
+            } else {
+              // First real frame: a decoder-backed VideoFrame is the one
+              // thing the self-test couldn't try. Draw it under an error
+              // scope; if WebGPU rejects it, switch to WebGL and redo this
+              // frame there.
+              gpu.beginCheck();
+              pending = draw();
+              const err = await gpu.endCheck();
+              if (err) {
+                console.warn("[nocap mobile] WebGPU rejected a decoded frame, switching to WebGL:", err.message);
+                gpu.dispose();
+                gpu = null;
+                gl = GlCompositor.supported() ? new GlCompositor(out.width, out.height) : null;
+                if (!gl) throw new Error("No compositor could render this video.");
+                work = gl.canvas;
+                const vf = sample.toVideoFrame();
+                try {
+                  gl.draw(vf, uv, layers);
+                } finally {
+                  vf.close();
+                }
+                spent.video += performance.now() - t1;
+                frames += 1;
+                done();
+                return new mb.VideoSample(work, { timestamp: ts, duration: dur });
               }
-              first.close();
-              console.warn("[nocap mobile] WebGPU rejected a decoded frame, switching to WebGL:", err.message);
-              gpu!.dispose();
-              gpu = null;
-              gl = GlCompositor.supported() ? new GlCompositor(out.width, out.height) : null;
-              if (!gl) throw new Error("No compositor could render this video.");
-              work = gl.canvas;
-              const vf = sample.toVideoFrame();
-              try {
-                gl.draw(vf, uv, layers);
-              } finally {
-                vf.close();
-              }
-              spent.video += performance.now() - t1;
-              spent.captions += t1 - t0;
-              frames += 1;
-              lastEnd = performance.now();
-              return gl.canvas;
-            });
+              gpuVerified = true;
+            }
+            frames += 1;
+            inflight.push(pending);
+            // Hand back the previous frame (its mapping has had a whole
+            // frame's time to resolve) and, on the last call, this one too.
+            const ready: VideoFrame[] = [];
+            while (inflight.length > (isLast ? 0 : 1)) ready.push(await inflight.shift()!.frame);
+            spent.video += performance.now() - t1;
+            if (previewCtx && frames % PREVIEW_EVERY === 0 && ready.length) previewCtx.drawImage(ready[ready.length - 1], 0, 0, canvas.width, canvas.height);
+            done();
+            return ready.length ? ready : null;
           }
           if (gl) {
-            const layers = noCaptions ? noLayers : captions.update(sample.timestamp);
+            const layers = noCaptions ? noLayers : captions.update(ts);
             t1 = performance.now();
             const vf = sample.toVideoFrame();
             try {
@@ -278,18 +322,21 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
             } finally {
               vf.close();
             }
+            const t2 = performance.now();
+            spent.captions += t1 - t0;
+            spent.video += t2 - t1;
           } else {
             sample.draw(ctx!, place.dx, place.dy, place.dw, place.dh);
             t1 = performance.now();
-            if (!noCaptions) captions.draw(ctx!, sample.timestamp);
+            if (!noCaptions) captions.draw(ctx!, ts);
+            const t2 = performance.now();
+            spent.video += t1 - t0;
+            spent.captions += t2 - t1;
           }
-          const t2 = performance.now();
-          spent.video += t1 - t0;
-          spent.captions += t2 - t1;
           frames += 1;
           if (previewCtx && frames % PREVIEW_EVERY === 0) previewCtx.drawImage(work, 0, 0, canvas.width, canvas.height);
-          lastEnd = performance.now();
-          return work;
+          done();
+          return new mb.VideoSample(work, { timestamp: ts, duration: dur });
         },
       },
     });
@@ -298,6 +345,7 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
       const why = conversion.discardedTracks.map((d) => `${d.track.type}: ${d.reason}`).join(", ") || "conversion not possible";
       throw new FastExportUnsupported(why);
     }
+    trackEnd = videoEnd - Math.max(0, await input.getFirstTimestamp(conversion.utilizedTracks).catch(() => 0));
 
     conversion.onProgress = (p) => progress({ phase: "video", progress: Math.min(1, Math.max(0, p)), message: "Rendering" });
     const onAbort = () => {
@@ -328,7 +376,15 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     const hasAudio = conversion.utilizedTracks.some((t) => t.isAudioTrack());
     const n = Math.max(1, frames);
     const composited = Math.max(1, frames - passed);
-    const gpuTiming = gpu ? { submit: gpu.timing.submit / composited, wait: gpu.timing.wait / composited, pack: gpu.timing.pack / composited } : undefined;
+    const gpuTiming = gpu
+      ? {
+          import: gpu.timing.import / composited,
+          layers: gpu.timing.layers / composited,
+          submit: gpu.timing.submit / composited,
+          wait: gpu.timing.wait / composited,
+          pack: gpu.timing.pack / composited,
+        }
+      : undefined;
     const route = gpu ? `gpu/${gpu.pixelFormat.toLowerCase()}` : gl ? "gl" : "2d";
     gpu?.dispose();
     gl?.dispose();

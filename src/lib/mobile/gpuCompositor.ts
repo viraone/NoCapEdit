@@ -13,6 +13,11 @@
  * the encoder can use as is. Same crop/rotation maths as the WebGL
  * compositor (texture coordinates per quad corner).
  *
+ * Two readback buffers alternate, and the map request goes out the moment
+ * a frame is submitted, so the caller can draw the next frame while this
+ * one is still on the GPU and collect it a frame later, when the mapping
+ * has usually long resolved.
+ *
  * The RGBA route (copy the texture out row by row, hand over RGBA) stays
  * as the fallback for a browser that can't build an NV12 frame from bytes.
  */
@@ -148,6 +153,18 @@ interface LayerSlot {
 /** How the finished frame is handed to the encoder. */
 export type GpuPixelFormat = "NV12" | "RGBA";
 
+/** A drawn frame whose bytes are still on their way back from the GPU. */
+export interface PendingFrame {
+  frame: Promise<VideoFrame>;
+}
+
+interface ReadbackSlot {
+  buffer: GPUBuffer;
+  /** Mapped or being mapped: not to be drawn into until collected. */
+  busy: boolean;
+  pending: PendingFrame | null;
+}
+
 /** Video range (16–235) or full range (0–255): Y scale, Y offset, chroma scale. */
 const RANGE = {
   video: new Float32Array([219, 16, 224, 0]),
@@ -183,8 +200,10 @@ function isRed(format: VideoPixelFormat | null, buf: Uint8Array, width: number, 
 export class GpuCompositor {
   private readonly target: GPUTexture;
   private readonly targetView: GPUTextureView;
-  private readonly readback: GPUBuffer;
-  /** NV12: the compute pass writes the packed planes here, then they are copied to `readback`. */
+  /** Two readback buffers, used alternately, so a frame can be drawn while the previous one is being mapped. */
+  private readonly slots: ReadbackSlot[];
+  private nextSlot = 0;
+  /** NV12: the compute pass writes the packed planes here, then they are copied to a slot. */
   private readonly packed: GPUBuffer | null = null;
   private readonly packPipeline: GPUComputePipeline | null = null;
   private readonly packBindGroup: GPUBindGroup | null = null;
@@ -207,8 +226,12 @@ export class GpuCompositor {
   private layerQuadKey = "";
   private readonly staticSlot: LayerSlot = { texture: null, bindGroup: null, version: -1, width: 0, height: 0 };
   private readonly activeSlot: LayerSlot = { texture: null, bindGroup: null, version: -1, width: 0, height: 0 };
-  /** Profiling: milliseconds summed over frames — recording + submit, waiting for the GPU, building the VideoFrame. */
-  readonly timing = { submit: 0, wait: 0, pack: 0 };
+  /**
+   * Profiling, milliseconds summed over frames: importing the frame and
+   * binding it, uploading caption layers, the rest of recording + submit,
+   * the time until the mapping resolved, and building the VideoFrame.
+   */
+  readonly timing = { import: 0, layers: 0, submit: 0, wait: 0, pack: 0 };
 
   static supported(): boolean {
     return typeof navigator !== "undefined" && "gpu" in navigator && typeof VideoFrame !== "undefined";
@@ -264,7 +287,7 @@ export class GpuCompositor {
       const words = Math.ceil(this.frameBytes / 4);
       const size = Math.ceil(this.frameBytes / 16) * 16;
       this.packed = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-      this.readback = device.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      this.slots = GpuCompositor.makeSlots(device, size);
       const yWords = (width * height) / 4;
       this.dims = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       device.queue.writeBuffer(this.dims, 0, new Uint32Array([width, height, yWords, words - yWords]));
@@ -284,7 +307,7 @@ export class GpuCompositor {
       // copyTextureToBuffer wants rows padded to 256 bytes.
       this.frameBytes = width * 4 * height;
       this.bytesPerRow = Math.ceil((width * 4) / 256) * 256;
-      this.readback = device.createBuffer({ size: this.bytesPerRow * height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      this.slots = GpuCompositor.makeSlots(device, this.bytesPerRow * height);
       this.tight = this.bytesPerRow === width * 4 ? null : new Uint8Array(this.frameBytes);
     }
 
@@ -345,8 +368,7 @@ export class GpuCompositor {
     let why: string | null = null;
     try {
       for (let attempt = 0; attempt < 2; attempt++) {
-        this.draw(input, GlCompositor.uvFor({ x: 0, y: 0, w: 8, h: 8 }, 8, 8, 0, false), { static: null, active: null, band: { top: 0, height: this.height } });
-        output = await this.readFrame(0, 0);
+        output = await this.draw(input, GlCompositor.uvFor({ x: 0, y: 0, w: 8, h: 8 }, 8, 8, 0, false), { static: null, active: null, band: { top: 0, height: this.height } }, 0, 0).frame;
         // A browser may keep its own idea of the range; the maths must match it.
         const full = output.colorSpace?.fullRange === true;
         if (this.packPipeline && full !== this.fullRange) {
@@ -368,7 +390,7 @@ export class GpuCompositor {
     }
     const errors = [await device.popErrorScope(), await device.popErrorScope(), await device.popErrorScope()].filter(Boolean);
     if (errors.length) why = [why, ...errors.map((e) => e!.message)].filter(Boolean).join("; ");
-    this.timing.submit = this.timing.wait = this.timing.pack = 0;
+    this.timing.import = this.timing.layers = this.timing.submit = this.timing.wait = this.timing.pack = 0;
     return why;
   }
 
@@ -421,12 +443,24 @@ export class GpuCompositor {
   }
 
   /**
-   * Composites one frame: the video through `uv`, then the caption layers
-   * within their band, then packs it for the encoder. The external texture
-   * is only valid during this task, so this is synchronous and submits
-   * immediately; `readFrame` collects the result.
+   * Composites one frame — the video through `uv`, then the caption layers
+   * within their band — packs it for the encoder and asks for the bytes.
+   * The external texture is only valid during this task, so this is
+   * synchronous and submits immediately. The result arrives through
+   * `PendingFrame.frame`; drawing the next frame before collecting this
+   * one is the point, and the slot is only reused once it has been
+   * collected.
    */
-  draw(frame: VideoFrame, uv: Float32Array, captions: { static: Layer; active: Layer; band: { top: number; height: number } }) {
+  draw(
+    frame: VideoFrame,
+    uv: Float32Array,
+    captions: { static: Layer; active: Layer; band: { top: number; height: number } },
+    timestamp: number,
+    duration: number,
+  ): PendingFrame {
+    const slot = this.slots[this.nextSlot];
+    if (slot.busy) throw new Error("GPU compositor: the previous frame in this slot has not been collected yet");
+    this.nextSlot = (this.nextSlot + 1) % this.slots.length;
     const t0 = performance.now();
     const device = this.device;
     const external = device.importExternalTexture({ source: frame });
@@ -442,6 +476,7 @@ export class GpuCompositor {
       device.queue.writeBuffer(this.videoVertices, 0, GpuCompositor.quad(-1, 1, 1, -1, uv));
       this.videoQuadKey = videoKey;
     }
+    const t1 = performance.now();
 
     const showStatic = !!captions.static;
     const showActive = !!captions.active;
@@ -456,6 +491,7 @@ export class GpuCompositor {
         this.layerQuadKey = layerKey;
       }
     }
+    const t2 = performance.now();
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -484,52 +520,63 @@ export class GpuCompositor {
       compute.setBindGroup(0, this.packBindGroup!);
       compute.dispatchWorkgroups(this.packGroups);
       compute.end();
-      encoder.copyBufferToBuffer(this.packed!, 0, this.readback, 0, this.readback.size);
+      encoder.copyBufferToBuffer(this.packed!, 0, slot.buffer, 0, slot.buffer.size);
     } else {
-      encoder.copyTextureToBuffer({ texture: this.target }, { buffer: this.readback, bytesPerRow: this.bytesPerRow }, [this.width, this.height]);
+      encoder.copyTextureToBuffer({ texture: this.target }, { buffer: slot.buffer, bytesPerRow: this.bytesPerRow }, [this.width, this.height]);
     }
     device.queue.submit([encoder.finish()]);
-    this.timing.submit += performance.now() - t0;
+    const submitted = performance.now();
+    this.timing.import += t1 - t0;
+    this.timing.layers += t2 - t1;
+    this.timing.submit += submitted - t2;
+
+    slot.busy = true;
+    const pending: PendingFrame = {
+      frame: slot.buffer.mapAsync(GPUMapMode.READ).then(() => {
+        const mapped = performance.now();
+        this.timing.wait += mapped - submitted;
+        try {
+          return this.pack(slot.buffer, timestamp, duration);
+        } finally {
+          slot.buffer.unmap();
+          slot.busy = false;
+          this.timing.pack += performance.now() - mapped;
+        }
+      }),
+    };
+    slot.pending = pending;
+    return pending;
   }
 
-  /**
-   * The frame drawn by the last `draw`, as a VideoFrame for the encoder.
-   * Waits for the GPU to finish that frame (a few ms of real work, not a
-   * display refresh) and copies the bytes out.
-   */
-  async readFrame(timestamp: number, duration: number): Promise<VideoFrame> {
-    const t0 = performance.now();
-    await this.readback.mapAsync(GPUMapMode.READ);
-    const t1 = performance.now();
-    try {
-      const mapped = this.readback.getMappedRange();
-      if (this.packPipeline) {
-        return new VideoFrame(new Uint8Array(mapped, 0, this.frameBytes), {
-          format: "NV12",
-          codedWidth: this.width,
-          codedHeight: this.height,
-          timestamp,
-          duration,
-          colorSpace: { primaries: "bt709", transfer: "bt709", matrix: "bt709", fullRange: this.fullRange },
-        });
-      }
-      let data: ArrayBuffer | Uint8Array<ArrayBuffer> = mapped;
-      if (this.tight) {
-        // Padded rows: a declared stride isn't honoured everywhere (WebKit
-        // shears the picture), so repack into a tight buffer.
-        const src = new Uint8Array(mapped);
-        const rowBytes = this.width * 4;
-        for (let y = 0; y < this.height; y++) {
-          this.tight.set(src.subarray(y * this.bytesPerRow, y * this.bytesPerRow + rowBytes), y * rowBytes);
-        }
-        data = this.tight;
-      }
-      return new VideoFrame(data, { format: "RGBA", codedWidth: this.width, codedHeight: this.height, timestamp, duration });
-    } finally {
-      this.readback.unmap();
-      this.timing.wait += t1 - t0;
-      this.timing.pack += performance.now() - t1;
+  /** The mapped bytes of a slot as a VideoFrame for the encoder. */
+  private pack(buffer: GPUBuffer, timestamp: number, duration: number): VideoFrame {
+    const mapped = buffer.getMappedRange();
+    if (this.packPipeline) {
+      return new VideoFrame(new Uint8Array(mapped, 0, this.frameBytes), {
+        format: "NV12",
+        codedWidth: this.width,
+        codedHeight: this.height,
+        timestamp,
+        duration,
+        colorSpace: { primaries: "bt709", transfer: "bt709", matrix: "bt709", fullRange: this.fullRange },
+      });
     }
+    let data: ArrayBuffer | Uint8Array<ArrayBuffer> = mapped;
+    if (this.tight) {
+      // Padded rows: a declared stride isn't honoured everywhere (WebKit
+      // shears the picture), so repack into a tight buffer.
+      const src = new Uint8Array(mapped);
+      const rowBytes = this.width * 4;
+      for (let y = 0; y < this.height; y++) {
+        this.tight.set(src.subarray(y * this.bytesPerRow, y * this.bytesPerRow + rowBytes), y * rowBytes);
+      }
+      data = this.tight;
+    }
+    return new VideoFrame(data, { format: "RGBA", codedWidth: this.width, codedHeight: this.height, timestamp, duration });
+  }
+
+  private static makeSlots(device: GPUDevice, size: number): ReadbackSlot[] {
+    return [0, 1].map(() => ({ buffer: device.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }), busy: false, pending: null }));
   }
 
   /** Same corner mapping as the WebGL compositor. */
@@ -549,7 +596,11 @@ export class GpuCompositor {
     this.activeSlot.texture?.destroy();
     this.videoVertices.destroy();
     this.layerVertices.destroy();
-    this.readback.destroy();
+    for (const slot of this.slots) {
+      // Destroying a buffer fails its pending map; nobody is waiting for a discarded frame.
+      slot.pending?.frame.then((f) => f.close()).catch(() => undefined);
+      slot.buffer.destroy();
+    }
     this.packed?.destroy();
     this.dims?.destroy();
     this.target.destroy();

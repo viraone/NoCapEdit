@@ -281,7 +281,10 @@ function ExportTimer({ timing }: { timing: ExportTiming }) {
                 </div>
                 <div>
                   per frame: draw {timing.stats.msVideo.toFixed(1)}
-                  {timing.stats.gpu ? ` (submit ${timing.stats.gpu.submit.toFixed(1)} · wait ${timing.stats.gpu.wait.toFixed(1)} · pack ${timing.stats.gpu.pack.toFixed(1)})` : ""} · captions{" "}
+                  {timing.stats.gpu
+                    ? ` (import ${timing.stats.gpu.import.toFixed(1)} · layers ${timing.stats.gpu.layers.toFixed(1)} · submit ${timing.stats.gpu.submit.toFixed(1)} · wait ${timing.stats.gpu.wait.toFixed(1)} · pack ${timing.stats.gpu.pack.toFixed(1)})`
+                    : ""}{" "}
+                  · captions{" "}
                   {timing.stats.msCaptions.toFixed(1)} · decode+encode {timing.stats.msOther.toFixed(1)} ms
                 </div>
                 <div>

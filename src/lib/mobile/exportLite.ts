@@ -82,7 +82,7 @@ export interface ExportStats {
   /** Frames handed to the encoder as decoded, because nothing was drawn on them. */
   passthroughFrames?: number;
   /** WebGPU route: where the draw time went, ms per composited frame. */
-  gpu?: { submit: number; wait: number; pack: number };
+  gpu?: { import: number; layers: number; submit: number; wait: number; pack: number };
 }
 
 /** decodeAudioData needs the whole file as an ArrayBuffer; past this it
