@@ -23,6 +23,9 @@ export type MlRequest =
       /** onnxruntime wasm thread count. 1 avoids shared wasm memory, which
        * iOS Safari handles badly (the tab is killed while loading). */
       threads?: number;
+      /** Generation repetition penalty (>1 discourages loops like
+       * "yeah, yeah, yeah, …" on noisy audio). Unset = model default. */
+      repetitionPenalty?: number;
     }
   | { type: "translate"; id: number; texts: string[]; steps: { model: string; prefix?: string }[] }
   | { type: "diarize"; id: number; audio: Float32Array; maxSpeakers: number }
@@ -188,6 +191,10 @@ async function transcribe(req: Extract<MlRequest, { type: "transcribe" }>) {
     task: "transcribe",
   };
   if (req.language && req.language !== "auto") options.language = req.language;
+  if (req.repetitionPenalty && req.repetitionPenalty > 1) {
+    options.repetition_penalty = req.repetitionPenalty;
+    options.no_repeat_ngram_size = 4;
+  }
   if (streamer) options.streamer = streamer;
 
   const out = await pipe(req.audio, options);

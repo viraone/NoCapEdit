@@ -5,7 +5,8 @@
 //   node e2e/mobile.mjs            # Chromium
 //   BROWSER=webkit node e2e/mobile.mjs
 //   AUDIO=ffmpeg node e2e/mobile.mjs   # force the iOS audio-extraction fallback
-//   STREAM=1 node e2e/mobile.mjs       # force the long-clip streaming (fragmented) export
+//   STREAM=1 node e2e/mobile.mjs       # force the long-clip streaming export
+//   CLIP=path/to/clip.mp4 node e2e/mobile.mjs   # use another input clip
 //   E2E_URL=https://nocapedit.com/ node e2e/mobile.mjs   # against a deployment
 import { chromium, webkit } from "playwright";
 import { spawn, execFileSync } from "node:child_process";
@@ -15,7 +16,7 @@ import { mkdirSync } from "node:fs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const project = join(here, "..");
-const clip = join(here, "fixtures", "test-speech.mp4");
+const clip = process.env.CLIP ? join(process.cwd(), process.env.CLIP) : join(here, "fixtures", "test-speech.mp4");
 const port = 4174;
 const remote = process.env.E2E_URL;
 const baseUrl = remote ?? `http://localhost:${port}/`;
@@ -52,6 +53,8 @@ try {
   const query = new URLSearchParams();
   if (process.env.AUDIO === "ffmpeg") query.set("audio", "ffmpeg");
   if (process.env.STREAM === "1") query.set("stream", "1");
+  if (process.env.ASR) query.set("asr", process.env.ASR);
+  if (process.env.THREADS) query.set("threads", process.env.THREADS);
   const qs = query.toString();
   await page.goto(new URL(`m/${qs ? `?${qs}` : ""}`, baseUrl).toString());
   await page.getByRole("button", { name: /choose a video/i }).waitFor({ timeout: 30_000 });
@@ -76,7 +79,10 @@ try {
   await exportBtn.waitFor({ timeout: 8 * 60_000 });
   lap("captions ready");
   const cueCount = await page.locator("ul li input").count();
-  console.log("cues:", cueCount);
+  const cueTimes = await page.locator("ul li button").allInnerTexts();
+  const cueTexts = await page.locator("ul li input").evaluateAll((els) => els.map((e) => e.value));
+  console.log("cues:", cueCount, "first:", cueTimes.slice(0, 4).join(" "), "… last:", cueTimes.slice(-3).join(" "));
+  console.log("text:", cueTexts.slice(0, 6).join(" | "));
   if (cueCount === 0) throw new Error("No captions produced");
   await page.screenshot({ path: join(outDir, "mobile-3-style.png") });
 

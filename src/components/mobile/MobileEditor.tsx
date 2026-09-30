@@ -19,6 +19,7 @@ import { AudioExtractError, extractAudio, isIOS, type AudioStrategy, type Source
 import { hasWebGPU, transcribeSamples, WHISPER_MODELS } from "@/lib/speech/transcriber";
 import type { MlProgress } from "@/lib/speech/mlClient";
 import { buildCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
+import { cleanWords } from "@/lib/mobile/cleanWords";
 import { CAPTION_PRESETS, getPreset } from "@/lib/captions/presets";
 import { drawCue } from "@/lib/captions/renderer";
 import { ensureFontsLoaded, fontFamily } from "@/lib/captions/fonts";
@@ -71,7 +72,7 @@ export function MobileEditor() {
   const [file, setFile] = useState<File | null>(null);
   const [duration, setDuration] = useState(0);
   const [sourceAudio, setSourceAudio] = useState<SourceAudio | null>(null);
-  const [accurate, setAccurate] = useState(false);
+  const [accurate, setAccurate] = useState(true);
   const [status, setStatus] = useState<{ message: string; progress: number | null; detail?: string }>({ message: "", progress: null });
   const [error, setError] = useState<{ message: string; detail?: string } | null>(null);
   const [words, setWords] = useState<WordTiming[]>([]);
@@ -175,12 +176,21 @@ export function MobileEditor() {
           progress: p.progress,
         });
       };
-      const res = await transcribeSamples(decoded.speech, { model, language: "auto", device, threads, onProgress, signal: controller.signal });
+      const res = await transcribeSamples(decoded.speech, {
+        model,
+        language: "auto",
+        device,
+        threads,
+        repetitionPenalty: 1.2,
+        onProgress,
+        signal: controller.signal,
+      });
       if (controller.signal.aborted) return;
-      if (res.words.length === 0) throw new Error("Couldn't hear any speech in this video.");
+      const cleaned = cleanWords(res.words);
+      if (cleaned.length === 0) throw new Error("Couldn't hear any speech in this video.");
       await ensureFontsLoaded();
-      setWords(res.words);
-      setCues(buildCues(res.words, { ...CAPTION_RULES, maxWords: wordsPerCue }));
+      setWords(cleaned);
+      setCues(buildCues(cleaned, { ...CAPTION_RULES, maxWords: wordsPerCue }));
       setStep("style");
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
@@ -382,6 +392,9 @@ function PickScreen({
           <Button variant="primary" size="lg" className="mt-6 w-full" onClick={() => inputRef.current?.click()} disabled={!!unsupported}>
             <Upload size={18} /> Choose a video
           </Button>
+          <p className="mt-2 text-center text-[11px] text-label-3">
+            Pick <span className="text-label-2">Photo Library</span> for your camera roll, or <span className="text-label-2">Choose File</span> for a clip saved in Files.
+          </p>
           {unsupported && (
             <p className="mt-3 flex items-start gap-2 text-sm text-sys-orange">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" /> {support?.reason}
@@ -393,8 +406,8 @@ function PickScreen({
       <div className="mt-4 rounded-2xl bg-sys-gray6 p-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-label-2">Speech model</p>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <ModelChoice active={!accurate} onClick={() => onAccurate(false)} title="Fast" note="~45 MB · quick" />
-          <ModelChoice active={accurate} onClick={() => onAccurate(true)} title="Accurate" note="~80 MB · better" />
+          <ModelChoice active={accurate} onClick={() => onAccurate(true)} title="Accurate" note="~80 MB · crowds, rooms, noise" />
+          <ModelChoice active={!accurate} onClick={() => onAccurate(false)} title="Fast" note="~45 MB · quiet, clear speech" />
         </div>
       </div>
 

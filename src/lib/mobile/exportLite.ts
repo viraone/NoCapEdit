@@ -138,6 +138,44 @@ function aacSpecificConfig(sampleRate: number, channels: number): Uint8Array {
   return new Uint8Array([(objectType << 3) | (freqIndex >> 1), ((freqIndex & 1) << 7) | (channels << 3)]);
 }
 
+/**
+ * Receives a classic (non-fragmented) MP4 from a chunked StreamTarget
+ * without holding the file in the JS heap. Everything past the first
+ * HEAD_BYTES goes straight into Blob storage as it arrives; the head stays
+ * a mutable buffer because that is where the muxer seeks back at the end to
+ * patch the mdat box size (the only non-sequential write mp4-muxer makes).
+ */
+class BlobFileSink {
+  private static readonly HEAD_BYTES = 16 * 1024 * 1024;
+  private head = new Uint8Array(BlobFileSink.HEAD_BYTES);
+  private headLength = 0;
+  private tail: Blob[] = [];
+  private tailStart = BlobFileSink.HEAD_BYTES;
+  private tailEnd = BlobFileSink.HEAD_BYTES;
+
+  write(data: Uint8Array, position: number) {
+    const end = position + data.byteLength;
+    if (position < BlobFileSink.HEAD_BYTES) {
+      const inHead = Math.min(data.byteLength, BlobFileSink.HEAD_BYTES - position);
+      this.head.set(data.subarray(0, inHead), position);
+      this.headLength = Math.max(this.headLength, position + inHead);
+      if (inHead === data.byteLength) return;
+      data = data.subarray(inHead);
+      position += inHead;
+    }
+    if (position !== this.tailEnd) {
+      throw new Error(`Unsupported out-of-order write at ${position} (file end ${this.tailEnd})`);
+    }
+    this.tail.push(new Blob([data as BlobPart]));
+    this.tailEnd = end;
+  }
+
+  finalize(): Blob {
+    const headLen = this.tail.length ? BlobFileSink.HEAD_BYTES : this.headLength;
+    return new Blob([this.head.subarray(0, headLen) as BlobPart, ...this.tail], { type: "video/mp4" });
+  }
+}
+
 function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
 }
@@ -201,28 +239,23 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
   }
   const channels = planar ? planar.length : 0;
 
-  const parts: Blob[] = [];
-  let expectedPosition = 0;
   const memoryTarget = opts.streaming ? null : new ArrayBufferTarget();
+  const fileSink = memoryTarget ? null : new BlobFileSink();
   const target =
     memoryTarget ??
     new StreamTarget({
       chunked: true,
       chunkSize: 4 * 1024 * 1024,
-      // A fragmented MP4 is written strictly front to back, which is what
-      // lets each chunk go straight into Blob storage (Blob() copies the
-      // bytes; the chunk itself is freed). Guard the assumption.
-      onData: (data, position) => {
-        if (position !== expectedPosition) throw new Error(`Non-sequential write at ${position} (expected ${expectedPosition})`);
-        expectedPosition += data.byteLength;
-        parts.push(new Blob([data as BlobPart]));
-      },
+      onData: (data, position) => fileSink!.write(data, position),
     });
   const muxer = new Muxer({
     target,
     video: { codec: "avc", width, height, frameRate: fps },
     ...(planar && channels > 0 ? { audio: { codec: "aac", numberOfChannels: channels, sampleRate: AUDIO_RATE } } : {}),
-    fastStart: memoryTarget ? "in-memory" : "fragmented",
+    // Streaming writes a *classic* MP4 (moov at the end) — a fragmented MP4
+    // would keep memory flat too, but iOS Photos won't import one, so the
+    // share sheet loses "Save Video".
+    fastStart: memoryTarget ? "in-memory" : false,
     firstTimestampBehavior: "offset",
   });
 
@@ -384,7 +417,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
   muxer.finalize();
   URL.revokeObjectURL(url);
 
-  let blob = memoryTarget ? new Blob([memoryTarget.buffer], { type: "video/mp4" }) : new Blob(parts, { type: "video/mp4" });
+  let blob = memoryTarget ? new Blob([memoryTarget.buffer], { type: "video/mp4" }) : fileSink!.finalize();
 
   // No AudioEncoder (or unsupported config): keep the original audio via a
   // tiny ffmpeg mux. Single-threaded on purpose — no isolation needed.
