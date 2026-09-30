@@ -38,7 +38,7 @@ import "@/lib/fonts"; // registers next/font family names for canvas text on the
 import { cx } from "@/lib/utils/cx";
 import { AudioExtractError, extractAudio, isIOS, type AudioStrategy, type SourceAudio } from "@/lib/mobile/audio";
 import { hasWebGPU, transcribeSamples, WHISPER_MODELS } from "@/lib/speech/transcriber";
-import type { MlProgress } from "@/lib/speech/mlClient";
+import { resetMlWorker, type MlProgress } from "@/lib/speech/mlClient";
 import { buildCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
 import { cleanWords } from "@/lib/mobile/cleanWords";
 import { CAPTION_PRESETS, getPreset } from "@/lib/captions/presets";
@@ -93,6 +93,11 @@ function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+/** onnxruntime couldn't get its wasm heap ("no available backend found … Out of memory"). */
+function isOutOfMemory(e: unknown): boolean {
+  return /out of memory|no available backend/i.test(e instanceof Error ? e.message : String(e));
 }
 
 // ---------------------------------------------------------------------------
@@ -409,15 +414,22 @@ export function MobileEditor() {
           progress: p.progress,
         });
       };
-      const res = await transcribeSamples(decoded.speech, {
-        model,
-        language: "auto",
-        device,
-        threads,
-        repetitionPenalty: 1.2,
-        onProgress,
-        signal: controller.signal,
-      });
+      const transcribeOpts = { model, language: "auto", device, threads, repetitionPenalty: 1.2, onProgress, signal: controller.signal };
+      let res;
+      try {
+        res = await transcribeSamples(decoded.speech, transcribeOpts);
+      } catch (e) {
+        // iOS: the model's wasm heap can fail to allocate in a tab whose
+        // process still holds an earlier run's memory. A fresh worker, a
+        // moment later, usually gets it.
+        if (!isOutOfMemory(e) || controller.signal.aborted) throw e;
+        console.warn("[nocap mobile] speech model out of memory, retrying with a fresh worker");
+        resetMlWorker("retry");
+        setStatus({ message: "Freeing memory, trying again", progress: null });
+        await new Promise((r) => setTimeout(r, 1500));
+        if (controller.signal.aborted) return;
+        res = await transcribeSamples(decoded.speech, transcribeOpts);
+      }
       if (controller.signal.aborted) return;
       const cleaned = cleanWords(res.words);
       if (cleaned.length === 0) throw new Error("Couldn't hear any speech in this video.");
@@ -430,6 +442,11 @@ export function MobileEditor() {
       console.error("[nocap mobile] analyse failed", e);
       if (e instanceof AudioExtractError) {
         setError({ message: "Couldn't read the audio from this video.", detail: e.message });
+      } else if (isOutOfMemory(e)) {
+        setError({
+          message: "Safari ran out of memory loading the speech model.",
+          detail: "Close this tab (and a few others), open the page in a new tab and try again.",
+        });
       } else {
         setError({ message: e instanceof Error ? e.message : String(e), detail: e instanceof Error && e.name !== "Error" ? e.name : undefined });
       }
