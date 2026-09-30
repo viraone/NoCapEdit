@@ -274,7 +274,7 @@ export function MobileEditor() {
         )}
       </header>
 
-      <main className="flex flex-1 flex-col px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+      <main className="flex flex-1 flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {error && (
           <div className="mb-3 flex items-start gap-2 rounded-2xl border border-sys-red/30 bg-sys-red/10 p-3 text-sm text-sys-red">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -737,9 +737,24 @@ function StyleScreen({
         ))}
       </ul>
 
-      <Button variant="primary" size="lg" className="mt-4 w-full" onClick={onExport}>
-        <Sparkles size={18} /> Export video
-      </Button>
+      <ActionBar>
+        <Button variant="primary" size="lg" className="w-full" onClick={onExport}>
+          <Sparkles size={18} /> Export video
+        </Button>
+      </ActionBar>
+    </div>
+  );
+}
+
+/**
+ * The screen's main action, pinned to the bottom of the viewport. Sits
+ * above the home indicator and, on iPhone, above Safari's floating address
+ * bar, which otherwise covers a button that scrolls to the very bottom.
+ */
+function ActionBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sticky bottom-0 z-20 -mx-4 mt-4 bg-gradient-to-t from-black via-black/95 to-transparent px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-6">
+      {children}
     </div>
   );
 }
@@ -776,18 +791,21 @@ function DoneScreen({
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> This browser couldn&rsquo;t encode audio, so the export is silent. Safari 17+ or Chrome keeps the sound.
         </p>
       )}
-      <Button variant="primary" size="lg" className="mt-4 w-full" onClick={onSave}>
-        {share ? <Share2 size={18} /> : <Download size={18} />} {share ? "Save to Photos" : "Download MP4"}
-      </Button>
-      {saved && (
-        <p className="mt-2 flex items-center justify-center gap-1.5 text-sm text-sys-green">
-          <Check size={16} /> {saved === "shared" ? "Choose “Save Video” in the share sheet." : "Downloaded."}
-        </p>
-      )}
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Button variant="secondary" size="lg" onClick={onEdit}><ArrowLeft size={16} /> Adjust</Button>
         <Button variant="secondary" size="lg" onClick={onNew}><RotateCcw size={16} /> New video</Button>
       </div>
+      <div className="flex-1" />
+      <ActionBar>
+        <Button variant="primary" size="lg" className="w-full" onClick={onSave}>
+          {share ? <Share2 size={18} /> : <Download size={18} />} {share ? "Save to Photos" : "Download MP4"}
+        </Button>
+        {saved && (
+          <p className="mt-2 flex items-center justify-center gap-1.5 text-sm text-sys-green">
+            <Check size={16} /> {saved === "shared" ? "Choose “Save Video” in the share sheet." : "Downloaded."}
+          </p>
+        )}
+      </ActionBar>
     </div>
   );
 }
