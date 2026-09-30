@@ -45,11 +45,15 @@ export interface FastExportOptions {
   streaming?: boolean;
   onProgress?: (p: LiteProgress) => void;
   signal?: AbortSignal;
-  /** Profiling only (`?fx=resize-only`): let the library resize and skip
-   * captions/compositing, to measure the pure decode + encode floor.
-   * `?fx=2d` forces the 2D-canvas compositor instead of WebGL. */
-  debugMode?: "resize-only" | "2d";
+  /** Profiling only. `passthrough`: hand decoded frames straight to the
+   * encoder (no compositing at all) — the decode + encode floor.
+   * `nocaptions`: composite through the GPU but skip captions.
+   * `resize-only`: let the library resize. `2d`: force the 2D-canvas
+   * compositor instead of WebGL. */
+  debugMode?: "passthrough" | "nocaptions" | "resize-only" | "2d";
 }
+
+export type FastExportDebugMode = NonNullable<FastExportOptions["debugMode"]>;
 
 export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise<LiteExportResult> {
   const { file, cues, style, canvas, signal } = opts;
@@ -154,25 +158,33 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
         allowTransformationMetadata: false,
         ...(opts.debugMode === "resize-only"
           ? { width: out.width, height: out.height, fit: "cover" as const }
-          : { processedWidth: out.width, processedHeight: out.height }),
+          : opts.debugMode === "passthrough"
+            ? { processedWidth: sourceWidth, processedHeight: sourceHeight }
+            : { processedWidth: out.width, processedHeight: out.height }),
         process: opts.debugMode === "resize-only" ? undefined : (sample) => {
           const t0 = performance.now();
           if (lastEnd) spent.other += t0 - lastEnd;
+          if (opts.debugMode === "passthrough") {
+            frames += 1;
+            lastEnd = performance.now();
+            return sample;
+          }
+          const noCaptions = opts.debugMode === "nocaptions";
           let t1: number;
           if (gl) {
-            const showing = captions.update(sample.timestamp);
+            const layers = noCaptions ? { static: null, active: null, band: { top: 0, height: out.height } } : captions.update(sample.timestamp);
             t1 = performance.now();
             const vf = sample.toVideoFrame();
             try {
               const uv = GlCompositor.uvFor(crop, sample.displayWidth, sample.displayHeight, sample.rotation, sample.flip);
-              gl.draw(vf, uv, showing ? { layer: captions.canvas, version: captions.renders } : null);
+              gl.draw(vf, uv, layers);
             } finally {
               vf.close();
             }
           } else {
             sample.draw(ctx!, place.dx, place.dy, place.dw, place.dh);
             t1 = performance.now();
-            captions.draw(ctx!, sample.timestamp);
+            if (!noCaptions) captions.draw(ctx!, sample.timestamp);
           }
           const t2 = performance.now();
           spent.video += t1 - t0;
@@ -211,7 +223,7 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     const n = Math.max(1, frames);
     gl?.dispose();
     const exportStats: ExportStats = {
-      source: `${sourceWidth}×${sourceHeight} ${track.codec ?? "?"} ${Math.round(sourceFps)} fps${hdr ? " HDR" : ""} · ${gl ? "gl" : "2d"}`,
+      source: `${sourceWidth}×${sourceHeight} ${track.codec ?? "?"} ${Math.round(sourceFps)} fps${hdr ? " HDR" : ""} · ${gl ? "gl" : "2d"}${opts.debugMode ? ` · ${opts.debugMode}` : ""}`,
       frames,
       msVideo: spent.video / n,
       msCaptions: spent.captions / n,

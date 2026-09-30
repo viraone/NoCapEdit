@@ -46,7 +46,7 @@ import { drawCue } from "@/lib/captions/renderer";
 import { ensureFontsLoaded, fontFamily } from "@/lib/captions/fonts";
 import { defaultSubtitleStyle, type CaptionCue, type SubtitleStyle, type WordTiming } from "@/lib/models/project";
 import { checkLiteSupport, exportCaptionedVideo, type ExportStats, type LiteExportResult, type LiteProgress, type LiteSupport } from "@/lib/mobile/exportLite";
-import { fastExportCaptionedVideo } from "@/lib/mobile/fastExport";
+import { fastExportCaptionedVideo, type FastExportDebugMode } from "@/lib/mobile/fastExport";
 import { acquireWakeLock, canShareFiles, saveVideo } from "@/lib/mobile/share";
 import { probeVideo } from "@/lib/media/probe";
 import { aspectOf, cropRect, DEFAULT_REFRAME, FRAME_FORMATS, MAX_ZOOM, outputFrame, panBy, withZoom, type Reframe } from "@/lib/mobile/reframe";
@@ -466,8 +466,16 @@ export function MobileEditor() {
       const params = new URLSearchParams(window.location.search);
       const streaming = duration > LONG_SECONDS || params.get("stream") === "1";
       const engine = params.get("export"); // "fast" | "realtime" force one path (testing)
+      // The fast exporter reports every frame; re-rendering the screen 30×
+      // a second on a phone is wasted work, so the bar updates ~4× a second.
+      let lastStatusAt = 0;
+      let lastMessage = "";
       const onProgress = (p: LiteProgress) => {
         mark(p.message);
+        const now = performance.now();
+        if (p.message === lastMessage && now - lastStatusAt < 250 && p.progress !== null && p.progress < 1) return;
+        lastStatusAt = now;
+        lastMessage = p.message;
         setStatus({ message: p.message, progress: p.progress });
       };
       let out: LiteExportResult | null = null;
@@ -486,7 +494,7 @@ export function MobileEditor() {
             canvas: exportCanvasRef.current,
             signal: controller.signal,
             onProgress,
-            debugMode: params.get("fx") === "resize-only" ? "resize-only" : params.get("fx") === "2d" ? "2d" : undefined,
+            debugMode: (["passthrough", "nocaptions", "resize-only", "2d"] as FastExportDebugMode[]).find((m) => m === params.get("fx")),
           });
         } catch (e) {
           if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) throw e;

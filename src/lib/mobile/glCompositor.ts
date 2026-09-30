@@ -36,12 +36,15 @@ export class GlCompositor {
   private readonly gl: WebGL2RenderingContext;
   private readonly program: WebGLProgram;
   private readonly posBuffer: WebGLBuffer;
+  private static readonly FULL_POS = new Float32Array([-1, 1, 1, 1, -1, -1, 1, -1]);
   private readonly uvBuffer: WebGLBuffer;
   private readonly videoTex: WebGLTexture;
   private readonly captionTex: WebGLTexture;
+  private readonly activeTex: WebGLTexture;
   private readonly aPos: number;
   private readonly aUv: number;
   private captionVersion = -1;
+  private activeVersion = -1;
 
   static supported(): boolean {
     if (typeof OffscreenCanvas === "undefined" || typeof VideoFrame === "undefined") return false;
@@ -83,7 +86,7 @@ export class GlCompositor {
     // Full-screen quad, output row 0 at the top (clip y = +1).
     this.posBuffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, 1, 1, 1, -1, -1, 1, -1]), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, GlCompositor.FULL_POS, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(this.aPos);
     gl.vertexAttribPointer(this.aPos, 2, gl.FLOAT, false, 0, 0);
 
@@ -104,6 +107,7 @@ export class GlCompositor {
     };
     this.videoTex = makeTex();
     this.captionTex = makeTex();
+    this.activeTex = makeTex();
     gl.viewport(0, 0, width, height);
     gl.disable(gl.DEPTH_TEST);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
@@ -152,35 +156,64 @@ export class GlCompositor {
     return out;
   }
 
-  /** Uploads the caption layer when it changed (tracked by `version`). */
-  private syncCaptions(layer: OffscreenCanvas | HTMLCanvasElement, version: number) {
-    if (version === this.captionVersion) return;
+  /** Uploads a caption layer into `tex` when its version changed. */
+  private upload(tex: WebGLTexture, layer: OffscreenCanvas | HTMLCanvasElement) {
     const gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.captionTex);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layer);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    this.captionVersion = version;
   }
 
-  /** Composites one frame: the video through `uv`, then the caption layer if `captions` is given. */
-  draw(frame: VideoFrame, uv: Float32Array, captions: { layer: OffscreenCanvas | HTMLCanvasElement; version: number } | null) {
+  private static readonly FULL_UV = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
+
+  /** Composites one frame: the video through `uv`, then the caption layers (static words, then the active word). */
+  draw(
+    frame: VideoFrame,
+    uv: Float32Array,
+    captions: {
+      static: { canvas: OffscreenCanvas | HTMLCanvasElement; version: number } | null;
+      active: { canvas: OffscreenCanvas | HTMLCanvasElement; version: number } | null;
+      band: { top: number; height: number };
+    },
+  ) {
     const gl = this.gl;
     gl.disable(gl.BLEND);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.videoTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, GlCompositor.FULL_POS);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, uv);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-    if (captions) {
-      this.syncCaptions(captions.layer, captions.version);
+    if (captions.static || captions.active) {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // premultiplied
-      gl.bindTexture(gl.TEXTURE_2D, this.captionTex);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]));
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      // The caption layers cover only their band: place the quad there.
+      const y0 = 1 - (2 * captions.band.top) / this.height;
+      const y1 = 1 - (2 * (captions.band.top + captions.band.height)) / this.height;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array([-1, y0, 1, y0, -1, y1, 1, y1]));
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, GlCompositor.FULL_UV);
+      if (captions.static) {
+        if (captions.static.version !== this.captionVersion) {
+          this.upload(this.captionTex, captions.static.canvas);
+          this.captionVersion = captions.static.version;
+        }
+        gl.bindTexture(gl.TEXTURE_2D, this.captionTex);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+      if (captions.active) {
+        if (captions.active.version !== this.activeVersion) {
+          this.upload(this.activeTex, captions.active.canvas);
+          this.activeVersion = captions.active.version;
+        }
+        gl.bindTexture(gl.TEXTURE_2D, this.activeTex);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
     }
   }
 
@@ -188,6 +221,7 @@ export class GlCompositor {
     const gl = this.gl;
     gl.deleteTexture(this.videoTex);
     gl.deleteTexture(this.captionTex);
+    gl.deleteTexture(this.activeTex);
     gl.deleteBuffer(this.posBuffer);
     gl.deleteBuffer(this.uvBuffer);
     gl.deleteProgram(this.program);

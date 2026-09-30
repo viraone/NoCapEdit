@@ -249,10 +249,12 @@ function drawWordPass(
   activeIndex: number,
   pass: "stroke" | "fill",
   activeScale = 1,
+  include?: (index: number) => boolean,
 ) {
   const preset = rs.preset;
   for (const line of layout.lines) {
     for (const word of line.words) {
+      if (include && !include(word.index)) continue;
       const active = word.index === activeIndex && rs.highlight !== null;
       const scaled = active && Math.abs(activeScale - 1) > 0.001;
       ctx.save();
@@ -286,6 +288,13 @@ function drawWordPass(
 
 export interface DrawCueOptions {
   showTranslated: boolean;
+  /**
+   * Which words to paint. "static" is everything except the highlighted
+   * word (plus the background box); "active" is only the highlighted word
+   * (plus its highlight box). Exporters render those on two layers so the
+   * pop/bounce animation only redraws one word. Default: all.
+   */
+  words?: "all" | "static" | "active";
 }
 
 /**
@@ -324,9 +333,15 @@ export function drawCue(
   const preset = rs.preset;
   const baseScale = rs.highlight === "scale" ? 1.14 : 1;
   const activeScale = activeIndex >= 0 ? activeWordScale(preset.animation, time - timings[activeIndex].start, baseScale) : 1;
+  const part = opts.words ?? "all";
+  if (part === "active" && activeIndex < 0) {
+    ctx.restore();
+    return layout;
+  }
+  const include = part === "all" ? undefined : part === "active" ? (i: number) => i === activeIndex : (i: number) => i !== activeIndex;
 
   // Background boxes
-  if (preset.box) {
+  if (preset.box && part !== "active") {
     clearShadow(ctx);
     ctx.fillStyle = preset.box.color;
     const r = preset.box.radius * rs.fontPx;
@@ -345,7 +360,7 @@ export function drawCue(
   }
 
   // Word highlight box
-  if (activeIndex >= 0 && rs.highlight === "box") {
+  if (activeIndex >= 0 && rs.highlight === "box" && part !== "static") {
     clearShadow(ctx);
     ctx.fillStyle = rs.accent;
     for (const line of layout.lines) {
@@ -368,19 +383,19 @@ export function drawCue(
     ctx.shadowBlur = preset.glow.blur * rs.fontPx;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
-    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale);
-    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale);
+    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale, include);
+    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale, include);
     ctx.restore();
   }
 
   if (preset.stroke) {
     applyShadow(ctx, rs);
-    drawWordPass(ctx, layout, rs, activeIndex, "stroke", activeScale);
+    drawWordPass(ctx, layout, rs, activeIndex, "stroke", activeScale, include);
     clearShadow(ctx);
-    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale);
+    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale, include);
   } else {
     applyShadow(ctx, rs);
-    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale);
+    drawWordPass(ctx, layout, rs, activeIndex, "fill", activeScale, include);
   }
   ctx.restore();
   return layout;
