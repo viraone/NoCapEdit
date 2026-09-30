@@ -7,7 +7,7 @@ import { useProject } from "./shared";
 import { useImportClips } from "./useImportClips";
 import { layoutClips } from "@/lib/models/timeline";
 import { unusedAssetIds } from "@/lib/models/project";
-import { duplicateClip, moveClip, removeClip, splitClipAt } from "@/lib/models/clipOps";
+import { captionsClearedNotice, duplicateClip, moveClip, removeClip, splitClipAt } from "@/lib/models/clipOps";
 import { deleteAsset, listProjectAssets } from "@/lib/storage/db";
 import { formatTime } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
@@ -34,8 +34,10 @@ export function ClipsPanel() {
   };
   const duplicate = (id: string) => update((p) => void duplicateClip(p, id));
   const remove = (id: string) => {
-    update((p) => removeClip(p, id));
+    let cleared = 0;
+    update((p) => void (cleared = removeClip(p, id).clearedCaptions));
     if (selection?.id === id) select(null);
+    if (cleared) setNotice(captionsClearedNotice(cleared));
   };
 
   const cleanup = async () => {

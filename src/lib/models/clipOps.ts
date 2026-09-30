@@ -22,8 +22,23 @@ export function reorderClip(p: VideoProject, id: string, toIndex: number): boole
   return true;
 }
 
-export function removeClip(p: VideoProject, id: string) {
+/**
+ * Removes the clip. Captions are timed to the timeline, so when the last clip
+ * goes they go with it rather than lingering over whatever video comes next;
+ * undo brings both back. Returns how many captions were cleared.
+ */
+export function removeClip(p: VideoProject, id: string): { clearedCaptions: number } {
+  const before = p.clips.length;
   p.clips = p.clips.filter((c) => c.id !== id);
+  if (p.clips.length === before || p.clips.length > 0 || !p.cues.length) return { clearedCaptions: 0 };
+  const clearedCaptions = p.cues.length;
+  p.cues = [];
+  return { clearedCaptions };
+}
+
+/** Notice shown when removing the last clip also cleared its captions. */
+export function captionsClearedNotice(count: number): string {
+  return `Removed the last clip and its ${count} caption${count === 1 ? "" : "s"}, which were timed to it. Undo brings both back.`;
 }
 
 export function duplicateClip(p: VideoProject, id: string): string | null {

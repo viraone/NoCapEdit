@@ -4,7 +4,7 @@ import { AlertTriangle, Lightbulb, X } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
 import { ensureFontsLoaded } from "@/lib/captions/fonts";
-import { splitClipAt } from "@/lib/models/clipOps";
+import { splitClipAt, captionsClearedNotice, removeClip } from "@/lib/models/clipOps";
 import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
 import { ToolRail } from "@/components/panels/ToolRail";
@@ -127,13 +127,15 @@ export function EditorShell() {
         const sel = s.selection;
         if (!sel) return;
         e.preventDefault();
+        let cleared = 0;
         s.update((p) => {
           if (sel.kind === "cue") p.cues = p.cues.filter((c) => c.id !== sel.id);
           if (sel.kind === "overlay") p.overlays = p.overlays.filter((o) => o.id !== sel.id);
-          if (sel.kind === "clip") p.clips = p.clips.filter((c) => c.id !== sel.id);
+          if (sel.kind === "clip") cleared = removeClip(p, sel.id).clearedCaptions;
           if (sel.kind === "voiceover") p.voiceovers = p.voiceovers.filter((v) => v.id !== sel.id);
         });
         s.select(null);
+        if (cleared) s.setNotice(captionsClearedNotice(cleared));
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         const step = e.shiftKey ? 1 : 1 / 30;

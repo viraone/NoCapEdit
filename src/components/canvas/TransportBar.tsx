@@ -4,7 +4,7 @@ import { useEditor } from "@/store/editorStore";
 import { useTargetClip } from "@/components/panels/shared";
 import { engine } from "@/lib/playback/engine";
 import { projectDuration } from "@/lib/models/timeline";
-import { cutAfter, cutBefore, moveClip, removeClip } from "@/lib/models/clipOps";
+import { captionsClearedNotice, cutAfter, cutBefore, moveClip, removeClip } from "@/lib/models/clipOps";
 import { formatTime, formatTimecode } from "@/lib/utils/time";
 import { Button } from "@/components/ui/Button";
 
@@ -80,9 +80,10 @@ export function TransportBar() {
               variant="danger"
               size="sm"
               onClick={() => {
-                update((p) => removeClip(p, clip.id));
+                let cleared = 0;
+                update((p) => void (cleared = removeClip(p, clip.id).clearedCaptions));
                 select(null);
-                setNotice("Removed the clip.");
+                setNotice(cleared ? captionsClearedNotice(cleared) : "Removed the clip.");
               }}
               title="Remove this clip"
             >

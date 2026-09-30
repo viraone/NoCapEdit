@@ -121,3 +121,30 @@ describe("fitZoom", () => {
     expect(minZoom(0.9)).toBe(0.5);
   });
 });
+
+describe("removeClip", () => {
+  const project = () => {
+    const p = createProject({ name: "t", formatId: "ig-portrait" });
+    p.clips = [clip(10), clip(10, { assetId: "b" })];
+    p.cues = [{ id: "c1", start: 1, end: 2, text: "hi" } as (typeof p.cues)[number]];
+    return p;
+  };
+
+  it("keeps the captions while any clip remains", () => {
+    const p = project();
+    expect(clipOpsModule.removeClip(p, p.clips[0].id)).toEqual({ clearedCaptions: 0 });
+    expect(p.clips).toHaveLength(1);
+    expect(p.cues).toHaveLength(1);
+  });
+
+  it("clears the captions with the last clip, and ignores unknown ids", () => {
+    const p = project();
+    expect(clipOpsModule.removeClip(p, "nope")).toEqual({ clearedCaptions: 0 });
+    clipOpsModule.removeClip(p, p.clips[0].id);
+    expect(clipOpsModule.removeClip(p, p.clips[0].id)).toEqual({ clearedCaptions: 1 });
+    expect(p.clips).toHaveLength(0);
+    expect(p.cues).toEqual([]);
+    expect(clipOpsModule.captionsClearedNotice(1)).toMatch(/1 caption,/);
+    expect(clipOpsModule.captionsClearedNotice(30)).toMatch(/30 captions,/);
+  });
+});
