@@ -328,33 +328,52 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
     const onAbort = () => finish(new DOMException("Export cancelled", "AbortError"));
     signal?.addEventListener("abort", onAbort, { once: true });
 
+    /** Composites and encodes the frame currently shown by the video at media time `t`. */
+    const capture = (t: number) => {
+      if (videoError) return finish(videoError);
+      const timestamp = Math.round(t * 1e6);
+      if (timestamp <= lastTimestamp) return;
+      ctx.drawImage(video, 0, 0, width, height);
+      for (const cue of cues) {
+        if (t >= cue.start && t < cue.end) drawCue(ctx, cue, style, frame, t, { showTranslated: false });
+      }
+      // Skip a frame rather than stall playback when the encoder is behind.
+      if (encoder.encodeQueueSize < 12) {
+        const vf = new VideoFrame(canvas, { timestamp, duration: frameUs });
+        encoder.encode(vf, { keyFrame: frameIndex % keyEvery === 0 });
+        vf.close();
+        frameIndex += 1;
+        lastTimestamp = timestamp;
+      }
+      progress({ phase: "video", progress: duration ? Math.min(1, t / duration) : null, message: "Rendering" });
+    };
+
+    // Primary: one callback per presented frame, with its exact media time.
+    let rvfcFrames = 0;
     const tick: VideoFrameRequestCallback = (_now, meta) => {
       if (done) return;
-      if (videoError) return finish(videoError);
-      const t = meta.mediaTime;
-      const timestamp = Math.round(t * 1e6);
-      if (timestamp > lastTimestamp) {
-        ctx.drawImage(video, 0, 0, width, height);
-        for (const cue of cues) {
-          if (t >= cue.start && t < cue.end) drawCue(ctx, cue, style, frame, t, { showTranslated: false });
-        }
-        // Skip a frame rather than stall playback when the encoder is behind.
-        if (encoder.encodeQueueSize < 12) {
-          const vf = new VideoFrame(canvas, { timestamp, duration: frameUs });
-          encoder.encode(vf, { keyFrame: frameIndex % keyEvery === 0 });
-          vf.close();
-          frameIndex += 1;
-          lastTimestamp = timestamp;
-        }
-        progress({ phase: "video", progress: duration ? Math.min(1, t / duration) : null, message: "Rendering" });
-      }
+      rvfcFrames += 1;
+      capture(meta.mediaTime);
       video.requestVideoFrameCallback(tick);
+    };
+    // Fallback: iOS Safari stops firing requestVideoFrameCallback after a
+    // seek while paused (a re-export of the same clip does exactly that).
+    // If no frame callback has arrived, sample currentTime from rAF instead.
+    const minStep = 0.75 / fps;
+    const rafTick = () => {
+      if (done) return;
+      if (rvfcFrames === 0 && !video.paused && !video.ended) {
+        const t = video.currentTime;
+        if (t - lastTimestamp / 1e6 >= minStep) capture(t);
+      }
+      requestAnimationFrame(rafTick);
     };
 
     video.onended = () => finish();
     video.onerror = () => finish(new Error("Playback failed during export."));
-    video.currentTime = 0;
+    if (video.currentTime !== 0) video.currentTime = 0;
     video.requestVideoFrameCallback(tick);
+    requestAnimationFrame(rafTick);
     video.play().catch((e) => finish(e));
   });
 

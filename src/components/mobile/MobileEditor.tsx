@@ -533,19 +533,26 @@ function StyleScreen({
     }
   }, []);
 
-  // Redraw on every presented frame while playing, and once per change while paused.
+  // Redraw while playing from a requestAnimationFrame loop rather than
+  // requestVideoFrameCallback: iOS Safari stops delivering frame callbacks
+  // after a video is seeked while paused (which the #t=0.1 first-frame
+  // fix does), and rAF is immune to that.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    let handle = 0;
+    let raf = 0;
     let stopped = false;
+    let lastDrawn = -1;
     const loop = () => {
       if (stopped) return;
-      draw();
-      setTime(video.currentTime);
-      handle = video.requestVideoFrameCallback(loop);
+      if (!video.paused && !video.ended && video.currentTime !== lastDrawn) {
+        lastDrawn = video.currentTime;
+        draw();
+        setTime(video.currentTime);
+      }
+      raf = requestAnimationFrame(loop);
     };
-    handle = video.requestVideoFrameCallback(loop);
+    raf = requestAnimationFrame(loop);
     const onMeta = () => {
       setDuration(video.duration);
       // iOS Safari shows a black box for a paused video until it has
@@ -564,11 +571,13 @@ function StyleScreen({
     if (video.readyState >= 1) onMeta();
     video.addEventListener("play", () => setPlaying(true));
     video.addEventListener("pause", () => setPlaying(false));
+    video.addEventListener("timeupdate", onSeeked);
     return () => {
       stopped = true;
-      video.cancelVideoFrameCallback(handle);
+      cancelAnimationFrame(raf);
       video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("timeupdate", onSeeked);
     };
   }, [draw]);
 

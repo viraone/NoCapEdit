@@ -80,6 +80,15 @@ try {
   if (cueCount === 0) throw new Error("No captions produced");
   await page.screenshot({ path: join(outDir, "mobile-3-style.png") });
 
+  // Playback preview: press play and make sure the scrubber moves (iOS
+  // Safari once froze it — frame callbacks stop after a paused seek).
+  await page.getByRole("button", { name: "Play" }).first().click();
+  await page.waitForTimeout(1500);
+  const shown = await page.locator("input[aria-label='Scrub']").inputValue();
+  if (!(Number(shown) > 0.5)) throw new Error(`Preview scrubber did not advance (at ${shown}s)`);
+  await page.getByRole("button", { name: "Pause" }).first().click();
+  lap(`preview plays (scrubber at ${Number(shown).toFixed(1)}s)`);
+
   // Pick a different look, then export.
   await page.getByRole("button", { name: /^beast/i }).click();
   await exportBtn.click();
