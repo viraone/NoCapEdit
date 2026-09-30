@@ -435,7 +435,6 @@ function StatusLine({ status }: { status: { message: string; progress: number | 
         <span className="flex items-center gap-2 font-medium">
           <Loader2 size={14} className="animate-spin text-sys-blue" /> {status.message}
         </span>
-        {pct !== null && <span className="tabular-nums text-label-2">{pct}%</span>}
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
         <div
