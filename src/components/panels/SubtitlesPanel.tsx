@@ -4,9 +4,6 @@ import { Sparkles, Mic, Square, Trash2, Merge, Scissors, Anchor, Plus, Languages
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
 import { engine } from "@/lib/playback/engine";
-import { getAsset } from "@/lib/storage/db";
-import { getSpeechAudio } from "@/lib/speech/audioCache";
-import { layoutClips } from "@/lib/models/timeline";
 import type { CaptionCue, WordTiming } from "@/lib/models/project";
 import { buildCues, cuesEditedSince, mergeCues, regroupCues, splitCue, sortCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
 import { findHighlights, type Highlight } from "@/lib/edit/highlights";
@@ -16,9 +13,9 @@ import { keepOnly } from "@/lib/edit/magicCut";
 import { getPreset } from "@/lib/captions/presets";
 import { Sparkle, Wand } from "lucide-react";
 import { listOllamaModels } from "@/lib/edit/aiHighlights";
-import { WHISPER_MODELS, DEFAULT_WHISPER_MODEL, sliceSamples, wordsToProjectTime, type DevicePreference } from "@/lib/speech/transcriber";
-import { transcribeWithSpeakers, buildSpeakerCues, type SpeakerSegment } from "@/lib/transcriptionEngine";
-import { toProjectTime } from "@/lib/models/timeline";
+import { WHISPER_MODELS, DEFAULT_WHISPER_MODEL, type DevicePreference } from "@/lib/speech/transcriber";
+import { applyGeneratedCaptions, generateCaptions, hasSpeechTrack } from "@/lib/speech/generateCaptions";
+import { buildSpeakerCues } from "@/lib/transcriptionEngine";
 import { resetMlWorker } from "@/lib/speech/mlClient";
 import { translateTexts, canTranslate } from "@/lib/speech/translator";
 import { isWebSpeechAvailable, startLiveDictation, type LiveDictationController } from "@/lib/speech/webSpeech";
@@ -132,7 +129,7 @@ export function SubtitlesPanel() {
     if (!project.clips.length) return;
     setError(null);
     setNotice(null);
-    if (project.clips.every((c) => !c.hasAudio)) {
+    if (!hasSpeechTrack(project.clips)) {
       setError(project.cues.length ? "None of the clips has an audio track, so there is nothing to transcribe. Your captions were kept." : "None of the clips has an audio track, so there is nothing to transcribe.");
       return;
     }
@@ -140,62 +137,17 @@ export function SubtitlesPanel() {
     abortRef.current = controller;
     // Cues edited or imported while this job runs are kept when it finishes.
     const cuesAtStart = useEditor.getState().project?.cues ?? [];
-    const layouts = layoutClips(project.clips);
-    const words: WordTiming[] = [];
-    const segments: SpeakerSegment[] = [];
-    let speakerOffset = 0;
-    let usedDevice = "";
-    let diarizationNote = "";
     try {
-      for (const [i, layout] of layouts.entries()) {
-        const prefix = layouts.length > 1 ? `Clip ${i + 1}/${layouts.length}: ` : "";
-        setJob({ kind: "transcribe", message: `${prefix}Decoding audio`, progress: null });
-        const asset = await getAsset(layout.clip.assetId);
-        if (!asset) continue;
-        const audio = await getSpeechAudio(asset.id, asset.blob);
-        if (!audio) continue;
-        const samples = sliceSamples(audio.samples, layout.clip.inPoint, layout.clip.outPoint, audio.sampleRate);
-        if (samples.length < audio.sampleRate * 0.3) continue;
-        const result = await transcribeWithSpeakers(samples, {
-          model,
-          language,
-          device,
-          diarize,
-          maxSpeakers,
-          signal: controller.signal,
-          onProgress: (p) => setJob({ kind: "transcribe", message: `${prefix}${p.message}`, progress: p.progress, partial: p.partialText }),
-        });
-        usedDevice = result.device;
-        words.push(...wordsToProjectTime(result.words, layout));
-        if (result.speakers) {
-          for (const s of result.speakers) {
-            segments.push({
-              start: toProjectTime(layout, layout.clip.inPoint + s.start),
-              end: toProjectTime(layout, layout.clip.inPoint + s.end),
-              speaker: s.speaker + speakerOffset,
-            });
-          }
-          speakerOffset += result.speakerCount;
-        }
-        if (result.diarizationError) diarizationNote = ` Speaker detection failed: ${result.diarizationError}`;
-      }
-      if (!words.length) {
+      const g = await generateCaptions({ clips: project.clips, model, language, device, diarize, maxSpeakers, rules, signal: controller.signal, onProgress: (p) => setJob({ kind: "transcribe", ...p }) });
+      if (!g) {
         // Nothing transcribed: never replace existing captions with an empty list.
         setError(useEditor.getState().project?.cues.length ? "No speech was found; your existing captions were kept." : "No speech was found.");
         return;
       }
-      const cues = diarize ? buildSpeakerCues(words, segments.length ? segments : null, rules) : buildCues(words, rules);
       let kept = 0;
-      update((p) => {
-        const edited = cuesEditedSince(cuesAtStart, p.cues);
-        kept = edited.length;
-        p.cues = edited.length ? sortCues([...edited, ...cues]) : cues;
-        p.captions.sourceLanguage = language;
-        if (diarize && segments.length) p.subtitleStyle.speakerColors = true;
-      });
-      const speakerCount = new Set(cues.map((c) => c.speaker).filter((s) => s !== undefined)).size;
+      update((p) => void (kept = applyGeneratedCaptions(p, cuesAtStart, g, language, diarize)));
       const keptNote = kept ? ` ${kept} caption${kept === 1 ? "" : "s"} edited or imported while generating ${kept === 1 ? "was" : "were"} kept alongside the new ones (Undo reverts).` : "";
-      setNotice(`${cues.length} captions from ${words.length} words (${usedDevice || "on-device"})${speakerCount ? `, ${speakerCount} speaker${speakerCount === 1 ? "" : "s"}` : ""}.${diarizationNote}${keptNote}`);
+      setNotice(`${g.cues.length} captions from ${g.wordCount} words (${g.device || "on-device"})${g.speakerCount ? `, ${g.speakerCount} speaker${g.speakerCount === 1 ? "" : "s"}` : ""}.${g.diarizationNote}${keptNote}`);
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) setError(e instanceof Error ? e.message : String(e));
     } finally {

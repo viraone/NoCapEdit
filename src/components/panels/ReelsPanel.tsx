@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle, Sparkles } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useReelSlack } from "./shared";
@@ -15,6 +15,11 @@ import { DEFAULT_REEL_SETTINGS, isEmptyReel, listReels, loadReelSettings, makeRe
 import { activeModel, listOllamaModels, loadAiSettings, localAiEnabled, saveAiSettings, type AiSettings } from "@/lib/edit/aiHighlights";
 import { AiModelFields } from "./AiModelFields";
 import { getFormat } from "@/lib/models/formats";
+import { applyGeneratedCaptions, generateCaptions, hasSpeechTrack, type CaptionJobProgress } from "@/lib/speech/generateCaptions";
+import { DEFAULT_WHISPER_MODEL } from "@/lib/speech/transcriber";
+import { CAPTION_RULES } from "@/lib/speech/captionBuilder";
+import { getPreset } from "@/lib/captions/presets";
+import { resetMlWorker } from "@/lib/speech/mlClient";
 import { projectDuration } from "@/lib/models/timeline";
 import type { VideoProject } from "@/lib/models/project";
 import { deleteProject, getProject, getProjectThumb } from "@/lib/storage/db";
@@ -52,6 +57,10 @@ export function ReelsPanel() {
   const hasCues = project.cues.length > 0;
   /** Make reels was pressed without captions: the prompt under the button stays until they exist. */
   const [needCaptions, setNeedCaptions] = useState(false);
+  /** "Do this for me": subtitles being generated right here, before the reels are cut. */
+  const [captionJob, setCaptionJob] = useState<CaptionJobProgress | null>(null);
+  const [captionError, setCaptionError] = useState<string | null>(null);
+  const captionAbortRef = useRef<AbortController | null>(null);
   const [preview, setPreview] = useState<VideoProject | null>(null);
   // Inside a one-clip reel: how much of the source video its clip can still be dragged out to show.
   const slack = useReelSlack();
@@ -110,6 +119,14 @@ export function ReelsPanel() {
     return () => clearInterval(id);
   }, [job]);
   useEffect(() => () => abortRef.current?.abort(), []);
+  const cancelCaptions = () => {
+    if (!captionAbortRef.current) return;
+    captionAbortRef.current.abort();
+    captionAbortRef.current = null;
+    resetMlWorker();
+    setCaptionJob(null);
+  };
+  useEffect(() => cancelCaptions, []);
 
   const run = async () => {
     if (job) return;
@@ -143,6 +160,55 @@ export function ReelsPanel() {
       abortRef.current = null;
       setJob(null);
     }
+  };
+  /**
+   * "Do this for me": transcribes on this device with the default model,
+   * right here in the panel, puts the captions on the project and then cuts
+   * the reels as if Make reels had been pressed with captions in place.
+   */
+  const doItForMe = async () => {
+    if (captionJob || job) return;
+    setCaptionError(null);
+    const current = useEditor.getState().project!;
+    if (!hasSpeechTrack(current.clips)) {
+      setCaptionError("None of the clips has an audio track, so there is nothing to transcribe.");
+      return;
+    }
+    const controller = new AbortController();
+    captionAbortRef.current = controller;
+    const cuesAtStart = current.cues;
+    const language = current.captions.sourceLanguage || "auto";
+    setCaptionJob({ message: "Starting", progress: null });
+    let ready = false;
+    try {
+      const g = await generateCaptions({
+        clips: current.clips,
+        model: DEFAULT_WHISPER_MODEL,
+        language,
+        device: "auto",
+        diarize: false,
+        maxSpeakers: 3,
+        rules: { ...CAPTION_RULES, maxWords: getPreset(current.subtitleStyle.presetId).wordsPerCue ?? CAPTION_RULES.maxWords },
+        signal: controller.signal,
+        onProgress: setCaptionJob,
+      });
+      // The user may have moved on to another project while it ran.
+      if (useEditor.getState().project?.id !== current.id) return;
+      if (!g) {
+        setCaptionError("No speech was found in the video, so there is no transcript to read.");
+        return;
+      }
+      useEditor.getState().update((p) => void applyGeneratedCaptions(p, cuesAtStart, g, language, false));
+      useEditor.getState().setNotice(`${g.cues.length} captions from ${g.wordCount} words (${g.device || "on-device"}). Cutting the reels now.`);
+      setNeedCaptions(false);
+      ready = true;
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) setCaptionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      captionAbortRef.current = null;
+      setCaptionJob(null);
+    }
+    if (ready) void run();
   };
   // "Make reels" from the project menu lands here: with captions it runs, without them it asks
   // for subtitles. The request is cleared from the store as it is taken, so a later visit does
@@ -375,7 +441,7 @@ export function ReelsPanel() {
           </Field>
         </div>
         {!job ? (
-          <Button variant="primary" className="w-full" onClick={run} disabled={!project.clips.length} title={hasCues ? "Find the best moments and cut them into reels" : "Needs subtitles first: the model reads the transcript"}>
+          <Button variant="primary" className="w-full" onClick={run} disabled={!project.clips.length || !!captionJob} title={hasCues ? "Find the best moments and cut them into reels" : "Needs subtitles first: the model reads the transcript"}>
             <Clapperboard size={14} /> Make reels
           </Button>
         ) : (
@@ -385,11 +451,31 @@ export function ReelsPanel() {
           needCaptions ? (
             <div className="space-y-2 rounded-lg border border-sys-orange/40 bg-sys-orange/10 p-2.5" role="status" data-reels-need-captions>
               <p className="flex items-start gap-1.5 text-[12px] leading-snug text-white">
-                <Captions size={13} className="mt-0.5 shrink-0 text-sys-orange" /> Add subtitles first. The model picks the moments by reading the transcript, and this video has no captions yet. Generate them under Subtitles, then come back and press Make reels.
+                <Captions size={13} className="mt-0.5 shrink-0 text-sys-orange" /> Add subtitles first. The model picks the moments by reading the transcript, and this video has no captions yet.
               </p>
-              <Button variant="outline" size="sm" onClick={() => useEditor.getState().setTool("subtitles")} data-open-subtitles>
-                <Captions size={13} /> Open Subtitles
-              </Button>
+              {captionJob ? (
+                <div className="space-y-1.5" data-caption-job>
+                  <ProgressBar value={captionJob.progress} />
+                  <p className="text-[11px] text-label-2">Generating subtitles · {captionJob.message}</p>
+                  {captionJob.partial && <p className="line-clamp-2 text-[11px] italic leading-snug text-label-3">{captionJob.partial}</p>}
+                  <Button variant="outline" size="xs" onClick={cancelCaptions}>
+                    <Square size={11} /> Cancel
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="primary" size="sm" onClick={() => void doItForMe()} disabled={!!job} data-do-it-for-me title="Generate the subtitles here with the default model, then cut the reels">
+                      <Sparkles size={13} /> Do this for me
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => useEditor.getState().setTool("subtitles")} data-open-subtitles>
+                      <Captions size={13} /> Open Subtitles
+                    </Button>
+                  </div>
+                  <p className="text-[11px] leading-snug text-label-3">Do this for me transcribes on this device with the default model and then cuts the reels, all from here. Open Subtitles to pick the model, language or speaker detection yourself first.</p>
+                  {captionError && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{captionError}</p>}
+                </>
+              )}
             </div>
           ) : (
             <p className="flex items-start gap-1.5 text-[11px] leading-snug text-label-3">
