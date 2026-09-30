@@ -15,7 +15,7 @@ import { AlertTriangle, ArrowLeft, Check, Download, Film, Loader2, Monitor, Paus
 import "@/lib/fonts"; // registers next/font family names for canvas text on the client
 import { Button } from "@/components/ui/Button";
 import { cx } from "@/lib/utils/cx";
-import { decodeAudio } from "@/lib/ffmpeg/waveform";
+import { extractAudio, type AudioStrategy, type SourceAudio } from "@/lib/mobile/audio";
 import { hasWebGPU, transcribeSamples, WHISPER_MODELS } from "@/lib/speech/transcriber";
 import type { MlProgress } from "@/lib/speech/mlClient";
 import { buildCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
@@ -42,6 +42,7 @@ export function MobileEditor() {
   const [step, setStep] = useState<Step>("pick");
   const [support, setSupport] = useState<LiteSupport | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [sourceAudio, setSourceAudio] = useState<SourceAudio | null>(null);
   const [accurate, setAccurate] = useState(false);
   const [status, setStatus] = useState<{ message: string; progress: number | null; detail?: string }>({ message: "", progress: null });
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +83,7 @@ export function MobileEditor() {
     abortRef.current?.abort();
     setStep("pick");
     setFile(null);
+    setSourceAudio(null);
     setWords([]);
     setCues([]);
     setResult(null);
@@ -100,9 +102,12 @@ export function MobileEditor() {
     abortRef.current = controller;
     try {
       setStatus({ message: "Reading your video", progress: null });
-      const decoded = await decodeAudio(picked);
+      // `?audio=ffmpeg` forces the iOS fallback path, for testing it elsewhere.
+      const strategy: AudioStrategy = new URLSearchParams(window.location.search).get("audio") === "ffmpeg" ? "ffmpeg" : "auto";
+      const decoded = await extractAudio(picked, { strategy, onStatus: (m) => setStatus({ message: m, progress: null }) });
       if (controller.signal.aborted) return;
-      if (!decoded) throw new Error("No audio track found — captions need speech to work from.");
+      if (!decoded) throw new Error("Couldn't read the audio from this video. Try a different clip, or one recorded with the Camera app.");
+      setSourceAudio(decoded);
 
       const device = (await hasWebGPU()) ? "webgpu" : "wasm";
       const model = accurate ? MODEL_ACCURATE : MODEL_FAST;
@@ -115,7 +120,7 @@ export function MobileEditor() {
           detail: p.partialText ? `“…${p.partialText.slice(-60)}”` : undefined,
         });
       };
-      const res = await transcribeSamples(decoded.samples, { model, language: "auto", device, onProgress, signal: controller.signal });
+      const res = await transcribeSamples(decoded.speech, { model, language: "auto", device, onProgress, signal: controller.signal });
       if (controller.signal.aborted) return;
       if (res.words.length === 0) throw new Error("Couldn't hear any speech in this video.");
       await ensureFontsLoaded();
@@ -142,6 +147,7 @@ export function MobileEditor() {
     try {
       const out = await exportCaptionedVideo({
         file,
+        audio: sourceAudio,
         cues,
         style,
         video: exportVideoRef.current,

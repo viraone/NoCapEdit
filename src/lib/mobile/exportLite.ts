@@ -19,6 +19,7 @@
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import { drawCue } from "@/lib/captions/renderer";
+import { resampleLinear } from "@/lib/mobile/audio";
 
 export interface LiteProgress {
   phase: "prepare" | "audio" | "video" | "mux";
@@ -29,6 +30,10 @@ export interface LiteProgress {
 
 export interface LiteExportOptions {
   file: Blob;
+  /** Audio already decoded by lib/mobile/audio.ts (planar, at its sampleRate).
+   * When given, the file is not decoded again — which also matters on iOS,
+   * where decodeAudioData can't read a video container at all. */
+  audio?: { sampleRate: number; channels: Float32Array[] } | null;
   cues: CaptionCue[];
   style: SubtitleStyle;
   /** The <video> that plays the source; must be in the DOM (iOS decodes off-DOM videos lazily). */
@@ -133,6 +138,10 @@ function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
 }
 
+function resampleTo(input: Float32Array, from: number, to: number): Float32Array {
+  return resampleLinear(input, from, to);
+}
+
 /** Decodes the source audio to planar float PCM at the encoder's rate. */
 async function decodeForExport(file: Blob, sampleRate: number): Promise<AudioBuffer | null> {
   try {
@@ -171,25 +180,33 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
 
   // ---- audio (decode + AAC) ------------------------------------------------
   const AUDIO_RATE = 48000;
-  let audioBuffer: AudioBuffer | null = null;
+  let planar: Float32Array[] | null = null;
   let audioMode: LiteExportResult["audio"] = "none";
   if (typeof AudioEncoder !== "undefined") {
-    progress({ phase: "audio", progress: null, message: "Decoding audio" });
-    audioBuffer = await decodeForExport(file, AUDIO_RATE);
+    if (opts.audio && opts.audio.channels.length) {
+      planar = opts.audio.channels.slice(0, 2).map((ch) => resampleTo(ch, opts.audio!.sampleRate, AUDIO_RATE));
+    } else if (opts.audio === undefined) {
+      progress({ phase: "audio", progress: null, message: "Decoding audio" });
+      const decoded = await decodeForExport(file, AUDIO_RATE);
+      if (decoded) {
+        planar = [];
+        for (let c = 0; c < Math.min(2, decoded.numberOfChannels); c++) planar.push(decoded.getChannelData(c));
+      }
+    }
     throwIfAborted(signal);
   }
-  const channels = audioBuffer ? Math.min(2, audioBuffer.numberOfChannels) : 0;
+  const channels = planar ? planar.length : 0;
 
   const target = new ArrayBufferTarget();
   const muxer = new Muxer({
     target,
     video: { codec: "avc", width, height, frameRate: fps },
-    ...(audioBuffer && channels > 0 ? { audio: { codec: "aac", numberOfChannels: channels, sampleRate: AUDIO_RATE } } : {}),
+    ...(planar && channels > 0 ? { audio: { codec: "aac", numberOfChannels: channels, sampleRate: AUDIO_RATE } } : {}),
     fastStart: "in-memory",
     firstTimestampBehavior: "offset",
   });
 
-  if (audioBuffer && channels > 0) {
+  if (planar && channels > 0) {
     let audioError: Error | null = null;
     const audioEncoder = new AudioEncoder({
       output: (chunk, meta) => {
@@ -211,14 +228,14 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
     const { supported } = await AudioEncoder.isConfigSupported(audioConfig).catch(() => ({ supported: false }));
     if (supported) {
       audioEncoder.configure(audioConfig);
-      const total = audioBuffer.length;
+      const total = planar[0].length;
       const CHUNK = AUDIO_RATE; // one second per AudioData
-      const planar = new Float32Array(CHUNK * channels);
+      const scratch = new Float32Array(CHUNK * channels);
       for (let offset = 0; offset < total; offset += CHUNK) {
         throwIfAborted(signal);
         const frames = Math.min(CHUNK, total - offset);
         for (let c = 0; c < channels; c++) {
-          planar.set(audioBuffer.getChannelData(c).subarray(offset, offset + frames), c * frames);
+          scratch.set(planar[c].subarray(offset, offset + frames), c * frames);
         }
         const data = new AudioData({
           format: "f32-planar",
@@ -226,7 +243,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
           numberOfFrames: frames,
           numberOfChannels: channels,
           timestamp: Math.round((offset / AUDIO_RATE) * 1e6),
-          data: planar.subarray(0, frames * channels),
+          data: scratch.subarray(0, frames * channels),
         });
         audioEncoder.encode(data);
         data.close();
@@ -240,7 +257,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
       audioMode = "aac";
     } else {
       audioEncoder.close();
-      audioBuffer = null;
+      planar = null;
     }
   }
 
