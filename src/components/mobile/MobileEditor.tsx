@@ -15,7 +15,7 @@ import { AlertTriangle, ArrowLeft, Check, Download, Film, Loader2, Monitor, Paus
 import "@/lib/fonts"; // registers next/font family names for canvas text on the client
 import { Button } from "@/components/ui/Button";
 import { cx } from "@/lib/utils/cx";
-import { AudioExtractError, extractAudio, type AudioStrategy, type SourceAudio } from "@/lib/mobile/audio";
+import { AudioExtractError, extractAudio, isIOS, type AudioStrategy, type SourceAudio } from "@/lib/mobile/audio";
 import { hasWebGPU, transcribeSamples, WHISPER_MODELS } from "@/lib/speech/transcriber";
 import type { MlProgress } from "@/lib/speech/mlClient";
 import { buildCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
@@ -138,19 +138,32 @@ export function MobileEditor() {
       setSourceAudio(decoded);
       markInflight("loading the speech model");
 
-      const device = (await hasWebGPU()) ? "webgpu" : "wasm";
+      // iOS Safari: WebGPU + onnxruntime and multi-threaded wasm both get
+      // the tab killed while the model loads; single-threaded wasm is the
+      // configuration that survives. `?asr=webgpu|wasm` / `?threads=N`
+      // override it for experiments.
+      const params = new URLSearchParams(window.location.search);
+      const asrParam = params.get("asr");
+      const threadsParam = Number(params.get("threads"));
+      let device: "webgpu" | "wasm";
+      if (asrParam === "webgpu" || asrParam === "wasm") device = asrParam;
+      else if (isIOS()) device = "wasm";
+      else device = (await hasWebGPU()) ? "webgpu" : "wasm";
+      const threads = Number.isFinite(threadsParam) && threadsParam > 0 ? threadsParam : isIOS() ? 1 : undefined;
       const model = accurate ? MODEL_ACCURATE : MODEL_FAST;
-      setStatus({ message: "Loading Whisper", progress: null, detail: device === "webgpu" ? "GPU accelerated" : "CPU mode" });
+      const engineLabel = device === "webgpu" ? "GPU accelerated" : `CPU mode${threads ? ` · ${threads} thread${threads === 1 ? "" : "s"}` : ""}`;
+      markInflight(`loading the speech model (${device}${threads ? `, ${threads} thread` : ""})`);
+      setStatus({ message: "Loading Whisper", progress: null, detail: engineLabel });
       const onProgress = (p: MlProgress) => {
         const downloading = /download|fetch|load/i.test(p.stage) || /download/i.test(p.message);
-        markInflight(downloading ? "downloading the speech model" : "transcribing");
+        markInflight(downloading ? `downloading the speech model (${device})` : `transcribing (${device}${threads ? `, ${threads} thread` : ""})`);
         setStatus({
           message: downloading ? "Downloading speech model (one time)" : p.partialText ? "Listening…" : p.message || "Transcribing",
           progress: p.progress,
           detail: p.partialText ? `“…${p.partialText.slice(-60)}”` : undefined,
         });
       };
-      const res = await transcribeSamples(decoded.speech, { model, language: "auto", device, onProgress, signal: controller.signal });
+      const res = await transcribeSamples(decoded.speech, { model, language: "auto", device, threads, onProgress, signal: controller.signal });
       if (controller.signal.aborted) return;
       if (res.words.length === 0) throw new Error("Couldn't hear any speech in this video.");
       await ensureFontsLoaded();

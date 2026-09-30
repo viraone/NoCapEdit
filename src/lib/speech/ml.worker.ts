@@ -20,6 +20,9 @@ export type MlRequest =
       model: string;
       language: string;
       device: "auto" | Device;
+      /** onnxruntime wasm thread count. 1 avoids shared wasm memory, which
+       * iOS Safari handles badly (the tab is killed while loading). */
+      threads?: number;
     }
   | { type: "translate"; id: number; texts: string[]; steps: { model: string; prefix?: string }[] }
   | { type: "diarize"; id: number; audio: Float32Array; maxSpeakers: number }
@@ -127,8 +130,9 @@ async function withLoadWatchdog<T>(id: number, stage: string, load: (progress: (
   }
 }
 
-async function getAsr(model: string, device: Device, id: number): Promise<AsrPipe> {
-  const key = `${model}|${device}`;
+async function getAsr(model: string, device: Device, id: number, threads?: number): Promise<AsrPipe> {
+  if (threads && env.backends.onnx.wasm) env.backends.onnx.wasm.numThreads = threads;
+  const key = `${model}|${device}|${threads ?? "auto"}`;
   if (asr?.key === key) return asr.pipe;
   if (asr) {
     await asr.pipe.dispose().catch(() => undefined);
@@ -147,7 +151,7 @@ async function getAsr(model: string, device: Device, id: number): Promise<AsrPip
 
 async function transcribe(req: Extract<MlRequest, { type: "transcribe" }>) {
   const device = await detectDevice(req.device);
-  const pipe = await getAsr(req.model, device, req.id);
+  const pipe = await getAsr(req.model, device, req.id, req.threads);
   const totalSeconds = req.audio.length / 16000;
 
   let streamer: WhisperTextStreamer | undefined;

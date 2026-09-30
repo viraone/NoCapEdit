@@ -55,6 +55,8 @@ export interface TranscribeOptions {
   model: string;
   language: string;
   device: DevicePreference;
+  /** onnxruntime wasm thread count (only matters for the wasm backend). */
+  threads?: number;
   onProgress?: (p: MlProgress) => void;
   signal?: AbortSignal;
 }
@@ -63,7 +65,7 @@ export interface TranscribeOptions {
 export function transcribeSamples(samples: Float32Array, opts: TranscribeOptions): Promise<TranscribeResult> {
   const copy = new Float32Array(samples);
   return mlRequest<TranscribeResult>(
-    (id) => ({ type: "transcribe", id, audio: copy, model: opts.model, language: opts.language, device: opts.device }),
+    (id) => ({ type: "transcribe", id, audio: copy, model: opts.model, language: opts.language, device: opts.device, threads: opts.threads }),
     opts.onProgress,
     opts.signal,
     [copy.buffer],
