@@ -2,8 +2,8 @@
 /**
  * Reels: the local model reads the transcript, picks the best moments and each
  * becomes its own reel project (source's frame format, captions carried over).
- * Projects without captions are handed to the Subtitles panel, which generates
- * them first, cuts the reels and comes back here.
+ * Without captions there is no transcript to read, so Make reels asks for
+ * subtitles first and stays here.
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -50,6 +50,8 @@ export function ReelsPanel() {
   const [note, setNote] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const hasCues = project.cues.length > 0;
+  /** Make reels was pressed without captions: the prompt under the button stays until they exist. */
+  const [needCaptions, setNeedCaptions] = useState(false);
   const [preview, setPreview] = useState<VideoProject | null>(null);
   // Inside a one-clip reel: how much of the source video its clip can still be dragged out to show.
   const slack = useReelSlack();
@@ -112,8 +114,8 @@ export function ReelsPanel() {
   const run = async () => {
     if (job) return;
     if (!useEditor.getState().project?.cues.length) {
-      // Captions first: the Subtitles panel generates them, cuts the reels and returns here.
-      useEditor.getState().requestReels();
+      // Nothing to read yet: ask for subtitles and stay here.
+      setNeedCaptions(true);
       return;
     }
     setError(null);
@@ -142,13 +144,16 @@ export function ReelsPanel() {
       setJob(null);
     }
   };
-  // "Make reels" from the project menu lands here when captions already exist.
+  // "Make reels" from the project menu lands here: with captions it runs, without them it asks
+  // for subtitles. The request is cleared from the store as it is taken, so a later visit does
+  // not run it again (a ref would not do: Strict Mode's second effect pass would see it as taken).
   const reelsRequest = useEditor((s) => s.reelsRequest);
-  const handled = useRef(0);
   useEffect(() => {
-    if (!reelsRequest || reelsRequest === handled.current || !hasCues) return;
-    handled.current = reelsRequest;
-    const id = setTimeout(() => void run(), 0);
+    if (!reelsRequest) return;
+    const id = setTimeout(() => {
+      useEditor.setState({ reelsRequest: 0 });
+      void run();
+    }, 0);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reelsRequest]);
@@ -367,16 +372,27 @@ export function ReelsPanel() {
           </Field>
         </div>
         {!job ? (
-          <Button variant="primary" className="w-full" onClick={run} disabled={!project.clips.length} title={hasCues ? "Find the best moments and cut them into reels" : "Generates captions first, then cuts the reels"}>
+          <Button variant="primary" className="w-full" onClick={run} disabled={!project.clips.length} title={hasCues ? "Find the best moments and cut them into reels" : "Needs subtitles first: the model reads the transcript"}>
             <Clapperboard size={14} /> Make reels
           </Button>
         ) : (
           jobBlock
         )}
         {!hasCues && project.clips.length > 0 && (
-          <p className="flex items-start gap-1.5 text-[11px] leading-snug text-label-3">
-            <Captions size={12} className="mt-0.5 shrink-0" /> No captions yet: pressing Make reels generates them first (the model reads the transcript), then cuts the reels.
-          </p>
+          needCaptions ? (
+            <div className="space-y-2 rounded-lg border border-sys-orange/40 bg-sys-orange/10 p-2.5" role="status" data-reels-need-captions>
+              <p className="flex items-start gap-1.5 text-[12px] leading-snug text-white">
+                <Captions size={13} className="mt-0.5 shrink-0 text-sys-orange" /> Add subtitles first. The model picks the moments by reading the transcript, and this video has no captions yet. Generate them under Subtitles, then come back and press Make reels.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => useEditor.getState().setTool("subtitles")} data-open-subtitles>
+                <Captions size={13} /> Open Subtitles
+              </Button>
+            </div>
+          ) : (
+            <p className="flex items-start gap-1.5 text-[11px] leading-snug text-label-3">
+              <Captions size={12} className="mt-0.5 shrink-0" /> No captions yet. Make reels needs subtitles: the model reads the transcript to pick the moments.
+            </p>
+          )
         )}
         {error && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{error}</p>}
         {note && <p className="text-[11px] text-sys-green">{note}</p>}

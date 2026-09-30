@@ -298,10 +298,9 @@ export const useEditor = create<EditorState>()(
       if (text) noticeTimer = setTimeout(() => set({ notice: null }), 6000);
     },
     requestReels() {
-      // With captions the Reels panel runs the job; without them the Subtitles
-      // panel generates captions first, then cuts the reels and comes back.
-      const hasCues = (get().project?.cues.length ?? 0) > 0;
-      set({ tool: hasCues ? "reels" : "subtitles", reelsRequest: Date.now() });
+      // The Reels panel takes it from here: it runs the job, or asks for
+      // subtitles first when the project has no captions.
+      set({ tool: "reels", reelsRequest: Date.now() });
     },
     requestEdit(sel) {
       const project = get().project;

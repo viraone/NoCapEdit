@@ -15,7 +15,6 @@ import { AiModelFields } from "./AiModelFields";
 import { keepOnly } from "@/lib/edit/magicCut";
 import { getPreset } from "@/lib/captions/presets";
 import { Sparkle, Wand } from "lucide-react";
-import { loadReelSettings, makeReels } from "@/lib/edit/reelMaker";
 import { listOllamaModels } from "@/lib/edit/aiHighlights";
 import { WHISPER_MODELS, DEFAULT_WHISPER_MODEL, sliceSamples, wordsToProjectTime, type DevicePreference } from "@/lib/speech/transcriber";
 import { transcribeWithSpeakers, buildSpeakerCues, type SpeakerSegment } from "@/lib/transcriptionEngine";
@@ -320,50 +319,6 @@ export function SubtitlesPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiAvailable]);
 
-  // ---- "Make reels" for a project without captions lands here: generate them,
-  // cut the reels with the shared settings, then hand back to the Reels panel.
-  const reelAbortRef = useRef<AbortController | null>(null);
-  const [reelJob, setReelJob] = useState<{ message: string; progress: number | null } | null>(null);
-  const [reelError, setReelError] = useState<string | null>(null);
-  const makeReelsAfterCaptions = async () => {
-    if (reelJob || job) return;
-    setReelError(null);
-    if (!useEditor.getState().project?.cues.length) {
-      await transcribe();
-      if (!useEditor.getState().project?.cues.length) return;
-    }
-    const controller = new AbortController();
-    reelAbortRef.current = controller;
-    setReelJob({ message: "Starting", progress: null });
-    try {
-      const reelSettings = loadReelSettings();
-      const result = await makeReels({
-        project: useEditor.getState().project!,
-        count: reelSettings.count,
-        targetSeconds: reelSettings.targetSeconds,
-        settings: aiSettings,
-        signal: controller.signal,
-        onProgress: (message, progress) => setReelJob((j) => (j ? { ...j, message, progress } : j)),
-      });
-      useEditor.getState().setNotice(`${result.made.length} reel${result.made.length === 1 ? "" : "s"} ready.`);
-      useEditor.getState().setTool("reels");
-    } catch (e) {
-      if (!(e instanceof DOMException && e.name === "AbortError")) setReelError(e instanceof Error ? e.message : String(e));
-    } finally {
-      reelAbortRef.current = null;
-      setReelJob(null);
-    }
-  };
-  const reelsRequest = useEditor((s) => s.reelsRequest);
-  const handledReelsRequest = useRef(0);
-  useEffect(() => {
-    if (!reelsRequest || reelsRequest === handledReelsRequest.current) return;
-    handledReelsRequest.current = reelsRequest;
-    const id = setTimeout(() => void makeReelsAfterCaptions(), 0);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reelsRequest]);
-  useEffect(() => () => reelAbortRef.current?.abort(), []);
   const runHighlights = async () => {
     setAiError(null);
     if (finder === "stats") {
@@ -632,20 +587,6 @@ export function SubtitlesPanel() {
           </div>
         ))}
       </PanelSection>
-      {(reelJob || reelError) && (
-        <PanelSection title="Reels">
-          {reelJob && (
-            <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5" data-reel-job>
-              <ProgressBar value={reelJob.progress} />
-              <p className="text-[11px] text-label-2">{reelJob.message}</p>
-              <Button variant="outline" size="sm" onClick={() => reelAbortRef.current?.abort()}>
-                <Square size={12} /> Cancel
-              </Button>
-            </div>
-          )}
-          {reelError && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{reelError}</p>}
-        </PanelSection>
-      )}
       <PanelSection title="Translate">
         <div className="grid grid-cols-2 gap-2">
           <Field label="From">

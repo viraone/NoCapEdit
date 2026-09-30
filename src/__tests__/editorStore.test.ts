@@ -113,6 +113,19 @@ describe("autosave flush", () => {
     expect(s.endTransaction()).toBe(false);
   });
 
+  it("Make reels always lands on the Reels tool, with or without captions", () => {
+    const s = useEditor.getState();
+    s.setTool("clips");
+    s.requestReels();
+    expect(useEditor.getState().tool).toBe("reels");
+    const stamp = useEditor.getState().reelsRequest;
+    expect(stamp).toBeGreaterThan(0);
+    useEditor.setState({ project: createProject({ name: "b", cues: [{ id: "c", start: 0, end: 1, text: "hi" }] }), tool: "subtitles" });
+    s.requestReels();
+    expect(useEditor.getState().tool).toBe("reels");
+    expect(useEditor.getState().reelsRequest).toBeGreaterThanOrEqual(stamp);
+  });
+
   it("records no step for a drag that ends where it began", () => {
     const s = useEditor.getState();
     const name = useEditor.getState().project!.name;
