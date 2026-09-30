@@ -23,6 +23,47 @@ export const DOCK_MAX_H = FIXED_H + VIDEO_MAX_H * GROWING_LANES;
 /** Window height the preview keeps for itself: the dock never grows past the window minus this. */
 export const STAGE_MIN_H = 380;
 
+/**
+ * Filmstrips and waveforms are drawn only for the part of a clip block that
+ * is on screen, plus this much on either side (px), so a long clip never
+ * needs a canvas the length of the whole timeline. Chrome loses any 2D
+ * canvas wider than 65,535 device pixels for good (a 7-minute clip at the
+ * default zoom on a 2x display: white block, broken-image glyph, and zooming
+ * out does not bring it back), and even valid ones cost memory in proportion
+ * to their length.
+ */
+export const STRIP_OVERSCAN = 600;
+
+/** Widest a strip canvas may be in device pixels; the draw scale drops before this is crossed. */
+export const MAX_STRIP_PX = 16384;
+
+/** Part of a block to draw, in px from the block's left edge. */
+export interface StripWindow {
+  x0: number;
+  x1: number;
+}
+
+/** The timeline range worth drawing for a viewport `viewW` px wide scrolled to `scrollX`. */
+export function drawRange(scrollX: number, viewW: number, overscan = STRIP_OVERSCAN): { from: number; to: number } {
+  return { from: Math.max(0, scrollX - overscan), to: scrollX + viewW + overscan };
+}
+
+/**
+ * The part of a block that lies inside the drawn range of the timeline
+ * (`view`, timeline px), on whole pixels. Empty (x1 <= x0) when the block is
+ * off screen.
+ */
+export function visibleWindow(blockLeft: number, blockWidth: number, view: { from: number; to: number }): StripWindow {
+  const w = Math.max(0, blockWidth);
+  return { x0: clamp(Math.floor(view.from - blockLeft), 0, w), x1: clamp(Math.ceil(view.to - blockLeft), 0, w) };
+}
+
+/** Draw scale for a strip `cssWidth` px wide: the device pixel ratio capped at 2, lowered so the canvas stays under MAX_STRIP_PX. */
+export function stripScale(cssWidth: number, devicePixelRatio: number): number {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  return cssWidth > 0 ? Math.min(dpr, MAX_STRIP_PX / cssWidth) : dpr;
+}
+
 /** Clamps a requested dock height to the lane limits and, when the window height is given, to what it can spare. */
 export function clampDockHeight(h: number, viewportH = Infinity): number {
   if (!Number.isFinite(h)) return DOCK_DEFAULT_H;

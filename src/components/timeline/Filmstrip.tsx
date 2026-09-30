@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { getAsset, getThumbs, putThumbs, type ThumbsRecord } from "@/lib/storage/db";
 import { emitAssetReady, onAssetReady } from "@/lib/media/events";
 import { FILMSTRIP_FRAME_HEIGHT, generateFilmstrip } from "@/lib/media/thumbnails";
+import { stripScale, type StripWindow } from "./dockLayout";
 
 export interface Loaded {
   img: HTMLImageElement;
@@ -42,10 +43,18 @@ export function loadThumbs(assetId: string, force = false): Promise<Loaded | nul
   return p;
 }
 
-/** Draws evenly spaced thumbnails of the clip's trimmed range across the block width. */
-export function Filmstrip({ assetId, inPoint, outPoint, width, height }: { assetId: string; inPoint: number; outPoint: number; width: number; height: number }) {
+/**
+ * Draws evenly spaced thumbnails of the clip's trimmed range across the block
+ * width. Only the `visible` part of the block gets a canvas (the whole block
+ * when it is not given); the thumbnails sit on a grid anchored to the block's
+ * left edge, so they stay put as that part moves with the scroll.
+ */
+export function Filmstrip({ assetId, inPoint, outPoint, width, height, visible }: { assetId: string; inPoint: number; outPoint: number; width: number; height: number; visible?: StripWindow }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [thumbs, setThumbs] = useState<Loaded | null>(null);
+  const x0 = visible?.x0 ?? 0;
+  const x1 = Math.min(width, visible?.x1 ?? width);
+  const cssW = Math.max(0, x1 - x0);
 
   useEffect(() => {
     let alive = true;
@@ -61,26 +70,28 @@ export function Filmstrip({ assetId, inPoint, outPoint, width, height }: { asset
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || width <= 0 || height <= 0) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
+    if (!canvas || cssW <= 0 || height <= 0) return;
+    const scale = stripScale(cssW, window.devicePixelRatio);
+    canvas.width = Math.round(cssW * scale);
+    canvas.height = Math.round(height * scale);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.scale(dpr, dpr);
+    ctx.scale(scale, scale);
     ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = "#171717";
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, cssW, height);
     if (!thumbs) return;
     const { img, rec } = thumbs;
     const tileW = Math.max(8, rec.frameWidth * (height / rec.frameHeight));
     const range = Math.max(0.001, outPoint - inPoint);
-    for (let x = 0; x < width; x += tileW) {
+    // From the first grid tile that reaches into the window to the last one that starts inside it.
+    for (let x = Math.floor(x0 / tileW) * tileW; x < x1; x += tileW) {
       const t = inPoint + ((x + tileW / 2) / width) * range;
       const idx = Math.max(0, Math.min(rec.count - 1, Math.floor((t / Math.max(0.001, rec.duration)) * rec.count)));
-      ctx.drawImage(img, idx * rec.frameWidth, 0, rec.frameWidth, rec.frameHeight, x, 0, tileW, height);
+      ctx.drawImage(img, idx * rec.frameWidth, 0, rec.frameWidth, rec.frameHeight, x - x0, 0, tileW, height);
     }
-  }, [thumbs, inPoint, outPoint, width, height]);
+  }, [thumbs, inPoint, outPoint, width, height, x0, x1, cssW]);
 
-  return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ width, height }} />;
+  if (cssW <= 0) return null;
+  return <canvas ref={canvasRef} className="pointer-events-none absolute top-0" style={{ left: x0, width: cssW, height }} />;
 }

@@ -16,7 +16,7 @@ import { toSourceTime } from "@/lib/models/timeline";
 import { stretchOf, type Slack } from "@/lib/edit/reelStretch";
 import { AudioWaveform } from "./AudioWaveform";
 import { useReelStretch, type InOut, type TrimDrag } from "./useReelStretch";
-import { RULER_H, CUE_H, MUSIC_H, DOCK_CHROME_H, videoLaneHeight } from "./dockLayout";
+import { RULER_H, CUE_H, MUSIC_H, DOCK_CHROME_H, STRIP_OVERSCAN, drawRange, videoLaneHeight, visibleWindow } from "./dockLayout";
 
 const EDGE = 7;
 /** Vertical inset of a clip block inside the video lane. */
@@ -201,6 +201,7 @@ function ClipBlock({
   slack,
   onTrimEnd,
   onStretch,
+  view,
 }: {
   layout: ClipLayout;
   layouts: ClipLayout[];
@@ -217,12 +218,15 @@ function ClipBlock({
   onTrimEnd: (drag: TrimDrag) => InOut | null;
   /** Cuts the wider range from the source, after the transaction closed. */
   onStretch: (req: InOut) => void;
+  /** Timeline range (px) being drawn: the filmstrip only gets a canvas for its part of it. */
+  view: { from: number; to: number };
 }) {
   const { update, beginTransaction, endTransaction, select, setTool } = useEditor.getState();
   const { clip } = layout;
   const width = Math.max(6, layout.duration * pxPerSec);
   const blockH = laneH - CLIP_PAD * 2;
   const geo = stretchGeometry(clip, width, pxPerSec);
+  const strip = visibleWindow(layout.start * pxPerSec + geo.left, geo.mediaW, view);
   // How much can still be dragged out on each side: the media's own slack, then the source past it.
   const availBefore = clip.inPoint + (slack?.before ?? 0);
   const availAfter = clip.duration - clip.outPoint + (slack?.after ?? 0);
@@ -325,7 +329,7 @@ function ClipBlock({
       }}
     >
       <div className="absolute inset-y-0" style={{ left: geo.left, width: geo.mediaW }}>
-        <Filmstrip assetId={clip.assetId} inPoint={geo.inPoint} outPoint={geo.outPoint} width={geo.mediaW} height={blockH} />
+        <Filmstrip assetId={clip.assetId} inPoint={geo.inPoint} outPoint={geo.outPoint} width={geo.mediaW} height={blockH} visible={strip} />
       </div>
       {geo.left > 0 && <StretchGhost side="l" width={geo.left} seconds={geo.before} />}
       {geo.right > 0 && <StretchGhost side="r" width={geo.right} seconds={geo.after} />}
@@ -406,6 +410,18 @@ export function TimelineDock() {
   const stretch = useReelStretch();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewW, setViewW] = useState(800);
+  // Where the strips were last drawn from. They cover STRIP_OVERSCAN px past the viewport on each
+  // side, so the dock re-renders only once the scroll has used up half of that margin.
+  const [scrollX, setScrollX] = useState(0);
+  const drawnAt = useRef(0);
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const x = e.currentTarget.scrollLeft;
+    if (Math.abs(x - drawnAt.current) > STRIP_OVERSCAN / 2) {
+      drawnAt.current = x;
+      setScrollX(x);
+    }
+  };
+  const view = drawRange(scrollX, viewW);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -490,6 +506,7 @@ export function TimelineDock() {
         <div
           ref={scrollRef}
           className="relative flex-1 overflow-x-auto overflow-y-hidden"
+          onScroll={onScroll}
           onPointerDown={onBackgroundDown}
           onPointerMove={(e) => {
             if (scrubbing.current) seek(timeAt(e.clientX));
@@ -559,6 +576,7 @@ export function TimelineDock() {
                   slack={stretch.job ? null : stretch.slack}
                   onTrimEnd={stretch.finishTrim}
                   onStretch={stretch.start}
+                  view={view}
                 />
               ))}
               {dropX !== null && <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-sys-blue shadow-[0_0_6px_rgba(10,132,255,0.9)]" data-drop-indicator style={{ left: dropX }} />}
@@ -569,6 +587,7 @@ export function TimelineDock() {
                 if (!layout.clip.hasAudio) return null;
                 const w = Math.max(6, layout.duration * pxPerSec);
                 const geo = stretchGeometry(layout.clip, w, pxPerSec);
+                const strip = visibleWindow(layout.start * pxPerSec + geo.left, geo.mediaW, view);
                 return (
                   <div
                     key={layout.clip.id}
@@ -589,7 +608,7 @@ export function TimelineDock() {
                     }}
                   >
                     <div className="absolute inset-y-0" style={{ left: geo.left, width: geo.mediaW }}>
-                      <AudioWaveform assetId={layout.clip.audioAssetId ?? layout.clip.assetId} inPoint={geo.inPoint} outPoint={geo.outPoint} width={geo.mediaW} height={audioH - 8} color="rgba(255,214,10,0.9)" />
+                      <AudioWaveform assetId={layout.clip.audioAssetId ?? layout.clip.assetId} inPoint={geo.inPoint} outPoint={geo.outPoint} width={geo.mediaW} height={audioH - 8} color="rgba(255,214,10,0.9)" visible={strip} />
                     </div>
                     {geo.left > 0 && <StretchGhost side="l" width={geo.left} seconds={geo.before} />}
                     {geo.right > 0 && <StretchGhost side="r" width={geo.right} seconds={geo.after} />}
