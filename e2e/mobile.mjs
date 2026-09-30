@@ -120,6 +120,18 @@ try {
     await page.waitForTimeout(300);
     await page.screenshot({ path: join(outDir, "mobile-3b-frame.png") });
     lap(`reframed to ${process.env.FRAME} (${Math.round(box.width)}×${Math.round(box.height)} preview)`);
+    if (process.env.FRAME === "9:16" && !process.env.CLIP) {
+      // A tall window on the landscape fixture spans its full height: a
+      // vertical drag can't move it, and the editor must say why.
+      await page.getByText(/drag left or right · zoom in to move up and down/i).waitFor({ timeout: 2_000 });
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 50, { steps: 5 });
+      await page.getByText(/zoom in to move up and down/i).first().waitFor({ timeout: 2_000 });
+      await page.mouse.up();
+      await page.screenshot({ path: join(outDir, "mobile-3c-locked-hint.png") });
+      lap("locked-axis hint shown for a vertical drag");
+    }
   }
 
   // Pick a different look, then export.

@@ -893,6 +893,11 @@ function StyleScreen({
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [tab, setTab] = useState<Tab>("looks");
   const [dragging, setDragging] = useState(false);
+  // Which way the window can't move at this zoom (a 9:16 window on a
+  // landscape clip already spans its full height); shown when a drag
+  // pushes that way, and kept up a moment after the finger lifts.
+  const [lockHintState, setLockHint] = useState<{ which: "x" | "y" | "both"; zoom: number; format: Reframe["format"] } | null>(null);
+  const lockHintTimer = useRef<number | null>(null);
   const cuesRef = useRef(cues);
   const styleRef = useRef(style);
   const reframeRef = useRef(reframe);
@@ -1010,6 +1015,9 @@ function StyleScreen({
         }
       : { width: "100%", height: "100%", left: 0, top: 0 };
 
+  const lockedX = !!(dims && crop) && dims.w - crop.w < 1;
+  const lockedY = !!(dims && crop) && dims.h - crop.h < 1;
+
   // Gestures on the frame. Tap = play/pause. On the Frame tab a drag pans
   // the video and a two-finger pinch zooms it; on every other tab a drag
   // moves the caption.
@@ -1057,6 +1065,17 @@ function StyleScreen({
       const c = cropRect(dims.w, dims.h, reframeRef.current);
       const perPx = c.w / rect.width; // source pixels per screen pixel
       setReframe(panBy(dims.w, dims.h, reframeRef.current, (e.clientX - prev.x) * perPx, (e.clientY - prev.y) * perPx));
+      // Pushing where there is no room to go: say why nothing moves.
+      const noX = dims.w - c.w < 1;
+      const noY = dims.h - c.h < 1;
+      const dx = Math.abs(e.clientX - g.startX);
+      const dy = Math.abs(e.clientY - g.startY);
+      const hint = noX && noY ? "both" : noY && dy > dx ? "y" : noX && dx > dy ? "x" : null;
+      if (hint) {
+        if (lockHintTimer.current) window.clearTimeout(lockHintTimer.current);
+        lockHintTimer.current = null;
+        setLockHint({ which: hint, zoom: reframeRef.current.zoom, format: reframeRef.current.format });
+      }
     } else {
       const fx = (e.clientX - rect.left) / rect.width;
       const fy = (e.clientY - rect.top) / rect.height;
@@ -1073,7 +1092,17 @@ function StyleScreen({
     gesture.current = null;
     setDragging(false);
     if (g && !g.moved) togglePlay();
+    if (lockHintState && !lockHintTimer.current) {
+      lockHintTimer.current = window.setTimeout(() => {
+        lockHintTimer.current = null;
+        setLockHint(null);
+      }, 1800);
+    }
   };
+  // The hint belongs to the zoom and shape it was raised at; a pinch or a new shape retires it.
+  const lockHint = lockHintState && lockHintState.zoom === reframe.zoom && lockHintState.format === reframe.format ? lockHintState.which : null;
+  const lockText = (which: "x" | "y" | "both") =>
+    which === "both" ? "Zoom in to move the video" : which === "y" ? "Zoom in to move up and down" : "Zoom in to move left and right";
 
   const formatLabel = FRAME_FORMATS.find((f) => f.id === reframe.format)?.label ?? "Original";
   const summary = `${formatLabel} · ${preset.name} · ${cues.length} captions`;
@@ -1109,9 +1138,14 @@ function StyleScreen({
             <Play size={26} className="translate-x-0.5" />
           </span>
         )}
-        {dragging && (
-          <span className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-medium backdrop-blur">
-            {framing ? "Drag to move · pinch to zoom" : "Drag to place captions"}
+        {(dragging || lockHint) && (
+          <span
+            className={cx(
+              "pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur",
+              lockHint ? "bg-brand-500/90 text-white" : "bg-black/70",
+            )}
+          >
+            {lockHint ? lockText(lockHint) : framing ? "Drag to move · pinch to zoom" : "Drag to place captions"}
           </span>
         )}
         <div
@@ -1136,7 +1170,15 @@ function StyleScreen({
         </div>
       </div>
       <p className="mt-2 text-center text-[11px] text-label-3">
-        {framing ? "Drag the video to move it · pinch to zoom" : "Tap to play · drag the caption to move it"}
+        {!framing
+          ? "Tap to play · drag the caption to move it"
+          : lockedX && lockedY
+            ? "Pinch to zoom in, then drag to move the video"
+            : lockedY
+              ? "Drag left or right · zoom in to move up and down"
+              : lockedX
+                ? "Drag up or down · zoom in to move left and right"
+                : "Drag the video to move it · pinch to zoom"}
       </p>
 
       {/* Tabs */}
