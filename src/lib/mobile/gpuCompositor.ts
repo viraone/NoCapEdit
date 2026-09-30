@@ -2,13 +2,14 @@
 /**
  * WebGPU compositor for the fast exporter.
  *
- * On iPhone, the WebGL route (texImage2D from a VideoFrame, then a
- * VideoFrame from the GL canvas) costs more than decoding and encoding
- * put together. WebGPU is the path Apple built for WebCodecs:
- * `importExternalTexture` takes the decoded frame without a copy, the
- * caption layers are ordinary textures blended on top, and the canvas is
- * read back into an encoder frame. Same crop/rotation maths as the WebGL
- * compositor (texture coordinates per quad corner).
+ * On iPhone, reading *any* canvas back into an encoder frame (2D, WebGL
+ * or a WebGPU canvas) is paced by the display: the export tops out at
+ * about 30 frames a second however fast the codecs are. So this never
+ * touches a canvas. `importExternalTexture` takes the decoded frame
+ * without a copy, the video and the two caption layers are drawn into a
+ * plain GPU texture, and the pixels are copied into a mappable buffer and
+ * handed to the encoder as an RGBA VideoFrame. Same crop/rotation maths as
+ * the WebGL compositor (texture coordinates per quad corner).
  */
 import { GlCompositor } from "@/lib/mobile/glCompositor";
 
@@ -69,8 +70,12 @@ interface LayerSlot {
 }
 
 export class GpuCompositor {
-  readonly canvas: OffscreenCanvas;
-  private readonly context: GPUCanvasContext;
+  private readonly target: GPUTexture;
+  private readonly targetView: GPUTextureView;
+  private readonly readback: GPUBuffer;
+  private readonly bytesPerRow: number;
+  /** Rows re-packed without padding when the width isn't a multiple of 64 px. */
+  private readonly tight: Uint8Array<ArrayBuffer> | null;
   private readonly videoPipeline: GPURenderPipeline;
   private readonly layerPipeline: GPURenderPipeline;
   private readonly sampler: GPUSampler;
@@ -80,7 +85,7 @@ export class GpuCompositor {
   private readonly activeSlot: LayerSlot = { texture: null, bindGroup: null, version: -1, width: 0, height: 0 };
 
   static supported(): boolean {
-    return typeof navigator !== "undefined" && "gpu" in navigator && typeof OffscreenCanvas !== "undefined" && typeof VideoFrame !== "undefined";
+    return typeof navigator !== "undefined" && "gpu" in navigator && typeof VideoFrame !== "undefined";
   }
 
   /**
@@ -111,17 +116,12 @@ export class GpuCompositor {
       } finally {
         input.close();
       }
-      const output = new VideoFrame(compositor.canvas, { timestamp: 0 });
+      const output = await compositor.readFrame(0, 0);
       let red = true;
       try {
-        const fmt = output.format ?? "";
-        if (/^(RGBA|RGBX|BGRA|BGRX)$/.test(fmt)) {
-          const buf = new Uint8Array(output.allocationSize());
-          await output.copyTo(buf);
-          const r = fmt.startsWith("RGB") ? buf[0] : buf[2];
-          const g = buf[1];
-          red = r > 200 && g < 60;
-        }
+        const buf = new Uint8Array(output.allocationSize());
+        await output.copyTo(buf);
+        red = buf[0] > 200 && buf[1] < 60;
       } finally {
         output.close();
       }
@@ -145,12 +145,18 @@ export class GpuCompositor {
     readonly width: number,
     readonly height: number,
   ) {
-    this.canvas = new OffscreenCanvas(width, height);
-    const context = this.canvas.getContext("webgpu");
-    if (!context) throw new Error("WebGPU canvas context unavailable");
-    this.context = context;
-    const format = navigator.gpu.getPreferredCanvasFormat();
-    context.configure({ device, format, alphaMode: "opaque" });
+    const format: GPUTextureFormat = "rgba8unorm";
+    this.target = device.createTexture({
+      size: [width, height],
+      format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+    this.targetView = this.target.createView();
+    // copyTextureToBuffer wants rows padded to 256 bytes; VideoFrame takes
+    // the stride in its layout, so nothing needs re-packing.
+    this.bytesPerRow = Math.ceil((width * 4) / 256) * 256;
+    this.readback = device.createBuffer({ size: this.bytesPerRow * height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    this.tight = this.bytesPerRow === width * 4 ? null : new Uint8Array(width * 4 * height);
 
     const vertexLayout: GPUVertexBufferLayout = {
       arrayStride: 16,
@@ -258,7 +264,7 @@ export class GpuCompositor {
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
-      colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
+      colorAttachments: [{ view: this.targetView, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
     });
     pass.setPipeline(this.videoPipeline);
     pass.setBindGroup(0, videoBindGroup);
@@ -277,7 +283,34 @@ export class GpuCompositor {
       }
     }
     pass.end();
+    encoder.copyTextureToBuffer({ texture: this.target }, { buffer: this.readback, bytesPerRow: this.bytesPerRow }, [this.width, this.height]);
     device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * The frame drawn by the last `draw`, as an RGBA VideoFrame for the
+   * encoder. Waits for the GPU to finish that frame (a few ms of real
+   * work, not a display refresh) and copies the pixels out.
+   */
+  async readFrame(timestamp: number, duration: number): Promise<VideoFrame> {
+    await this.readback.mapAsync(GPUMapMode.READ);
+    try {
+      const mapped = this.readback.getMappedRange();
+      let data: ArrayBuffer | Uint8Array<ArrayBuffer> = mapped;
+      if (this.tight) {
+        // Padded rows: a declared stride isn't honoured everywhere (WebKit
+        // shears the picture), so repack into a tight buffer.
+        const src = new Uint8Array(mapped);
+        const rowBytes = this.width * 4;
+        for (let y = 0; y < this.height; y++) {
+          this.tight.set(src.subarray(y * this.bytesPerRow, y * this.bytesPerRow + rowBytes), y * rowBytes);
+        }
+        data = this.tight;
+      }
+      return new VideoFrame(data, { format: "RGBA", codedWidth: this.width, codedHeight: this.height, timestamp, duration });
+    } finally {
+      this.readback.unmap();
+    }
   }
 
   /** Same corner mapping as the WebGL compositor. */
@@ -297,7 +330,8 @@ export class GpuCompositor {
     this.activeSlot.texture?.destroy();
     this.videoVertices.destroy();
     this.layerVertices.destroy();
-    this.context.unconfigure();
+    this.readback.destroy();
+    this.target.destroy();
     this.device.destroy();
   }
 }

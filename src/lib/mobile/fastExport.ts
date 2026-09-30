@@ -100,9 +100,9 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
       }
     }
     let work: OffscreenCanvas | HTMLCanvasElement =
-      gpu?.canvas ?? gl?.canvas ?? (typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(out.width, out.height) : canvas);
+      gl?.canvas ?? (typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(out.width, out.height) : canvas);
     let previewCtx: CanvasRenderingContext2D | null = null;
-    if (work === canvas) {
+    if (work === canvas && !gpu) {
       canvas.width = out.width;
       canvas.height = out.height;
     } else {
@@ -187,24 +187,24 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
               } finally {
                 vf.close();
               }
-              // Read the canvas back ourselves so the cost lands in "draw".
-              return new VideoFrame(gpu!.canvas, { timestamp: sample.microsecondTimestamp, duration: sample.microsecondDuration });
+              // Pixels come back from a GPU buffer, never a canvas: the cost lands in "draw".
+              return gpu!.readFrame(sample.microsecondTimestamp, sample.microsecondDuration);
             };
             const finish = (outFrame: VideoFrame) => {
               spent.video += performance.now() - t1;
               spent.captions += t1 - t0;
               frames += 1;
-              if (previewCtx && frames % PREVIEW_EVERY === 0) previewCtx.drawImage(gpu!.canvas, 0, 0, canvas.width, canvas.height);
+              if (previewCtx && frames % PREVIEW_EVERY === 0) previewCtx.drawImage(outFrame, 0, 0, canvas.width, canvas.height);
               lastEnd = performance.now();
               return outFrame;
             };
-            if (gpuVerified) return finish(composite());
+            if (gpuVerified) return composite().then(finish);
             // First real frame: a decoder-backed VideoFrame is the one thing
             // the self-test couldn't try. Draw it under an error scope; if
             // WebGPU rejects it, switch to WebGL and redo this frame there.
             gpu.beginCheck();
-            const first = composite();
-            return gpu.endCheck().then((err) => {
+            return composite().then(async (first) => {
+              const err = await gpu!.endCheck();
               if (!err) {
                 gpuVerified = true;
                 return finish(first);
