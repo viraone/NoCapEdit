@@ -19,7 +19,7 @@ import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import type { Ctx } from "@/lib/captions/renderer";
 import { CaptionLayer } from "@/lib/mobile/captionLayer";
 import { GlCompositor } from "@/lib/mobile/glCompositor";
-import { GpuCompositor, type PendingFrame } from "@/lib/mobile/gpuCompositor";
+import { GpuCompositor, PIPELINE_DEPTH, type PendingFrame } from "@/lib/mobile/gpuCompositor";
 import { BlobFileSink } from "@/lib/mobile/blobFileSink";
 import { BT709_VIDEO_RANGE, looksLikeWebKitDefault, readColorTags, sameTags, writeColorTags } from "@/lib/mobile/mp4Color";
 import { cropRect, DEFAULT_REFRAME, outputFrame, placeWholeFrame, type Reframe } from "@/lib/mobile/reframe";
@@ -196,7 +196,7 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     // conversion knows which tracks it uses, before it runs.
     let trackEnd = Infinity;
     let lastSlot = -1;
-    // GPU route: frames drawn but not yet collected (at most one between calls).
+    // GPU route: frames drawn but not yet collected (up to PIPELINE_DEPTH between calls).
     const inflight: PendingFrame[] = [];
     const conversion = await mb.Conversion.init({
       input,
@@ -303,10 +303,10 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
             }
             frames += 1;
             inflight.push(pending);
-            // Hand back the previous frame (its mapping has had a whole
-            // frame's time to resolve) and, on the last call, this one too.
+            // Hand back the frame drawn PIPELINE_DEPTH calls ago (its mapping
+            // has had that long to resolve) and, on the last call, the rest.
             const ready: VideoFrame[] = [];
-            while (inflight.length > (isLast ? 0 : 1)) ready.push(await inflight.shift()!.frame);
+            while (inflight.length > (isLast ? 0 : PIPELINE_DEPTH)) ready.push(await inflight.shift()!.frame);
             spent.video += performance.now() - t1;
             if (previewCtx && frames % PREVIEW_EVERY === 0 && ready.length) previewCtx.drawImage(ready[ready.length - 1], 0, 0, canvas.width, canvas.height);
             done();

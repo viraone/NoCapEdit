@@ -13,15 +13,16 @@
  * the encoder can use as is. Same crop/rotation maths as the WebGL
  * compositor (texture coordinates per quad corner).
  *
- * Two readback buffers alternate, and the map request goes out the moment
- * a frame is submitted, so the caller can draw the next frame while this
- * one is still on the GPU and collect it a frame later, when the mapping
- * has usually long resolved.
+ * Readback buffers are used in turn and the map request goes out the
+ * moment a frame is submitted, so the caller can draw the next frames
+ * while this one is still on the GPU and collect it PIPELINE_DEPTH calls
+ * later, when the mapping has usually long resolved.
  *
  * The RGBA route (copy the texture out row by row, hand over RGBA) stays
  * as the fallback for a browser that can't build an NV12 frame from bytes.
  */
 import { GlCompositor } from "@/lib/mobile/glCompositor";
+import type { Rect } from "@/lib/mobile/reframe";
 
 const SHADER = /* wgsl */ `
 struct VSOut {
@@ -140,7 +141,7 @@ fn pack(@builtin(global_invocation_id) id: vec3u) {
 }
 `;
 
-type Layer = { canvas: OffscreenCanvas | HTMLCanvasElement; version: number } | null;
+type Layer = { canvas: OffscreenCanvas | HTMLCanvasElement; version: number; rect: Rect } | null;
 
 interface LayerSlot {
   texture: GPUTexture | null;
@@ -148,7 +149,12 @@ interface LayerSlot {
   version: number;
   width: number;
   height: number;
+  /** Where the texture currently holds pixels; the rest of it is transparent. */
+  rect: Rect | null;
 }
+
+/** How many frames may be in flight: drawn, not yet collected. */
+export const PIPELINE_DEPTH = 2;
 
 /** How the finished frame is handed to the encoder. */
 export type GpuPixelFormat = "NV12" | "RGBA";
@@ -200,7 +206,7 @@ function isRed(format: VideoPixelFormat | null, buf: Uint8Array, width: number, 
 export class GpuCompositor {
   private readonly target: GPUTexture;
   private readonly targetView: GPUTextureView;
-  /** Two readback buffers, used alternately, so a frame can be drawn while the previous one is being mapped. */
+  /** Readback buffers used in turn, so frames can be drawn while earlier ones are still being mapped. */
   private readonly slots: ReadbackSlot[];
   private nextSlot = 0;
   /** NV12: the compute pass writes the packed planes here, then they are copied to a slot. */
@@ -224,8 +230,8 @@ export class GpuCompositor {
   /** What the vertex buffers hold, so unchanged quads aren't re-uploaded every frame. */
   private videoQuadKey = "";
   private layerQuadKey = "";
-  private readonly staticSlot: LayerSlot = { texture: null, bindGroup: null, version: -1, width: 0, height: 0 };
-  private readonly activeSlot: LayerSlot = { texture: null, bindGroup: null, version: -1, width: 0, height: 0 };
+  private readonly staticSlot: LayerSlot = { texture: null, bindGroup: null, version: -1, width: 0, height: 0, rect: null };
+  private readonly activeSlot: LayerSlot = { texture: null, bindGroup: null, version: -1, width: 0, height: 0, rect: null };
   /**
    * Profiling, milliseconds summed over frames: importing the frame and
    * binding it, uploading caption layers, the rest of recording + submit,
@@ -335,9 +341,9 @@ export class GpuCompositor {
         targets: [
           {
             format,
-            // Layers are premultiplied.
+            // Layers arrive through getImageData, i.e. straight (not premultiplied) alpha.
             blend: {
-              color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+              color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
               alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
             },
           },
@@ -417,6 +423,14 @@ export class GpuCompositor {
 
   private static readonly FULL_UV = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
 
+  /**
+   * Brings a layer texture up to date. Only the part that can have changed
+   * is copied: the union of where the layer had pixels and where it has
+   * them now (the canvas is transparent everywhere else, and so is the
+   * texture, which starts zeroed). The pixels go through getImageData and
+   * writeTexture: in WebKit, copyExternalImageToTexture snapshots the whole
+   * canvas however small the copy, at several times the cost.
+   */
   private syncLayer(slot: LayerSlot, layer: NonNullable<Layer>) {
     if (slot.version === layer.version && slot.texture) return;
     const w = layer.canvas.width;
@@ -426,10 +440,11 @@ export class GpuCompositor {
       slot.texture = this.device.createTexture({
         size: [w, h],
         format: "rgba8unorm",
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       });
       slot.width = w;
       slot.height = h;
+      slot.rect = null;
       slot.bindGroup = this.device.createBindGroup({
         layout: this.layerPipeline.getBindGroupLayout(0),
         entries: [
@@ -438,8 +453,21 @@ export class GpuCompositor {
         ],
       });
     }
-    this.device.queue.copyExternalImageToTexture({ source: layer.canvas }, { texture: slot.texture, premultipliedAlpha: true }, [w, h]);
+    const dirty = GpuCompositor.union(slot.rect, layer.rect, w, h);
+    const ctx = layer.canvas.getContext("2d") as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
+    if (!ctx) throw new Error("Caption layer has no 2D context");
+    const pixels = ctx.getImageData(dirty.x, dirty.y, dirty.w, dirty.h);
+    this.device.queue.writeTexture({ texture: slot.texture, origin: { x: dirty.x, y: dirty.y } }, pixels.data, { bytesPerRow: dirty.w * 4 }, [dirty.w, dirty.h]);
+    slot.rect = layer.rect;
     slot.version = layer.version;
+  }
+
+  private static union(a: Rect | null, b: Rect, width: number, height: number): Rect {
+    const x0 = Math.max(0, Math.min(a?.x ?? b.x, b.x));
+    const y0 = Math.max(0, Math.min(a?.y ?? b.y, b.y));
+    const x1 = Math.min(width, Math.max(a ? a.x + a.w : 0, b.x + b.w));
+    const y1 = Math.min(height, Math.max(a ? a.y + a.h : 0, b.y + b.h));
+    return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
   }
 
   /**
@@ -576,7 +604,11 @@ export class GpuCompositor {
   }
 
   private static makeSlots(device: GPUDevice, size: number): ReadbackSlot[] {
-    return [0, 1].map(() => ({ buffer: device.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }), busy: false, pending: null }));
+    return Array.from({ length: PIPELINE_DEPTH + 1 }, () => ({
+      buffer: device.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }),
+      busy: false,
+      pending: null,
+    }));
   }
 
   /** Same corner mapping as the WebGL compositor. */
