@@ -494,7 +494,7 @@ export function MobileEditor() {
             canvas: exportCanvasRef.current,
             signal: controller.signal,
             onProgress,
-            debugMode: (["passthrough", "nocaptions", "resize-only", "2d"] as FastExportDebugMode[]).find((m) => m === params.get("fx")),
+            debugMode: (["passthrough", "nocaptions", "resize-only", "gl", "2d"] as FastExportDebugMode[]).find((m) => m === params.get("fx")),
           });
         } catch (e) {
           if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) throw e;

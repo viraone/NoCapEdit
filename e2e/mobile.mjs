@@ -183,6 +183,7 @@ try {
       const px = execFileSync("ffmpeg", ["-v", "error", "-ss", "3", "-i", outFile, "-frames:v", "1", "-vf", "crop=4:4:6:ih/2", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]);
       const [r, g, b] = [px[0], px[1], px[2]];
       if (r > 180 && g < 90 && b < 90) throw new Error(`Reframed export looks squeezed, not cropped (left edge is red: ${r},${g},${b})`);
+      if (r + g + b < 60) throw new Error(`Reframed export is black at the left edge (${r},${g},${b}) — dead compositor?`);
       console.log(`crop check: left edge rgb(${r},${g},${b})`);
     }
   }

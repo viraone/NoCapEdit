@@ -37,6 +37,7 @@
     "@types/node": "^22.20.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@webgpu/types": "^0.1.74",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "playwright": "^1.63.0",

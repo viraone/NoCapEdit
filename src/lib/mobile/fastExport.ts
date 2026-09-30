@@ -18,6 +18,7 @@ import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import type { Ctx } from "@/lib/captions/renderer";
 import { CaptionLayer } from "@/lib/mobile/captionLayer";
 import { GlCompositor } from "@/lib/mobile/glCompositor";
+import { GpuCompositor } from "@/lib/mobile/gpuCompositor";
 import { BlobFileSink } from "@/lib/mobile/blobFileSink";
 import { cropRect, DEFAULT_REFRAME, outputFrame, placeWholeFrame, type Reframe } from "@/lib/mobile/reframe";
 import type { ExportStats, LiteExportResult, LiteProgress } from "@/lib/mobile/exportLite";
@@ -48,9 +49,9 @@ export interface FastExportOptions {
   /** Profiling only. `passthrough`: hand decoded frames straight to the
    * encoder (no compositing at all) — the decode + encode floor.
    * `nocaptions`: composite through the GPU but skip captions.
-   * `resize-only`: let the library resize. `2d`: force the 2D-canvas
-   * compositor instead of WebGL. */
-  debugMode?: "passthrough" | "nocaptions" | "resize-only" | "2d";
+   * `resize-only`: let the library resize. `gl` / `2d`: force the WebGL
+   * or 2D-canvas compositor instead of WebGPU. */
+  debugMode?: "passthrough" | "nocaptions" | "resize-only" | "gl" | "2d";
 }
 
 export type FastExportDebugMode = NonNullable<FastExportOptions["debugMode"]>;
@@ -84,10 +85,13 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     // Composite off screen. A canvas that is being presented costs the
     // page compositor on every frame; the on-screen one only gets a small
     // preview every few frames so the render is still visible.
-    // Preferred: WebGL takes the decoded frame as a texture (no CPU
-    // conversion of a 4K frame per output frame). Fallback: 2D canvas.
+    // Compositor, best first: WebGPU imports the decoded frame with no
+    // copy (the path that is fast on iPhone), WebGL takes it as a texture,
+    // and a 2D canvas is the fallback everywhere else.
+    let gpu: GpuCompositor | null = null;
     let gl: GlCompositor | null = null;
-    if (opts.debugMode !== "2d" && GlCompositor.supported()) {
+    if (opts.debugMode !== "2d" && opts.debugMode !== "gl") gpu = await GpuCompositor.create(out.width, out.height);
+    if (!gpu && opts.debugMode !== "2d" && GlCompositor.supported()) {
       try {
         gl = new GlCompositor(out.width, out.height);
       } catch (e) {
@@ -95,8 +99,8 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
         gl = null;
       }
     }
-    const work: OffscreenCanvas | HTMLCanvasElement =
-      gl?.canvas ?? (typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(out.width, out.height) : canvas);
+    let work: OffscreenCanvas | HTMLCanvasElement =
+      gpu?.canvas ?? gl?.canvas ?? (typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(out.width, out.height) : canvas);
     let previewCtx: CanvasRenderingContext2D | null = null;
     if (work === canvas) {
       canvas.width = out.width;
@@ -107,8 +111,8 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
       canvas.height = Math.max(2, Math.round(out.height * scale));
       previewCtx = canvas.getContext("2d");
     }
-    const ctx = gl ? null : (work.getContext("2d", { alpha: false }) as Ctx | null);
-    if (!gl && !ctx) throw new Error("Canvas is not available.");
+    const ctx = gpu || gl ? null : (work.getContext("2d", { alpha: false }) as Ctx | null);
+    if (!gpu && !gl && !ctx) throw new Error("Canvas is not available.");
 
     // 60 fps phone footage is halved; anything at or under 30 keeps its own timing.
     const stats = await track.computePacketStats(120).catch(() => null);
@@ -143,6 +147,7 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     const spent = { video: 0, captions: 0, other: 0 };
     let frames = 0;
     let lastEnd = 0;
+    let gpuVerified = false;
     const conversion = await mb.Conversion.init({
       input,
       output,
@@ -171,6 +176,59 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
           }
           const noCaptions = opts.debugMode === "nocaptions";
           let t1: number;
+          if (gpu) {
+            const layers = noCaptions ? { static: null, active: null, band: { top: 0, height: out.height } } : captions.update(sample.timestamp);
+            t1 = performance.now();
+            const uv = GpuCompositor.uvFor(crop, sample.displayWidth, sample.displayHeight, sample.rotation, sample.flip);
+            const composite = () => {
+              const vf = sample.toVideoFrame();
+              try {
+                gpu!.draw(vf, uv, layers);
+              } finally {
+                vf.close();
+              }
+              // Read the canvas back ourselves so the cost lands in "draw".
+              return new VideoFrame(gpu!.canvas, { timestamp: sample.microsecondTimestamp, duration: sample.microsecondDuration });
+            };
+            const finish = (outFrame: VideoFrame) => {
+              spent.video += performance.now() - t1;
+              spent.captions += t1 - t0;
+              frames += 1;
+              if (previewCtx && frames % PREVIEW_EVERY === 0) previewCtx.drawImage(gpu!.canvas, 0, 0, canvas.width, canvas.height);
+              lastEnd = performance.now();
+              return outFrame;
+            };
+            if (gpuVerified) return finish(composite());
+            // First real frame: a decoder-backed VideoFrame is the one thing
+            // the self-test couldn't try. Draw it under an error scope; if
+            // WebGPU rejects it, switch to WebGL and redo this frame there.
+            gpu.beginCheck();
+            const first = composite();
+            return gpu.endCheck().then((err) => {
+              if (!err) {
+                gpuVerified = true;
+                return finish(first);
+              }
+              first.close();
+              console.warn("[nocap mobile] WebGPU rejected a decoded frame, switching to WebGL:", err.message);
+              gpu!.dispose();
+              gpu = null;
+              gl = GlCompositor.supported() ? new GlCompositor(out.width, out.height) : null;
+              if (!gl) throw new Error("No compositor could render this video.");
+              work = gl.canvas;
+              const vf = sample.toVideoFrame();
+              try {
+                gl.draw(vf, uv, layers);
+              } finally {
+                vf.close();
+              }
+              spent.video += performance.now() - t1;
+              spent.captions += t1 - t0;
+              frames += 1;
+              lastEnd = performance.now();
+              return gl.canvas;
+            });
+          }
           if (gl) {
             const layers = noCaptions ? { static: null, active: null, band: { top: 0, height: out.height } } : captions.update(sample.timestamp);
             t1 = performance.now();
@@ -221,9 +279,10 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     const blob = sink ? sink.finalize() : new Blob([bufferTarget!.buffer as ArrayBuffer], { type: "video/mp4" });
     const hasAudio = conversion.utilizedTracks.some((t) => t.isAudioTrack());
     const n = Math.max(1, frames);
+    gpu?.dispose();
     gl?.dispose();
     const exportStats: ExportStats = {
-      source: `${sourceWidth}×${sourceHeight} ${track.codec ?? "?"} ${Math.round(sourceFps)} fps${hdr ? " HDR" : ""} · ${gl ? "gl" : "2d"}${opts.debugMode ? ` · ${opts.debugMode}` : ""}`,
+      source: `${sourceWidth}×${sourceHeight} ${track.codec ?? "?"} ${Math.round(sourceFps)} fps${hdr ? " HDR" : ""} · ${gpu ? "gpu" : gl ? "gl" : "2d"}${opts.debugMode ? ` · ${opts.debugMode}` : ""}`,
       frames,
       msVideo: spent.video / n,
       msCaptions: spent.captions / n,
