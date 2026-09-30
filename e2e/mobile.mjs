@@ -5,6 +5,7 @@
 //   node e2e/mobile.mjs            # Chromium
 //   BROWSER=webkit node e2e/mobile.mjs
 //   AUDIO=ffmpeg node e2e/mobile.mjs   # force the iOS audio-extraction fallback
+//   STREAM=1 node e2e/mobile.mjs       # force the long-clip streaming (fragmented) export
 //   E2E_URL=https://nocapedit.com/ node e2e/mobile.mjs   # against a deployment
 import { chromium, webkit } from "playwright";
 import { spawn, execFileSync } from "node:child_process";
@@ -48,8 +49,11 @@ const t0 = Date.now();
 const lap = (label) => console.log(`${((Date.now() - t0) / 1000).toFixed(1)}s  ${label}`);
 
 try {
-  const forceFfmpegAudio = process.env.AUDIO === "ffmpeg";
-  await page.goto(new URL(forceFfmpegAudio ? "m/?audio=ffmpeg" : "m/", baseUrl).toString());
+  const query = new URLSearchParams();
+  if (process.env.AUDIO === "ffmpeg") query.set("audio", "ffmpeg");
+  if (process.env.STREAM === "1") query.set("stream", "1");
+  const qs = query.toString();
+  await page.goto(new URL(`m/${qs ? `?${qs}` : ""}`, baseUrl).toString());
   await page.getByRole("button", { name: /choose a video/i }).waitFor({ timeout: 30_000 });
   await page.screenshot({ path: join(outDir, "mobile-1-pick.png") });
   lap("pick screen");

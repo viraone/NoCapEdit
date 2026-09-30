@@ -25,6 +25,7 @@ import { ensureFontsLoaded, fontFamily } from "@/lib/captions/fonts";
 import { defaultSubtitleStyle, type CaptionCue, type SubtitleStyle, type WordTiming } from "@/lib/models/project";
 import { checkLiteSupport, exportCaptionedVideo, type LiteExportResult, type LiteProgress, type LiteSupport } from "@/lib/mobile/exportLite";
 import { acquireWakeLock, canShareFiles, saveVideo } from "@/lib/mobile/share";
+import { probeVideo } from "@/lib/media/probe";
 
 type Step = "pick" | "analysing" | "style" | "exporting" | "done";
 
@@ -49,6 +50,11 @@ function markInflight(stage: string | null) {
   }
 }
 
+/** Beyond this the phone can't realistically hold the audio + captions. */
+const MAX_SECONDS = 15 * 60;
+/** From here on the export streams to Blob storage instead of memory. */
+const LONG_SECONDS = 120;
+
 const MODEL_FAST = WHISPER_MODELS[0].id; // tiny
 const MODEL_ACCURATE = WHISPER_MODELS[1].id; // base
 const PREVIEW_MAX_EDGE = 1080;
@@ -63,6 +69,7 @@ export function MobileEditor() {
   const [step, setStep] = useState<Step>("pick");
   const [support, setSupport] = useState<LiteSupport | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [duration, setDuration] = useState(0);
   const [sourceAudio, setSourceAudio] = useState<SourceAudio | null>(null);
   const [accurate, setAccurate] = useState(false);
   const [status, setStatus] = useState<{ message: string; progress: number | null; detail?: string }>({ message: "", progress: null });
@@ -125,6 +132,12 @@ export function MobileEditor() {
     abortRef.current = controller;
     try {
       setStatus({ message: "Reading your video", progress: null });
+      const info = await probeVideo(picked);
+      if (controller.signal.aborted) return;
+      setDuration(info.duration);
+      if (info.duration > MAX_SECONDS) {
+        throw new Error(`This clip is ${fmtTime(info.duration)} long. On a phone, keep it under 15 minutes — trim it in Photos first.`);
+      }
       // `?audio=ffmpeg` forces the iOS fallback path, for testing it elsewhere.
       const strategy: AudioStrategy = new URLSearchParams(window.location.search).get("audio") === "ffmpeg" ? "ffmpeg" : "auto";
       const decoded = await extractAudio(picked, {
@@ -195,9 +208,11 @@ export function MobileEditor() {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
+      const streaming = duration > LONG_SECONDS || new URLSearchParams(window.location.search).get("stream") === "1";
       const out = await exportCaptionedVideo({
         file,
         audio: sourceAudio,
+        streaming,
         cues,
         style,
         video: exportVideoRef.current,
@@ -280,7 +295,11 @@ export function MobileEditor() {
           <ProgressScreen
             title="Making captions"
             status={status}
-            note="Keep this screen open. The speech model downloads once and is cached on your phone."
+            note={
+              duration > LONG_SECONDS
+                ? `Long clip (${fmtTime(duration)}) — captions can take a few minutes on a phone. Keep this screen open.`
+                : "Keep this screen open. The speech model downloads once and is cached on your phone."
+            }
             onCancel={reset}
           />
         )}
@@ -530,6 +549,9 @@ function StyleScreen({
     handle = video.requestVideoFrameCallback(loop);
     const onMeta = () => {
       setDuration(video.duration);
+      // iOS Safari shows a black box for a paused video until it has
+      // seeked at least once; a tiny seek paints the first frame.
+      if (video.currentTime === 0) video.currentTime = 0.01;
       draw();
     };
     const onSeeked = () => {
@@ -721,7 +743,16 @@ function DoneScreen({
   return (
     <div className="flex flex-1 flex-col">
       <div className="overflow-hidden rounded-3xl bg-sys-gray6 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-        <video src={resultUrl} controls playsInline className="block max-h-[52dvh] w-full bg-black object-contain" />
+        <video
+          src={resultUrl}
+          controls
+          playsInline
+          preload="auto"
+          onLoadedMetadata={(e) => {
+            if (e.currentTarget.currentTime === 0) e.currentTarget.currentTime = 0.01;
+          }}
+          className="block max-h-[52dvh] w-full bg-black object-contain"
+        />
       </div>
       <p className="mt-3 text-center text-xs text-label-2">
         {result.width}×{result.height} · {fmtTime(result.seconds)} · {mb} MB · {result.audio === "none" ? "no audio" : "with audio"}

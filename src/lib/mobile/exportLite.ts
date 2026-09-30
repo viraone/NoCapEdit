@@ -16,7 +16,7 @@
  * with AudioEncoder. Browsers without AudioEncoder fall back to a small
  * single-threaded ffmpeg mux of the original audio.
  */
-import { ArrayBufferTarget, Muxer } from "mp4-muxer";
+import { ArrayBufferTarget, Muxer, StreamTarget } from "mp4-muxer";
 import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import { drawCue } from "@/lib/captions/renderer";
 import { resampleLinear } from "@/lib/mobile/audio";
@@ -43,6 +43,10 @@ export interface LiteExportOptions {
   /** Longest output edge in pixels. Source aspect is kept. */
   maxEdge?: number;
   fps?: number;
+  /** Long clips: write a fragmented MP4 in 4 MB chunks that are handed to
+   * Blob storage as they are produced, so the finished file never sits in
+   * the JS heap. Short clips keep the classic fast-start MP4. */
+  streaming?: boolean;
   onProgress?: (p: LiteProgress) => void;
   signal?: AbortSignal;
 }
@@ -197,12 +201,28 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
   }
   const channels = planar ? planar.length : 0;
 
-  const target = new ArrayBufferTarget();
+  const parts: Blob[] = [];
+  let expectedPosition = 0;
+  const memoryTarget = opts.streaming ? null : new ArrayBufferTarget();
+  const target =
+    memoryTarget ??
+    new StreamTarget({
+      chunked: true,
+      chunkSize: 4 * 1024 * 1024,
+      // A fragmented MP4 is written strictly front to back, which is what
+      // lets each chunk go straight into Blob storage (Blob() copies the
+      // bytes; the chunk itself is freed). Guard the assumption.
+      onData: (data, position) => {
+        if (position !== expectedPosition) throw new Error(`Non-sequential write at ${position} (expected ${expectedPosition})`);
+        expectedPosition += data.byteLength;
+        parts.push(new Blob([data as BlobPart]));
+      },
+    });
   const muxer = new Muxer({
     target,
     video: { codec: "avc", width, height, frameRate: fps },
     ...(planar && channels > 0 ? { audio: { codec: "aac", numberOfChannels: channels, sampleRate: AUDIO_RATE } } : {}),
-    fastStart: "in-memory",
+    fastStart: memoryTarget ? "in-memory" : "fragmented",
     firstTimestampBehavior: "offset",
   });
 
@@ -345,7 +365,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
   muxer.finalize();
   URL.revokeObjectURL(url);
 
-  let blob = new Blob([target.buffer], { type: "video/mp4" });
+  let blob = memoryTarget ? new Blob([memoryTarget.buffer], { type: "video/mp4" }) : new Blob(parts, { type: "video/mp4" });
 
   // No AudioEncoder (or unsupported config): keep the original audio via a
   // tiny ffmpeg mux. Single-threaded on purpose — no isolation needed.
