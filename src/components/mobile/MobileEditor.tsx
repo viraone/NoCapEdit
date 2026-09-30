@@ -15,7 +15,7 @@ import { AlertTriangle, ArrowLeft, Check, Download, Film, Loader2, Monitor, Paus
 import "@/lib/fonts"; // registers next/font family names for canvas text on the client
 import { Button } from "@/components/ui/Button";
 import { cx } from "@/lib/utils/cx";
-import { extractAudio, type AudioStrategy, type SourceAudio } from "@/lib/mobile/audio";
+import { AudioExtractError, extractAudio, type AudioStrategy, type SourceAudio } from "@/lib/mobile/audio";
 import { hasWebGPU, transcribeSamples, WHISPER_MODELS } from "@/lib/speech/transcriber";
 import type { MlProgress } from "@/lib/speech/mlClient";
 import { buildCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
@@ -45,7 +45,7 @@ export function MobileEditor() {
   const [sourceAudio, setSourceAudio] = useState<SourceAudio | null>(null);
   const [accurate, setAccurate] = useState(false);
   const [status, setStatus] = useState<{ message: string; progress: number | null; detail?: string }>({ message: "", progress: null });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; detail?: string } | null>(null);
   const [words, setWords] = useState<WordTiming[]>([]);
   const [cues, setCues] = useState<CaptionCue[]>([]);
   const [style, setStyle] = useState<SubtitleStyle>(() => ({ ...defaultSubtitleStyle(), presetId: "hormozi", y: 0.74 }));
@@ -106,7 +106,6 @@ export function MobileEditor() {
       const strategy: AudioStrategy = new URLSearchParams(window.location.search).get("audio") === "ffmpeg" ? "ffmpeg" : "auto";
       const decoded = await extractAudio(picked, { strategy, onStatus: (m) => setStatus({ message: m, progress: null }) });
       if (controller.signal.aborted) return;
-      if (!decoded) throw new Error("Couldn't read the audio from this video. Try a different clip, or one recorded with the Camera app.");
       setSourceAudio(decoded);
 
       const device = (await hasWebGPU()) ? "webgpu" : "wasm";
@@ -129,7 +128,12 @@ export function MobileEditor() {
       setStep("style");
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : String(e));
+      console.error("[nocap mobile] analyse failed", e);
+      if (e instanceof AudioExtractError) {
+        setError({ message: "Couldn't read the audio from this video.", detail: e.message });
+      } else {
+        setError({ message: e instanceof Error ? e.message : String(e), detail: e instanceof Error && e.name !== "Error" ? e.name : undefined });
+      }
       setStep("pick");
     } finally {
       releaseLock();
@@ -162,7 +166,8 @@ export function MobileEditor() {
         setStep("style");
         return;
       }
-      setError(e instanceof Error ? e.message : String(e));
+      console.error("[nocap mobile] export failed", e);
+      setError({ message: e instanceof Error ? e.message : String(e) });
       setStep("style");
     } finally {
       releaseLock();
@@ -202,7 +207,10 @@ export function MobileEditor() {
         {error && (
           <div className="mb-3 flex items-start gap-2 rounded-2xl border border-sys-red/30 bg-sys-red/10 p-3 text-sm text-sys-red">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-            <p>{error}</p>
+            <div className="min-w-0">
+              <p>{error.message}</p>
+              {error.detail && <p className="mt-1 break-words text-[11px] leading-snug text-sys-red/80">{error.detail}</p>}
+            </div>
           </div>
         )}
 
@@ -320,7 +328,10 @@ function PickScreen({
         <li className="flex items-center gap-2"><Check size={14} className="text-sys-green" /> 20 caption looks, word-by-word highlight</li>
         <li className="flex items-center gap-2"><Check size={14} className="text-sys-green" /> Saves straight to Photos</li>
       </ul>
-      <p className="mt-auto pt-6 text-center text-[11px] text-label-3">Best on Safari 17+ / Chrome. For timelines, transitions and more, use the desktop editor.</p>
+      <p className="mt-auto pt-6 text-center text-[11px] text-label-3">
+        Best on Safari 17+ / Chrome. For timelines, transitions and more, use the desktop editor.
+        <span className="mt-1 block font-mono text-[10px] text-label-3/70">build {process.env.NEXT_PUBLIC_BUILD_SHA ?? "dev"}</span>
+      </p>
     </div>
   );
 }

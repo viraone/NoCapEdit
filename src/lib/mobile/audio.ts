@@ -43,18 +43,23 @@ export function resampleLinear(input: Float32Array, from: number, to: number): F
   return out;
 }
 
-async function viaWebAudio(file: Blob): Promise<Float32Array[] | null> {
+function describe(e: unknown): string {
+  if (e instanceof Error) return `${e.name}: ${e.message}`;
+  return String(e);
+}
+
+async function viaWebAudio(file: Blob): Promise<{ channels: Float32Array[] } | { error: string }> {
   try {
     const data = await file.arrayBuffer();
     const ctx = new OfflineAudioContext(2, 1, EXPORT_RATE);
     const buffer = await ctx.decodeAudioData(data);
-    if (!buffer || buffer.length === 0) return null;
+    if (!buffer || buffer.length === 0) return { error: "decoded zero samples" };
     const n = Math.min(2, buffer.numberOfChannels);
     const channels: Float32Array[] = [];
     for (let c = 0; c < n; c++) channels.push(buffer.getChannelData(c));
-    return channels;
-  } catch {
-    return null;
+    return { channels };
+  } catch (e) {
+    return { error: describe(e) };
   }
 }
 
@@ -96,38 +101,60 @@ export function parseWav(bytes: Uint8Array): { sampleRate: number; channels: Flo
   return { sampleRate, channels };
 }
 
-async function viaFfmpeg(file: Blob, onStatus?: (m: string) => void): Promise<Float32Array[] | null> {
-  const { loadFFmpeg } = await import("@/lib/ffmpeg/loader");
-  const { ffmpeg } = await loadFFmpeg({ forceSingleThread: true, onStatus });
-  onStatus?.("Extracting audio");
-  await ffmpeg.writeFile("lite-audio-src", new Uint8Array(await file.arrayBuffer()));
+async function viaFfmpeg(file: Blob, onStatus?: (m: string) => void): Promise<{ channels: Float32Array[] } | { error: string }> {
+  let stage = "loading the video engine";
   try {
-    const code = await ffmpeg.exec(["-i", "lite-audio-src", "-vn", "-ac", "2", "-ar", String(EXPORT_RATE), "-c:a", "pcm_s16le", "-f", "wav", "lite-audio.wav"]);
-    if (code !== 0) return null;
-    const out = await ffmpeg.readFile("lite-audio.wav");
-    if (typeof out === "string") return null;
-    const { channels } = parseWav(out);
-    return channels.length ? channels : null;
-  } finally {
-    await Promise.allSettled([ffmpeg.deleteFile("lite-audio-src"), ffmpeg.deleteFile("lite-audio.wav")]);
+    const { loadFFmpeg } = await import("@/lib/ffmpeg/loader");
+    const { ffmpeg } = await loadFFmpeg({ forceSingleThread: true, onStatus });
+    stage = "reading the file";
+    onStatus?.("Extracting audio");
+    await ffmpeg.writeFile("lite-audio-src", new Uint8Array(await file.arrayBuffer()));
+    try {
+      stage = "extracting audio";
+      const code = await ffmpeg.exec(["-i", "lite-audio-src", "-vn", "-ac", "2", "-ar", String(EXPORT_RATE), "-c:a", "pcm_s16le", "-f", "wav", "lite-audio.wav"]);
+      if (code !== 0) return { error: `ffmpeg exited with ${code} (no audio stream?)` };
+      stage = "parsing audio";
+      const out = await ffmpeg.readFile("lite-audio.wav");
+      if (typeof out === "string") return { error: "unexpected text output" };
+      const { channels } = parseWav(out);
+      return channels.length ? { channels } : { error: "WAV had no channels" };
+    } finally {
+      await Promise.allSettled([ffmpeg.deleteFile("lite-audio-src"), ffmpeg.deleteFile("lite-audio.wav")]);
+    }
+  } catch (e) {
+    return { error: `${stage}: ${describe(e)}` };
+  }
+}
+
+/** Both extraction paths failed; `message` carries each path's reason. */
+export class AudioExtractError extends Error {
+  constructor(public readonly reasons: { webaudio?: string; ffmpeg?: string }) {
+    super(
+      [reasons.webaudio && `Web Audio — ${reasons.webaudio}`, reasons.ffmpeg && `ffmpeg — ${reasons.ffmpeg}`].filter(Boolean).join(" · "),
+    );
+    this.name = "AudioExtractError";
   }
 }
 
 export async function extractAudio(
   file: Blob,
   opts: { strategy?: AudioStrategy; onStatus?: (message: string) => void } = {},
-): Promise<SourceAudio | null> {
+): Promise<SourceAudio> {
+  const reasons: { webaudio?: string; ffmpeg?: string } = {};
   let channels: Float32Array[] | null = null;
   let source: SourceAudio["source"] = "webaudio";
-  if (opts.strategy !== "ffmpeg") channels = await viaWebAudio(file);
+  if (opts.strategy !== "ffmpeg") {
+    const r = await viaWebAudio(file);
+    if ("channels" in r) channels = r.channels;
+    else reasons.webaudio = r.error;
+  }
   if (!channels) {
-    channels = await viaFfmpeg(file, opts.onStatus).catch((e) => {
-      console.warn("ffmpeg audio extraction failed", e);
-      return null;
-    });
+    const r = await viaFfmpeg(file, opts.onStatus);
+    if ("channels" in r) channels = r.channels;
+    else reasons.ffmpeg = r.error;
     source = "ffmpeg";
   }
-  if (!channels) return null;
+  if (!channels) throw new AudioExtractError(reasons);
   const speech = resampleLinear(mixDown(channels), EXPORT_RATE, SPEECH_RATE);
   return { sampleRate: EXPORT_RATE, channels, speech, source };
 }
