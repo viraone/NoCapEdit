@@ -1,14 +1,25 @@
 /**
- * Getting the audio out of a phone video. `decodeAudioData` handles it on
- * Chrome and desktop Safari, but iOS Safari refuses to decode audio from a
- * *video* container (MOV/MP4 with a video track) and also rejects low
- * sample-rate OfflineAudioContexts — so on the phone we fall back to a
- * single-threaded ffmpeg extraction to WAV, parsed by hand. The result is
- * decoded once and shared by Whisper (16 kHz mono) and the export (48 kHz).
+ * Getting the audio out of a phone video without blowing the phone's memory.
+ *
+ * `decodeAudioData` handles it on Chrome and desktop Safari, but iOS Safari
+ * refuses to decode audio from a *video* container, and on any browser it
+ * needs the whole file as an ArrayBuffer (a 4K iPhone clip is hundreds of
+ * MB; Safari kills a tab that copies that around). So:
+ *
+ *  - iOS, or a file over WEB_AUDIO_MAX_BYTES: go straight to ffmpeg.
+ *  - ffmpeg reads the file through a WORKERFS mount — the Blob is streamed
+ *    into wasm on demand, never copied into the heap — and writes a small
+ *    mono 48 kHz WAV that we parse by hand (no decodeAudioData involved).
+ *
+ * The result is decoded once and shared: 16 kHz mono for Whisper, 48 kHz
+ * for the WebCodecs export.
  */
 
 export const EXPORT_RATE = 48000;
 export const SPEECH_RATE = 16000;
+/** Above this, even browsers that could decodeAudioData a video shouldn't:
+ * the ArrayBuffer copies cost more than the ffmpeg path. */
+const WEB_AUDIO_MAX_BYTES = 120 * 1024 * 1024;
 
 export interface SourceAudio {
   sampleRate: number;
@@ -20,6 +31,11 @@ export interface SourceAudio {
 }
 
 export type AudioStrategy = "auto" | "ffmpeg";
+
+export function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
 
 function mixDown(channels: Float32Array[]): Float32Array {
   if (channels.length === 1) return channels[0];
@@ -48,7 +64,9 @@ function describe(e: unknown): string {
   return String(e);
 }
 
-async function viaWebAudio(file: Blob): Promise<{ channels: Float32Array[] } | { error: string }> {
+type Attempt = { channels: Float32Array[] } | { error: string };
+
+async function viaWebAudio(file: Blob): Promise<Attempt> {
   try {
     const data = await file.arrayBuffer();
     const ctx = new OfflineAudioContext(2, 1, EXPORT_RATE);
@@ -101,17 +119,25 @@ export function parseWav(bytes: Uint8Array): { sampleRate: number; channels: Flo
   return { sampleRate, channels };
 }
 
-async function viaFfmpeg(file: Blob, onStatus?: (m: string) => void): Promise<{ channels: Float32Array[] } | { error: string }> {
+const MOUNT = "/lite-in";
+
+async function viaFfmpeg(file: Blob, onStatus?: (m: string) => void): Promise<Attempt> {
   let stage = "loading the video engine";
   try {
-    const { loadFFmpeg } = await import("@/lib/ffmpeg/loader");
+    const [{ loadFFmpeg }, { FFFSType }] = await Promise.all([import("@/lib/ffmpeg/loader"), import("@ffmpeg/ffmpeg")]);
     const { ffmpeg } = await loadFFmpeg({ forceSingleThread: true, onStatus });
-    stage = "reading the file";
+    stage = "opening the file";
     onStatus?.("Extracting audio");
-    await ffmpeg.writeFile("lite-audio-src", new Uint8Array(await file.arrayBuffer()));
+    // WORKERFS: ffmpeg reads the Blob lazily; nothing is copied into wasm memory.
+    await ffmpeg.createDir(MOUNT).catch(() => undefined);
+    await ffmpeg.mount(FFFSType.WORKERFS, { blobs: [{ name: "src", data: file }] }, MOUNT);
+    const onProgress = ({ progress }: { progress: number }) => {
+      if (progress > 0 && progress <= 1) onStatus?.(`Extracting audio · ${Math.round(progress * 100)}%`);
+    };
+    ffmpeg.on("progress", onProgress);
     try {
       stage = "extracting audio";
-      const code = await ffmpeg.exec(["-i", "lite-audio-src", "-vn", "-ac", "2", "-ar", String(EXPORT_RATE), "-c:a", "pcm_s16le", "-f", "wav", "lite-audio.wav"]);
+      const code = await ffmpeg.exec(["-i", `${MOUNT}/src`, "-vn", "-ac", "1", "-ar", String(EXPORT_RATE), "-c:a", "pcm_s16le", "-f", "wav", "lite-audio.wav"]);
       if (code !== 0) return { error: `ffmpeg exited with ${code} (no audio stream?)` };
       stage = "parsing audio";
       const out = await ffmpeg.readFile("lite-audio.wav");
@@ -119,7 +145,8 @@ async function viaFfmpeg(file: Blob, onStatus?: (m: string) => void): Promise<{ 
       const { channels } = parseWav(out);
       return channels.length ? { channels } : { error: "WAV had no channels" };
     } finally {
-      await Promise.allSettled([ffmpeg.deleteFile("lite-audio-src"), ffmpeg.deleteFile("lite-audio.wav")]);
+      ffmpeg.off("progress", onProgress);
+      await Promise.allSettled([ffmpeg.deleteFile("lite-audio.wav"), ffmpeg.unmount(MOUNT).then(() => ffmpeg.deleteDir(MOUNT))]);
     }
   } catch (e) {
     return { error: `${stage}: ${describe(e)}` };
@@ -143,10 +170,13 @@ export async function extractAudio(
   const reasons: { webaudio?: string; ffmpeg?: string } = {};
   let channels: Float32Array[] | null = null;
   let source: SourceAudio["source"] = "webaudio";
-  if (opts.strategy !== "ffmpeg") {
+  const tryWebAudio = opts.strategy !== "ffmpeg" && !isIOS() && file.size <= WEB_AUDIO_MAX_BYTES;
+  if (tryWebAudio) {
     const r = await viaWebAudio(file);
     if ("channels" in r) channels = r.channels;
     else reasons.webaudio = r.error;
+  } else if (opts.strategy !== "ffmpeg") {
+    reasons.webaudio = isIOS() ? "skipped on iOS" : "skipped (file over 120 MB)";
   }
   if (!channels) {
     const r = await viaFfmpeg(file, opts.onStatus);

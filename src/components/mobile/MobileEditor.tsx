@@ -9,7 +9,7 @@
  * audio is decoded once for Whisper, and export is WebCodecs (see
  * lib/mobile/exportLite.ts) — no ffmpeg, no SharedArrayBuffer.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, Check, Download, Film, Loader2, Monitor, Pause, Play, RotateCcw, Share2, Sparkles, Upload, X } from "lucide-react";
 import "@/lib/fonts"; // registers next/font family names for canvas text on the client
@@ -27,6 +27,27 @@ import { checkLiteSupport, exportCaptionedVideo, type LiteExportResult, type Lit
 import { acquireWakeLock, canShareFiles, saveVideo } from "@/lib/mobile/share";
 
 type Step = "pick" | "analysing" | "style" | "exporting" | "done";
+
+/** sessionStorage key holding the stage in progress. If it is still set
+ * when the page loads, Safari restarted the tab mid-way (its silent
+ * out-of-memory recovery) and the pick screen says so. */
+const INFLIGHT_KEY = "nocap.mobile.inflight";
+const noopSubscribe = () => () => {};
+function readInflight(): string | null {
+  try {
+    return window.sessionStorage.getItem(INFLIGHT_KEY);
+  } catch {
+    return null;
+  }
+}
+function markInflight(stage: string | null) {
+  try {
+    if (stage) window.sessionStorage.setItem(INFLIGHT_KEY, stage);
+    else window.sessionStorage.removeItem(INFLIGHT_KEY);
+  } catch {
+    /* storage blocked: the notice is a nicety */
+  }
+}
 
 const MODEL_FAST = WHISPER_MODELS[0].id; // tiny
 const MODEL_ACCURATE = WHISPER_MODELS[1].id; // base
@@ -52,6 +73,7 @@ export function MobileEditor() {
   const [wordsPerCue, setWordsPerCue] = useState(3);
   const [result, setResult] = useState<LiteExportResult | null>(null);
   const [saved, setSaved] = useState<"shared" | "downloaded" | null>(null);
+  const restartedDuring = useSyncExternalStore(noopSubscribe, readInflight, () => null);
   const abortRef = useRef<AbortController | null>(null);
   const exportVideoRef = useRef<HTMLVideoElement>(null);
   const exportCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -97,6 +119,7 @@ export function MobileEditor() {
     setSaved(null);
     setResult(null);
     setStep("analysing");
+    markInflight("reading the video");
     const releaseLock = await acquireWakeLock();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -104,15 +127,23 @@ export function MobileEditor() {
       setStatus({ message: "Reading your video", progress: null });
       // `?audio=ffmpeg` forces the iOS fallback path, for testing it elsewhere.
       const strategy: AudioStrategy = new URLSearchParams(window.location.search).get("audio") === "ffmpeg" ? "ffmpeg" : "auto";
-      const decoded = await extractAudio(picked, { strategy, onStatus: (m) => setStatus({ message: m, progress: null }) });
+      const decoded = await extractAudio(picked, {
+        strategy,
+        onStatus: (m) => {
+          markInflight(m.toLowerCase());
+          setStatus({ message: m, progress: null });
+        },
+      });
       if (controller.signal.aborted) return;
       setSourceAudio(decoded);
+      markInflight("loading the speech model");
 
       const device = (await hasWebGPU()) ? "webgpu" : "wasm";
       const model = accurate ? MODEL_ACCURATE : MODEL_FAST;
       setStatus({ message: "Loading Whisper", progress: null, detail: device === "webgpu" ? "GPU accelerated" : "CPU mode" });
       const onProgress = (p: MlProgress) => {
         const downloading = /download|fetch|load/i.test(p.stage) || /download/i.test(p.message);
+        markInflight(downloading ? "downloading the speech model" : "transcribing");
         setStatus({
           message: downloading ? "Downloading speech model (one time)" : p.partialText ? "Listening…" : p.message || "Transcribing",
           progress: p.progress,
@@ -136,6 +167,7 @@ export function MobileEditor() {
       }
       setStep("pick");
     } finally {
+      markInflight(null);
       releaseLock();
     }
   }
@@ -144,6 +176,7 @@ export function MobileEditor() {
     if (!file || !exportVideoRef.current || !exportCanvasRef.current) return;
     setError(null);
     setStep("exporting");
+    markInflight("exporting");
     setStatus({ message: "Preparing", progress: null });
     const releaseLock = await acquireWakeLock();
     const controller = new AbortController();
@@ -170,6 +203,7 @@ export function MobileEditor() {
       setError({ message: e instanceof Error ? e.message : String(e) });
       setStep("style");
     } finally {
+      markInflight(null);
       releaseLock();
     }
   }
@@ -214,6 +248,17 @@ export function MobileEditor() {
           </div>
         )}
 
+        {step === "pick" && restartedDuring && !error && (
+          <div className="mb-3 flex items-start gap-2 rounded-2xl border border-sys-orange/30 bg-sys-orange/10 p-3 text-sm text-sys-orange">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <div>
+              <p>Safari restarted the page while {restartedDuring}.</p>
+              <p className="mt-1 text-[11px] leading-snug text-sys-orange/80">
+                That usually means the clip was too big for the phone&rsquo;s memory. Try a shorter clip (under a minute or two), or trim it in Photos first.
+              </p>
+            </div>
+          </div>
+        )}
         {step === "pick" && (
           <PickScreen support={support} accurate={accurate} onAccurate={setAccurate} onPick={analyse} />
         )}
@@ -224,7 +269,6 @@ export function MobileEditor() {
             status={status}
             note="Keep this screen open. The speech model downloads once and is cached on your phone."
             onCancel={reset}
-            preview={fileUrl}
           />
         )}
 
@@ -378,21 +422,24 @@ function ProgressScreen({
   status,
   note,
   onCancel,
-  preview,
 }: {
   title: string;
   status: { message: string; progress: number | null; detail?: string };
   note: string;
   onCancel: () => void;
-  preview: string | null;
 }) {
   return (
     <div className="flex flex-1 flex-col">
-      <div className="relative overflow-hidden rounded-3xl bg-sys-gray6 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-        {preview && <video src={preview} muted playsInline autoPlay loop className="block max-h-[52dvh] w-full object-cover opacity-60" />}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-4 pt-12">
-          <p className="mb-2 flex items-center gap-2 text-lg font-semibold"><Sparkles size={18} className="text-sys-yellow" /> {title}</p>
-          <StatusLine status={status} />
+      <div className="relative overflow-hidden rounded-3xl bg-sys-gray6 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_50px_rgba(0,0,0,0.5)]">
+        <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 h-56 w-[28rem] -translate-x-1/2 rounded-full bg-sys-blue/20 blur-3xl" />
+        <div className="relative">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sys-gray5 text-sys-yellow shadow-inner shadow-black/40">
+            <Sparkles size={26} className="animate-pulse" />
+          </span>
+          <p className="mt-4 text-xl font-semibold tracking-tight">{title}</p>
+          <div className="mt-4">
+            <StatusLine status={status} />
+          </div>
         </div>
       </div>
       <p className="mt-3 text-center text-xs text-label-2">{note}</p>

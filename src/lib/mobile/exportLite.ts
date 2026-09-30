@@ -363,25 +363,31 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
 }
 
 async function muxOriginalAudio(videoOnly: Blob, source: Blob): Promise<Blob> {
-  const { loadFFmpeg } = await import("@/lib/ffmpeg/loader");
+  const [{ loadFFmpeg }, { FFFSType }] = await Promise.all([import("@/lib/ffmpeg/loader"), import("@ffmpeg/ffmpeg")]);
   const { ffmpeg } = await loadFFmpeg({ forceSingleThread: true });
-  await ffmpeg.writeFile("lite-video.mp4", new Uint8Array(await videoOnly.arrayBuffer()));
-  await ffmpeg.writeFile("lite-source", new Uint8Array(await source.arrayBuffer()));
-  const code = await ffmpeg.exec([
-    "-i", "lite-video.mp4",
-    "-i", "lite-source",
-    "-map", "0:v:0",
-    "-map", "1:a:0?",
-    "-c:v", "copy",
-    "-c:a", "aac",
-    "-b:a", "128k",
-    "-shortest",
-    "-movflags", "+faststart",
-    "lite-out.mp4",
-  ]);
-  if (code !== 0) throw new Error(`ffmpeg exited with ${code}`);
-  const out = await ffmpeg.readFile("lite-out.mp4");
-  await Promise.allSettled([ffmpeg.deleteFile("lite-video.mp4"), ffmpeg.deleteFile("lite-source"), ffmpeg.deleteFile("lite-out.mp4")]);
-  const bytes = typeof out === "string" ? new TextEncoder().encode(out) : out;
-  return new Blob([bytes as BlobPart], { type: "video/mp4" });
+  // Both inputs are read through a WORKERFS mount (streamed, not copied
+  // into wasm memory) — the source can be hundreds of MB on a phone.
+  const mount = "/lite-mux";
+  await ffmpeg.createDir(mount).catch(() => undefined);
+  await ffmpeg.mount(FFFSType.WORKERFS, { blobs: [{ name: "video.mp4", data: videoOnly }, { name: "source", data: source }] }, mount);
+  try {
+    const code = await ffmpeg.exec([
+      "-i", `${mount}/video.mp4`,
+      "-i", `${mount}/source`,
+      "-map", "0:v:0",
+      "-map", "1:a:0?",
+      "-c:v", "copy",
+      "-c:a", "aac",
+      "-b:a", "128k",
+      "-shortest",
+      "-movflags", "+faststart",
+      "lite-out.mp4",
+    ]);
+    if (code !== 0) throw new Error(`ffmpeg exited with ${code}`);
+    const out = await ffmpeg.readFile("lite-out.mp4");
+    const bytes = typeof out === "string" ? new TextEncoder().encode(out) : out;
+    return new Blob([bytes as BlobPart], { type: "video/mp4" });
+  } finally {
+    await Promise.allSettled([ffmpeg.deleteFile("lite-out.mp4"), ffmpeg.unmount(mount).then(() => ffmpeg.deleteDir(mount))]);
+  }
 }
