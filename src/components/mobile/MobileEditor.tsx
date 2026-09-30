@@ -173,7 +173,6 @@ export function MobileEditor() {
         setStatus({
           message: downloading ? "Downloading speech model (one time)" : p.partialText ? "Listening…" : p.message || "Transcribing",
           progress: p.progress,
-          detail: p.partialText ? `“…${p.partialText.slice(-60)}”` : undefined,
         });
       };
       const res = await transcribeSamples(decoded.speech, { model, language: "auto", device, threads, onProgress, signal: controller.signal });
@@ -560,6 +559,9 @@ function StyleScreen({
     };
     video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("seeked", onSeeked);
+    // Metadata may already be in by the time this effect runs (blob URLs
+    // load instantly) — the event would be missed, so apply it now too.
+    if (video.readyState >= 1) onMeta();
     video.addEventListener("play", () => setPlaying(true));
     video.addEventListener("pause", () => setPlaying(false));
     return () => {
@@ -594,7 +596,7 @@ function StyleScreen({
   return (
     <div className="flex flex-1 flex-col">
       <div className="relative overflow-hidden rounded-3xl bg-sys-gray6 shadow-[0_20px_50px_rgba(0,0,0,0.5)]" onClick={togglePlay}>
-        <video ref={videoRef} src={fileUrl} playsInline preload="auto" className="block max-h-[52dvh] w-full bg-black object-contain" />
+        <video ref={videoRef} src={`${fileUrl}#t=0.1`} playsInline preload="auto" className="block max-h-[52dvh] w-full bg-black object-contain" />
         <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
         {!playing && (
           <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/60 p-4 backdrop-blur">
@@ -743,16 +745,7 @@ function DoneScreen({
   return (
     <div className="flex flex-1 flex-col">
       <div className="overflow-hidden rounded-3xl bg-sys-gray6 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-        <video
-          src={resultUrl}
-          controls
-          playsInline
-          preload="auto"
-          onLoadedMetadata={(e) => {
-            if (e.currentTarget.currentTime === 0) e.currentTarget.currentTime = 0.01;
-          }}
-          className="block max-h-[52dvh] w-full bg-black object-contain"
-        />
+        <video src={`${resultUrl}#t=0.1`} controls playsInline preload="auto" className="block max-h-[52dvh] w-full bg-black object-contain" />
       </div>
       <p className="mt-3 text-center text-xs text-label-2">
         {result.width}×{result.height} · {fmtTime(result.seconds)} · {mb} MB · {result.audio === "none" ? "no audio" : "with audio"}
