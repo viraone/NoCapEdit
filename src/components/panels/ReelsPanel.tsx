@@ -7,11 +7,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play } from "lucide-react";
+import { ArrowLeft, Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
-import { DEFAULT_REEL_SETTINGS, listReels, loadReelSettings, makeReels, saveReelSettings, type ReelSettings } from "@/lib/edit/reelMaker";
+import { DEFAULT_REEL_SETTINGS, isEmptyReel, listReels, loadReelSettings, makeReels, recutReel, saveReelSettings, type ReelSettings } from "@/lib/edit/reelMaker";
 import { activeModel, listOllamaModels, loadAiSettings, localAiEnabled, saveAiSettings, type AiSettings } from "@/lib/edit/aiHighlights";
 import { AiModelFields } from "./AiModelFields";
 import { getFormat } from "@/lib/models/formats";
@@ -149,11 +149,50 @@ export function ReelsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reelsRequest]);
 
+  /** Cuts an empty reel again from its remembered range (no model needed); reloads it if it's the one open. */
+  const recut = async (r: VideoProject) => {
+    if (job) return;
+    setError(null);
+    setNote(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setElapsed(0);
+    setJob({ message: "Starting", progress: null, started: nowMs() });
+    try {
+      const source = isReel ? await getProject(listOwner) : useEditor.getState().project!;
+      if (!source) throw new Error("The source video is no longer on this device.");
+      await recutReel({ source, reel: r, signal: controller.signal, onProgress: (message, progress) => setJob((j) => (j ? { ...j, message, progress } : j)) });
+      await refreshReels();
+      if (r.id === project.id) {
+        await useEditor.getState().loadProject(r.id);
+        useEditor.getState().setTool("reels");
+      }
+      setNote(`Reel ${r.reel?.index} is cut again.`);
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      abortRef.current = null;
+      setJob(null);
+    }
+  };
+  const jobBlock = job && (
+    <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5" data-reel-job>
+      <ProgressBar value={job.progress} />
+      <p className="text-[11px] text-label-2">
+        {job.message} · {elapsed} s
+      </p>
+      <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}>
+        <Square size={12} /> Cancel
+      </Button>
+    </div>
+  );
+
   /** The reel rows: thumbnail previews here, open in the editor, export, delete. In a reel, the one being edited is marked and a single click opens a sibling. */
   const reelList = () => (
     <ul className="space-y-1.5" data-reel-list>
       {reels.map((r) => {
         const current = isReel && r.id === project.id;
+        const empty = isEmptyReel(r);
         // Land on the Reels tool so the list of siblings and the way back stay in view.
         const open = () => !current && router.push(`/editor?id=${r.id}&tool=reels`);
         return (
@@ -166,13 +205,13 @@ export function ReelsPanel() {
             onClick={isReel ? open : undefined}
             onDoubleClick={open}
           >
-            <button type="button" className="group relative h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6" onClick={(e) => (e.stopPropagation(), setPreview(r))} aria-label="Play this reel">
+            <button type="button" className="group relative h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6" onClick={(e) => (e.stopPropagation(), !empty && setPreview(r))} aria-label={empty ? "This reel is empty" : "Play this reel"} disabled={empty}>
               {thumbs[r.id] ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={thumbs[r.id]} alt="" className="h-full w-full object-cover" />
               ) : null}
               <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-white opacity-80 group-hover:opacity-100">
-                <Play size={14} fill="currentColor" />
+                {empty ? <AlertTriangle size={14} className="text-sys-orange" /> : <Play size={14} fill="currentColor" />}
               </span>
             </button>
             <div className="min-w-0 flex-1">
@@ -180,18 +219,30 @@ export function ReelsPanel() {
                 {r.reel?.title}
                 {current && <span className="ml-1.5 rounded bg-sys-blue px-1 py-px text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
               </p>
-              <p className="text-[11px] tabular-nums text-label-3">
-                Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(r.clips))} · from {formatTime(r.reel?.start ?? 0)}
-              </p>
+              {empty ? (
+                <p className="text-[11px] text-sys-orange" data-reel-empty>
+                  Reel {r.reel?.index} · empty: the cut didn&apos;t finish
+                </p>
+              ) : (
+                <p className="text-[11px] tabular-nums text-label-3">
+                  Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(r.clips))} · from {formatTime(r.reel?.start ?? 0)}
+                </p>
+              )}
             </div>
             {!current && (
               <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), router.push(`/editor?id=${r.id}&tool=reels`))} title="Open this reel">
                 <FolderOpen size={13} />
               </Button>
             )}
-            <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), router.push(`/editor?id=${r.id}&tool=export`))} title="Export this reel">
-              <Share2 size={13} />
-            </Button>
+            {empty ? (
+              <Button variant="ghost" size="iconSm" className="text-sys-orange" onClick={(e) => (e.stopPropagation(), void recut(r))} title="Cut this reel again from the source" disabled={!!job} data-recut>
+                <RefreshCw size={13} />
+              </Button>
+            ) : (
+              <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), router.push(`/editor?id=${r.id}&tool=export`))} title="Export this reel">
+                <Share2 size={13} />
+              </Button>
+            )}
             {!current && (
               <Button
                 variant="ghost"
@@ -224,6 +275,23 @@ export function ReelsPanel() {
           </Button>
           <p className="text-[11px] text-label-3">The source video keeps the full transcript; Make reels there adds to this list. The same link sits at the top of the screen.</p>
         </PanelSection>
+        {(isEmptyReel(project) || job || error || note) && (
+          <PanelSection title={isEmptyReel(project) ? "This reel is empty" : undefined}>
+            {isEmptyReel(project) && !job && (
+              <>
+                <p className="flex items-start gap-1.5 text-[11px] leading-snug text-sys-orange" data-empty-reel>
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" /> Its cut didn&apos;t finish, so there is no video here. Cut it again from the source video (no model needed), or delete it from the source&apos;s list.
+                </p>
+                <Button variant="primary" size="sm" className="w-full" onClick={() => void recut(project)} data-recut-current>
+                  <RefreshCw size={13} /> Cut this reel again
+                </Button>
+              </>
+            )}
+            {jobBlock}
+            {error && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{error}</p>}
+            {note && <p className="text-[11px] text-sys-green">{note}</p>}
+          </PanelSection>
+        )}
         <PanelSection title={`All reels (${reels.length})`}>{reels.length ? reelList() : <p className="text-[11px] text-label-3">Loading…</p>}</PanelSection>
         {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
       </>
@@ -290,15 +358,7 @@ export function ReelsPanel() {
             <Clapperboard size={14} /> Make reels
           </Button>
         ) : (
-          <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5" data-reel-job>
-            <ProgressBar value={job.progress} />
-            <p className="text-[11px] text-label-2">
-              {job.message} · {elapsed} s
-            </p>
-            <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}>
-              <Square size={12} /> Cancel
-            </Button>
-          </div>
+          jobBlock
         )}
         {!hasCues && project.clips.length > 0 && (
           <p className="flex items-start gap-1.5 text-[11px] leading-snug text-label-3">

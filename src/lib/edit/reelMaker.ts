@@ -9,7 +9,7 @@ import { createClip, createProject, type CaptionCue, type Clip, type ReelInfo, t
 import { getFormat } from "@/lib/models/formats";
 import { layoutClips, locateFrame, toSourceTime } from "@/lib/models/timeline";
 import { fitZoom } from "@/lib/models/clipOps";
-import { getAsset, listProjects, saveProject } from "@/lib/storage/db";
+import { deleteProject, getAsset, listProjects, saveProject } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { ffmpegEngine } from "@/lib/ffmpegEngine";
 import { autoReframe } from "@/lib/tracking/autoReframe";
@@ -84,6 +84,11 @@ export function reelName(sourceName: string, index: number, title: string): stri
   return `${sourceName} · Reel ${index} · ${t || "Untitled"}`;
 }
 
+/** A reel project whose cut never finished: it was created, but no clip landed in it. */
+export function isEmptyReel(p: Pick<VideoProject, "reel" | "clips">): boolean {
+  return !!p.reel && p.clips.length === 0;
+}
+
 /** Reels already cut from `sourceId`, in order. */
 export async function listReels(sourceId: string): Promise<VideoProject[]> {
   const all = await listProjects();
@@ -136,34 +141,25 @@ async function trimMedia(blob: Blob, sourceStart: number, seconds: number, signa
   }
 }
 
-/** Builds one reel project from a highlight of the source project. */
-async function makeReel(source: VideoProject, h: Highlight, index: number, o: MakeReelsOptions): Promise<VideoProject> {
+/** Cuts the reel's stored range out of the source into the reel project: media, framing, captions and thumbnail. */
+async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeReelsOptions, "onProgress" | "signal">): Promise<VideoProject> {
+  const info = reel.reel!;
+  const index = info.index;
   const layouts = layoutClips(source.clips);
-  const total = layouts[layouts.length - 1].end;
-  const { start, end } = padRange(h.start, h.end, total);
-  // Reels are cut from a single clip: the one under the highlight's start.
-  const loc = locateFrame(layouts, start + 0.01);
+  // Reels are cut from a single clip: the one under the range's start.
+  const loc = locateFrame(layouts, info.start + 0.01);
   if (!loc) throw new Error("The highlight is outside the timeline.");
   const layout = loc.primary;
-  const clipEnd = Math.min(end, layout.end);
-  const sourceStart = toSourceTime(layout, start);
+  const clipEnd = Math.min(info.end, layout.end);
+  const sourceStart = toSourceTime(layout, info.start);
   const sourceEnd = toSourceTime(layout, clipEnd);
   const seconds = Math.max(1, sourceEnd - sourceStart);
   const asset = await getAsset(layout.clip.assetId);
   if (!asset) throw new Error("The source video is missing from local storage.");
 
-  o.onProgress?.(`Cutting reel ${index}: ${h.title ?? "clip"} (${Math.round(seconds)} s)`, null);
+  o.onProgress?.(`Cutting reel ${index}: ${info.title || "clip"} (${Math.round(seconds)} s)`, null);
   const media = await trimMedia(asset.blob, sourceStart, seconds, o.signal);
   if (o.signal?.aborted) throw abortError();
-
-  const title = h.title ?? h.text.slice(0, 40);
-  const reel = createProject({ name: reelName(source.name, index, title), formatId: source.formatId });
-  reel.safeZone = source.safeZone;
-  reel.subtitleStyle = structuredClone(source.subtitleStyle);
-  reel.captions = structuredClone(source.captions);
-  reel.sourceProjectId = source.id;
-  reel.reel = { index, title, score: h.score, hook: h.hook, start, end: clipEnd };
-  await saveProject(reel);
 
   const file = new File([media], `${reel.name.replace(/[\\/:*?"<>|]+/g, " ")}.mp4`, { type: "video/mp4" });
   const { clip, blob } = await importVideo(file, reel.id, (m) => o.onProgress?.(`Reel ${index}: ${m}`, null));
@@ -188,10 +184,46 @@ async function makeReel(source: VideoProject, h: Highlight, index: number, o: Ma
     }
   }
   reel.clips = [finished];
-  reel.cues = cuesForRange(source.cues, start, clipEnd);
+  reel.cues = cuesForRange(source.cues, info.start, clipEnd);
+  reel.reel = { ...info, end: clipEnd };
   await saveProject(reel);
   await updateProjectThumbnail(reel.id, blob, Math.min(1, clip.duration / 2));
   return reel;
+}
+
+/** Builds one reel project from a highlight of the source project. A failed or cancelled cut leaves nothing behind. */
+async function makeReel(source: VideoProject, h: Highlight, index: number, o: MakeReelsOptions): Promise<VideoProject> {
+  const layouts = layoutClips(source.clips);
+  const total = layouts[layouts.length - 1].end;
+  const { start, end } = padRange(h.start, h.end, total);
+  const title = h.title ?? h.text.slice(0, 40);
+  const reel = createProject({ name: reelName(source.name, index, title), formatId: source.formatId });
+  reel.safeZone = source.safeZone;
+  reel.subtitleStyle = structuredClone(source.subtitleStyle);
+  reel.captions = structuredClone(source.captions);
+  reel.sourceProjectId = source.id;
+  reel.reel = { index, title, score: h.score, hook: h.hook, start, end };
+  await saveProject(reel);
+  try {
+    return await fillReel(source, reel, o);
+  } catch (e) {
+    await deleteProject(reel.id).catch(() => undefined);
+    throw e;
+  }
+}
+
+export interface RecutOptions {
+  source: VideoProject;
+  reel: VideoProject;
+  onProgress?: MakeReelsOptions["onProgress"];
+  signal?: AbortSignal;
+}
+
+/** Cuts an empty reel again from the range it remembers, without asking the model. */
+export async function recutReel(o: RecutOptions): Promise<VideoProject> {
+  if (!o.reel.reel || o.reel.sourceProjectId !== o.source.id) throw new Error("This project isn't a reel of that video.");
+  if (!o.source.clips.length) throw new Error("The source video has no clips to cut from.");
+  return fillReel(o.source, structuredClone(o.reel), o);
 }
 
 /** Finds the best moments with the chosen model (Ollama by default) and cuts each into its own reel project. */

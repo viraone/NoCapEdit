@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cuesForRange, DEFAULT_REEL_SETTINGS, loadReelSettings, overlapsExisting, padRange, reelName, saveReelSettings } from "@/lib/edit/reelMaker";
+import { cuesForRange, DEFAULT_REEL_SETTINGS, isEmptyReel, loadReelSettings, overlapsExisting, padRange, reelName, saveReelSettings } from "@/lib/edit/reelMaker";
 import type { CaptionCue } from "@/lib/models/project";
 
 const cue = (id: string, start: number, end: number, words?: [number, number][]): CaptionCue =>
@@ -30,6 +30,13 @@ describe("reel maker helpers", () => {
     expect(overlapsExisting(105, 135, existing)).toBe(true);
     expect(overlapsExisting(120, 150, existing)).toBe(false);
     expect(overlapsExisting(200, 230, existing)).toBe(false);
+  });
+
+  it("spots a reel whose cut never finished", () => {
+    const info = { index: 1, title: "t", score: 9, start: 10, end: 40 };
+    expect(isEmptyReel({ reel: info, clips: [] })).toBe(true);
+    expect(isEmptyReel({ reel: info, clips: [{} as never] })).toBe(false);
+    expect(isEmptyReel({ reel: undefined, clips: [] })).toBe(false);
   });
 
   it("names reels after the source, index and title", () => {
