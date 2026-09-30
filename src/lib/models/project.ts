@@ -297,9 +297,16 @@ export interface ReelInfo {
   title: string;
   score: number;
   hook?: string;
-  /** Range in the source project's timeline, seconds. */
+  /** Range in the source project's timeline, seconds: what the reel shows. */
   start: number;
   end: number;
+  /**
+   * Range of the source timeline the reel's media file covers, seconds. Wider
+   * than start..end by the slack cut on each side so the reel can be stretched
+   * on the timeline. Absent on reels cut before slack existed: their media is
+   * exactly start..end.
+   */
+  media?: { start: number; end: number };
 }
 
 export interface VideoProject {

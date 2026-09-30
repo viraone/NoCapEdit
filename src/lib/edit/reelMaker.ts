@@ -1,9 +1,11 @@
 /**
  * Turns the local AI's highlights into finished reels: each pick becomes its
- * own small project (source clip re-encoded to just that range, captions
- * carried over and shifted, the source's frame format and caption style, and
- * face tracking on landscape sources) tagged with the source project's id so
- * the Subtitles panel can list them under "Reels".
+ * own small project (source clip re-encoded to that range plus REEL_HANDLE
+ * seconds of slack on each side, captions carried over and shifted, the
+ * source's frame format and caption style, and face tracking on landscape
+ * sources) tagged with the source project's id so the Subtitles panel can
+ * list them under "Reels". The slack lets the reel's clip be dragged out on
+ * the timeline; reelStretch cuts more from the source past it.
  */
 import { createClip, createProject, type CaptionCue, type Clip, type ReelInfo, type VideoProject } from "@/lib/models/project";
 import { getFormat } from "@/lib/models/formats";
@@ -56,6 +58,19 @@ export const REEL_PADDING = 0.4;
 /** Widens a range by the padding, inside [0, total]. */
 export function padRange(start: number, end: number, total: number, padding = REEL_PADDING): { start: number; end: number } {
   return { start: Math.max(0, start - padding), end: Math.min(total, end + padding) };
+}
+
+/**
+ * Slack cut on each side of a reel, seconds: the media file holds this much
+ * of the source before and after what the reel shows, so its clip can be
+ * dragged out on the timeline without going back to the source. Past it the
+ * reel is cut again (see reelStretch).
+ */
+export const REEL_HANDLE = 10;
+
+/** The media window for a shown range: the range plus the slack on each side, inside the source clip's bounds. */
+export function mediaWindow(range: { start: number; end: number }, bounds: { start: number; end: number }, handle = REEL_HANDLE): { start: number; end: number } {
+  return { start: Math.max(bounds.start, range.start - handle), end: Math.min(bounds.end, range.end + handle) };
 }
 
 /** Cues that fall inside the range, shifted so the range starts at 0 and clipped to it. */
@@ -112,25 +127,43 @@ export interface MakeReelsResult {
 
 const abortError = () => new DOMException("Cancelled", "AbortError");
 
-/** Re-encodes one range of a clip's source file into a small MP4 at the source resolution. */
-async function trimMedia(blob: Blob, sourceStart: number, seconds: number, signal?: AbortSignal): Promise<Blob> {
+export interface TrimMediaOptions {
+  signal?: AbortSignal;
+  /** Share of the cut done so far, 0..1, from ffmpeg's time reports. */
+  onProgress?: (fraction: number) => void;
+}
+
+/** Re-encodes one range of a clip's source file into a small MP4 at the source resolution. Cancelling stops ffmpeg at once. */
+export async function trimMedia(blob: Blob, sourceStart: number, seconds: number, o: TrimMediaOptions = {}): Promise<Blob> {
+  const { signal, onProgress } = o;
   await ffmpegEngine.load();
   const mounted = await ffmpegEngine.mountInputs([{ name: "reel_src.bin", blob }]);
   const out = `/reel_${Date.now().toString(36)}.mp4`;
+  const onAbort = () => ffmpegEngine.cancel();
+  signal?.addEventListener("abort", onAbort, { once: true });
   try {
     if (signal?.aborted) throw abortError();
-    const code = await ffmpegEngine.exec([
-      "-hide_banner", "-y",
-      "-ss", sourceStart.toFixed(3), "-t", seconds.toFixed(3), "-i", mounted.inputPath("reel_src.bin"),
-      "-map", "0:v:0", "-map", "0:a?",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
-      "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
-      "-movflags", "+faststart", out,
-    ]);
+    const code = await ffmpegEngine.exec(
+      [
+        "-hide_banner", "-y",
+        "-ss", sourceStart.toFixed(3), "-t", seconds.toFixed(3), "-i", mounted.inputPath("reel_src.bin"),
+        "-map", "0:v:0", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
+        "-movflags", "+faststart", out,
+      ],
+      onProgress && ((t) => onProgress(Math.min(1, t / Math.max(0.001, seconds)))),
+    );
+    if (signal?.aborted) throw abortError();
     if (code !== 0) throw new Error(`Could not cut the reel.\n${ffmpegEngine.recentLogs()}`);
     const data = (await ffmpegEngine.instance.readFile(out)) as Uint8Array;
     return new Blob([new Uint8Array(data)], { type: "video/mp4" });
+  } catch (e) {
+    // A cancel terminates the worker, which surfaces as its own error; report the cancel instead.
+    if (signal?.aborted) throw abortError();
+    throw e;
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     // The worker may be gone after a crash; cleanup must not mask the real error.
     try {
       await ffmpegEngine.instance.deleteFile(out).catch(() => undefined);
@@ -150,21 +183,28 @@ async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeRe
   const loc = locateFrame(layouts, info.start + 0.01);
   if (!loc) throw new Error("The highlight is outside the timeline.");
   const layout = loc.primary;
-  const clipEnd = Math.min(info.end, layout.end);
-  const sourceStart = toSourceTime(layout, info.start);
-  const sourceEnd = toSourceTime(layout, clipEnd);
+  // What the reel shows, and the wider window the media file covers (slack on
+  // each side, so the reel can be stretched on the timeline later).
+  const shown = { start: info.start, end: Math.min(info.end, layout.end) };
+  const covered = mediaWindow(shown, { start: layout.start, end: layout.end });
+  const sourceStart = toSourceTime(layout, covered.start);
+  const sourceEnd = toSourceTime(layout, covered.end);
   const seconds = Math.max(1, sourceEnd - sourceStart);
   const asset = await getAsset(layout.clip.assetId);
   if (!asset) throw new Error("The source video is missing from local storage.");
 
-  o.onProgress?.(`Cutting reel ${index}: ${info.title || "clip"} (${Math.round(seconds)} s)`, null);
-  const media = await trimMedia(asset.blob, sourceStart, seconds, o.signal);
+  const label = `Cutting reel ${index}: ${info.title || "clip"} (${Math.round(shown.end - shown.start)} s, plus room to stretch)`;
+  o.onProgress?.(label, null);
+  const media = await trimMedia(asset.blob, sourceStart, seconds, { signal: o.signal, onProgress: (f) => o.onProgress?.(label, f) });
   if (o.signal?.aborted) throw abortError();
 
   const file = new File([media], `${reel.name.replace(/[\\/:*?"<>|]+/g, " ")}.mp4`, { type: "video/mp4" });
   const { clip, blob } = await importVideo(file, reel.id, (m) => o.onProgress?.(`Reel ${index}: ${m}`, null));
   const source0 = layout.clip;
-  const finished: Clip = { ...clip, ...(source0.look ? { look: structuredClone(source0.look) } : {}), background: source0.background };
+  // The clip is trimmed to the shown range inside the media; the slack sits outside its in/out points.
+  const inPoint = Math.min(shown.start - covered.start, Math.max(0, clip.duration - 0.1));
+  const outPoint = Math.max(inPoint + 0.1, Math.min(clip.duration, shown.end - covered.start));
+  const finished: Clip = { ...clip, inPoint, outPoint, ...(source0.look ? { look: structuredClone(source0.look) } : {}), background: source0.background };
   const frame = getFormat(reel.formatId);
   const landscape = clip.width > clip.height && frame.height > frame.width;
   if (landscape) {
@@ -184,10 +224,10 @@ async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeRe
     }
   }
   reel.clips = [finished];
-  reel.cues = cuesForRange(source.cues, info.start, clipEnd);
-  reel.reel = { ...info, end: clipEnd };
+  reel.cues = cuesForRange(source.cues, shown.start, shown.end);
+  reel.reel = { ...info, end: shown.end, media: covered };
   await saveProject(reel);
-  await updateProjectThumbnail(reel.id, blob, Math.min(1, clip.duration / 2));
+  await updateProjectThumbnail(reel.id, blob, inPoint + Math.min(1, (outPoint - inPoint) / 2));
   return reel;
 }
 

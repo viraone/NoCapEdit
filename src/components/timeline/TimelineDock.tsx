@@ -4,15 +4,18 @@ import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, ArrowLeftRight, Mess
 import { TransportBar } from "@/components/canvas/TransportBar";
 import { useEditor } from "@/store/editorStore";
 import { layoutClips, type ClipLayout } from "@/lib/models/timeline";
-import type { CaptionCue } from "@/lib/models/project";
+import type { CaptionCue, Clip } from "@/lib/models/project";
 import { reorderClip } from "@/lib/models/clipOps";
 import { formatTime } from "@/lib/utils/time";
 import { clamp } from "@/lib/utils/math";
 import { cx } from "@/lib/utils/cx";
 import { Button } from "@/components/ui/Button";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Filmstrip, loadThumbs, type Loaded } from "./Filmstrip";
 import { toSourceTime } from "@/lib/models/timeline";
+import { stretchOf, type Slack } from "@/lib/edit/reelStretch";
 import { AudioWaveform } from "./AudioWaveform";
+import { useReelStretch, type InOut, type TrimDrag } from "./useReelStretch";
 import { RULER_H, CUE_H, MUSIC_H, DOCK_CHROME_H, videoLaneHeight } from "./dockLayout";
 
 const EDGE = 7;
@@ -26,6 +29,37 @@ function insertionIndex(layouts: ClipLayout[], t: number): number {
   let k = 0;
   for (const l of layouts) if ((l.start + l.end) / 2 < t) k++;
   return k;
+}
+
+/**
+ * Where the media and any stretched-out part sit inside a clip block `width`
+ * px wide. While a reel's edge is dragged past its media, the block grows and
+ * the part with no media yet is drawn as a ghost on that side.
+ */
+function stretchGeometry(clip: Clip, width: number, pxPerSec: number) {
+  const st = stretchOf(clip);
+  const left = Math.min(width, (st.before / clip.speed) * pxPerSec);
+  const right = Math.min(width - left, (st.after / clip.speed) * pxPerSec);
+  return { left, right, mediaW: Math.max(0, width - left - right), inPoint: Math.max(0, clip.inPoint), outPoint: Math.min(clip.duration, clip.outPoint), ...st };
+}
+
+/** Striped placeholder for the seconds a drag is pulling back from the source video. */
+function StretchGhost({ side, width, seconds }: { side: "l" | "r"; width: number; seconds: number }) {
+  return (
+    <div
+      className={cx("pointer-events-none absolute inset-y-0 flex items-center justify-center overflow-hidden text-[10px] font-semibold text-white", side === "l" ? "left-0" : "right-0")}
+      style={{ width, backgroundImage: "repeating-linear-gradient(135deg, rgba(10,132,255,0.45) 0 5px, rgba(10,132,255,0.12) 5px 10px)" }}
+      data-stretch-ghost={side}
+      title="This part comes back from the source video when you let go"
+    >
+      {width > 40 && <span className="rounded bg-black/60 px-1 py-0.5 tabular-nums">+{seconds.toFixed(1)} s</span>}
+    </div>
+  );
+}
+
+/** Tooltip for a trim handle: how much can still be dragged out on that side. */
+function handleTitle(seconds: number, side: "before" | "after"): string {
+  return seconds > 0.05 ? `Drag out to bring back up to ${formatTime(seconds)} ${side} this` : "Drag to trim";
 }
 
 function rulerLabel(t: number, fine: boolean): string {
@@ -164,6 +198,9 @@ function ClipBlock({
   selected,
   active,
   onDropIndicator,
+  slack,
+  onTrimEnd,
+  onStretch,
 }: {
   layout: ClipLayout;
   layouts: ClipLayout[];
@@ -174,11 +211,27 @@ function ClipBlock({
   active: boolean;
   /** x (px) of the insertion slot while a reorder drag is in progress, null when none. */
   onDropIndicator: (x: number | null) => void;
+  /** On a reel: seconds of the source video the edges may be dragged out past the media on each side. Null: the edges stop at the media. */
+  slack: Slack | null;
+  /** An edge drag ended (inside its undo transaction); returns the in/out points to cut from the source when it went past the media. */
+  onTrimEnd: (drag: TrimDrag) => InOut | null;
+  /** Cuts the wider range from the source, after the transaction closed. */
+  onStretch: (req: InOut) => void;
 }) {
   const { update, beginTransaction, endTransaction, select, setTool } = useEditor.getState();
   const { clip } = layout;
   const width = Math.max(6, layout.duration * pxPerSec);
   const blockH = laneH - CLIP_PAD * 2;
+  const geo = stretchGeometry(clip, width, pxPerSec);
+  // How much can still be dragged out on each side: the media's own slack, then the source past it.
+  const availBefore = clip.inPoint + (slack?.before ?? 0);
+  const availAfter = clip.duration - clip.outPoint + (slack?.after ?? 0);
+  /** Hands a finished edge drag to the dock: where it began and where the edges are now (maybe past the media). */
+  const finishTrim = (from: InOut): InOut | null => {
+    const now = useEditor.getState().project?.clips.find((c) => c.id === clip.id);
+    if (!now) return null;
+    return onTrimEnd({ clipId: clip.id, from, to: { inPoint: now.inPoint, outPoint: now.outPoint } });
+  };
   // The waveform keeps its 28-of-68 share of the block as the lane grows, within sane bounds.
   const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -228,8 +281,9 @@ function ClipBlock({
           (p) => {
             const c = p.clips.find((c) => c.id === clip.id);
             if (!c) return;
-            if (d.mode === "l") c.inPoint = clamp(d.inPoint + dt, 0, d.outPoint - 0.1);
-            else c.outPoint = clamp(d.outPoint + dt, d.inPoint + 0.1, c.duration);
+            // A reel's edges may run past its media into the source's slack; the ghost shows how far.
+            if (d.mode === "l") c.inPoint = clamp(d.inPoint + dt, -(slack?.before ?? 0), d.outPoint - 0.1);
+            else c.outPoint = clamp(d.outPoint + dt, d.inPoint + 0.1, c.duration + (slack?.after ?? 0));
           },
           { history: false },
         );
@@ -243,6 +297,7 @@ function ClipBlock({
           /* not captured */
         }
         if (!d || d.mode === "none") return;
+        let stretch: InOut | null = null;
         if (d.mode === "reorder") {
           setDragging(false);
           onDropIndicator(null);
@@ -251,8 +306,9 @@ function ClipBlock({
             const to = d.slot > layout.index ? d.slot - 1 : d.slot;
             update((p) => void reorderClip(p, clip.id, to));
           }
-        }
+        } else stretch = finishTrim({ inPoint: d.inPoint, outPoint: d.outPoint });
         endTransaction();
+        if (stretch) onStretch(stretch);
       }}
       onPointerCancel={() => {
         const d = drag.current;
@@ -260,7 +316,7 @@ function ClipBlock({
         if (d?.mode === "reorder") {
           setDragging(false);
           onDropIndicator(null);
-        }
+        } else if (d && d.mode !== "none") finishTrim({ inPoint: d.inPoint, outPoint: d.outPoint });
         if (d && d.mode !== "none") endTransaction();
       }}
       onDoubleClick={(e) => {
@@ -268,7 +324,11 @@ function ClipBlock({
         setTool("trim");
       }}
     >
-      <Filmstrip assetId={clip.assetId} inPoint={clip.inPoint} outPoint={clip.outPoint} width={width} height={blockH} />
+      <div className="absolute inset-y-0" style={{ left: geo.left, width: geo.mediaW }}>
+        <Filmstrip assetId={clip.assetId} inPoint={geo.inPoint} outPoint={geo.outPoint} width={geo.mediaW} height={blockH} />
+      </div>
+      {geo.left > 0 && <StretchGhost side="l" width={geo.left} seconds={geo.before} />}
+      {geo.right > 0 && <StretchGhost side="r" width={geo.right} seconds={geo.after} />}
       <div className="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/60 px-1 py-0.5 text-[10px] font-semibold text-white">
         <span className="max-w-32 truncate">{clip.name}</span>
         <span className="text-label-2">{formatTime(layout.duration)}</span>
@@ -279,8 +339,8 @@ function ClipBlock({
           <ArrowLeftRight size={9} /> {clip.transition.type}
         </div>
       )}
-      <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize bg-white/0 hover:bg-white/30" />
-      <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-white/0 hover:bg-white/30" />
+      <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availBefore, "before")} data-trim-handle="l" />
+      <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availAfter, "after")} data-trim-handle="r" />
     </div>
   );
 }
@@ -342,6 +402,8 @@ export function TimelineDock() {
 
   const layouts = useMemo(() => layoutClips(project.clips), [project.clips]);
   const duration = layouts.length ? layouts[layouts.length - 1].end : 0;
+  // Reels: the clip's edges may be dragged out past the media; a release out there cuts more from the source.
+  const stretch = useReelStretch();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewW, setViewW] = useState(800);
   useEffect(() => {
@@ -385,6 +447,18 @@ export function TimelineDock() {
         <span className="tabular-nums">{formatTime(duration)}</span>
         <span className="text-label-3">·</span>
         <span>{project.clips.length} clips · {project.cues.length} captions</span>
+        {stretch.job && (
+          <span className="flex min-w-0 items-center gap-2" data-stretch-job>
+            <span className="text-label-3">·</span>
+            <span className="w-24 shrink-0">
+              <ProgressBar value={stretch.job.progress} />
+            </span>
+            <span className="truncate text-white">{stretch.job.message}</span>
+            <button type="button" className="rounded px-1 text-label-2 hover:text-white" onClick={stretch.cancel}>
+              Cancel
+            </button>
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="iconSm" onClick={() => setZoom(zoom / 1.4)} title="Zoom out">
             <ZoomOut size={14} />
@@ -482,14 +556,20 @@ export function TimelineDock() {
                   selected={selection?.kind === "clip" && selection.id === layout.clip.id}
                   active={activeClipId === layout.clip.id}
                   onDropIndicator={setDropX}
+                  slack={stretch.job ? null : stretch.slack}
+                  onTrimEnd={stretch.finishTrim}
+                  onStretch={stretch.start}
                 />
               ))}
               {dropX !== null && <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-sys-blue shadow-[0_0_6px_rgba(10,132,255,0.9)]" data-drop-indicator style={{ left: dropX }} />}
             </div>
             {/* Clip audio on its own lane: one waveform block per clip, aligned with its video block. */}
             <div className="relative border-b border-sys-gray5/70" style={{ height: audioH }} data-audio-lane>
-              {layouts.map((layout) =>
-                layout.clip.hasAudio ? (
+              {layouts.map((layout) => {
+                if (!layout.clip.hasAudio) return null;
+                const w = Math.max(6, layout.duration * pxPerSec);
+                const geo = stretchGeometry(layout.clip, w, pxPerSec);
+                return (
                   <div
                     key={layout.clip.id}
                     data-audio-clip={layout.clip.id}
@@ -497,7 +577,7 @@ export function TimelineDock() {
                       "absolute top-1 cursor-pointer overflow-hidden rounded-md border bg-sys-yellow/10",
                       selection?.kind === "clip" && selection.id === layout.clip.id ? "border-sys-blue" : "border-sys-yellow/30",
                     )}
-                    style={{ left: layout.start * pxPerSec, width: Math.max(6, layout.duration * pxPerSec), height: audioH - 8 }}
+                    style={{ left: layout.start * pxPerSec, width: w, height: audioH - 8 }}
                     title={`${layout.clip.name} audio${layout.clip.audioAssetId ? ` (${layout.clip.audioLabel ?? "cleaned"})` : ""}`}
                     onPointerDown={(e) => {
                       e.stopPropagation();
@@ -508,10 +588,14 @@ export function TimelineDock() {
                       setTool("trim");
                     }}
                   >
-                    <AudioWaveform assetId={layout.clip.audioAssetId ?? layout.clip.assetId} inPoint={layout.clip.inPoint} outPoint={layout.clip.outPoint} width={Math.max(6, layout.duration * pxPerSec)} height={audioH - 8} color="rgba(255,214,10,0.9)" />
+                    <div className="absolute inset-y-0" style={{ left: geo.left, width: geo.mediaW }}>
+                      <AudioWaveform assetId={layout.clip.audioAssetId ?? layout.clip.assetId} inPoint={geo.inPoint} outPoint={geo.outPoint} width={geo.mediaW} height={audioH - 8} color="rgba(255,214,10,0.9)" />
+                    </div>
+                    {geo.left > 0 && <StretchGhost side="l" width={geo.left} seconds={geo.before} />}
+                    {geo.right > 0 && <StretchGhost side="r" width={geo.right} seconds={geo.after} />}
                   </div>
-                ) : null,
-              )}
+                );
+              })}
             </div>
             <div className="relative" style={{ height: MUSIC_H }}>
               {project.voiceovers.map((vo) => (

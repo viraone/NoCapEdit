@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cuesForRange, DEFAULT_REEL_SETTINGS, isEmptyReel, loadReelSettings, overlapsExisting, padRange, reelName, saveReelSettings } from "@/lib/edit/reelMaker";
+import { cuesForRange, DEFAULT_REEL_SETTINGS, isEmptyReel, loadReelSettings, mediaWindow, overlapsExisting, padRange, REEL_HANDLE, reelName, saveReelSettings } from "@/lib/edit/reelMaker";
 import type { CaptionCue } from "@/lib/models/project";
 
 const cue = (id: string, start: number, end: number, words?: [number, number][]): CaptionCue =>
@@ -9,6 +9,13 @@ describe("reel maker helpers", () => {
   it("pads a range with air inside the timeline", () => {
     expect(padRange(10, 40, 300)).toEqual({ start: 9.6, end: 40.4 });
     expect(padRange(0.2, 299.8, 300)).toEqual({ start: 0, end: 300 });
+  });
+
+  it("cuts the media with slack on each side, inside the source clip", () => {
+    expect(REEL_HANDLE).toBe(10);
+    expect(mediaWindow({ start: 90, end: 130 }, { start: 0, end: 300 })).toEqual({ start: 80, end: 140 });
+    expect(mediaWindow({ start: 4, end: 30 }, { start: 0, end: 35 })).toEqual({ start: 0, end: 35 });
+    expect(mediaWindow({ start: 120, end: 150 }, { start: 100, end: 400 }, 5)).toEqual({ start: 115, end: 155 });
   });
 
   it("shifts and clips the cues inside the range, with fresh ids", () => {

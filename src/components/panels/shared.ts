@@ -1,9 +1,18 @@
+import { useMemo } from "react";
 import { useEditor } from "@/store/editorStore";
 import { layoutClips } from "@/lib/models/timeline";
+import { reelSlack, type Slack } from "@/lib/edit/reelStretch";
 import type { Clip, VideoProject } from "@/lib/models/project";
 
 export function useProject(): VideoProject {
   return useEditor((s) => s.project!);
+}
+
+/** For a one-clip reel whose source is still here: seconds of the source video outside its media on each side, else null. */
+export function useReelSlack(): Slack | null {
+  const project = useEditor((s) => s.project);
+  const source = useEditor((s) => s.sourceProject);
+  return useMemo(() => (project ? reelSlack(project, source) : null), [project, source]);
 }
 
 /** The selected clip, or the clip under the playhead when nothing is selected. */

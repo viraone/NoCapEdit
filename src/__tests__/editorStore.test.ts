@@ -113,6 +113,17 @@ describe("autosave flush", () => {
     expect(s.endTransaction()).toBe(false);
   });
 
+  it("records no step for a drag that ends where it began", () => {
+    const s = useEditor.getState();
+    const name = useEditor.getState().project!.name;
+    expect(s.beginTransaction()).toBe(true);
+    s.update((p) => void (p.name = "dragging"), { history: false });
+    s.update((p) => void (p.name = name), { history: false });
+    expect(s.endTransaction()).toBe(false);
+    expect(useEditor.getState().past.length).toBe(0);
+    expect(useEditor.getState().txSnapshot).toBeNull();
+  });
+
   it("tracks in-flight import assets and resets import state on unload", () => {
     const s = useEditor.getState();
     s.setImportStatus("Reading a.mp4 (1/1)");

@@ -16,6 +16,8 @@ export type CanvasZoom = "fit" | number;
 
 export interface EditorState {
   project: VideoProject | null;
+  /** For a reel: the project it was cut from, when that still exists (the timeline stretches the reel from it). */
+  sourceProject: VideoProject | null;
   loading: boolean;
   error: string | null;
   past: VideoProject[];
@@ -89,6 +91,11 @@ export function sameProject(a: unknown, b: unknown): boolean {
   return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && sameProject((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 }
 
+/** Same project content; the save stamp, which every update bumps, is ignored. */
+function sameEdit(a: VideoProject, b: VideoProject): boolean {
+  return sameProject({ ...a, updatedAt: 0 }, { ...b, updatedAt: 0 });
+}
+
 /**
  * Synchronous safety copy of an unsaved project, written when the page is
  * hidden or unloaded. Browsers abandon IndexedDB writes started during unload,
@@ -147,6 +154,7 @@ function scheduleSave(project: VideoProject, set: (s: Partial<EditorState>) => v
 export const useEditor = create<EditorState>()(
   subscribeWithSelector((set, get) => ({
     project: null,
+    sourceProject: null,
     loading: false,
     error: null,
     past: [],
@@ -188,7 +196,8 @@ export const useEditor = create<EditorState>()(
         const assets = await listProjectAssets(id);
         const assetUrls: Record<string, string> = {};
         for (const a of assets) assetUrls[a.id] = URL.createObjectURL(a.blob);
-        set({ project, assetUrls, loading: false, past: [], future: [], currentTime: 0, isPlaying: false, selection: null, tool: "clips" });
+        const sourceProject = project.sourceProjectId ? ((await getProject(project.sourceProjectId)) ?? null) : null;
+        set({ project, sourceProject, assetUrls, loading: false, past: [], future: [], currentTime: 0, isPlaying: false, selection: null, tool: "clips" });
         return true;
       } catch (e) {
         set({ loading: false, error: e instanceof Error ? e.message : String(e) });
@@ -203,7 +212,7 @@ export const useEditor = create<EditorState>()(
         clearTimeout(noticeTimer);
         noticeTimer = null;
       }
-      set({ project: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, importStatus: null, importError: null, pendingAssetIds: [], notice: null });
+      set({ project: null, sourceProject: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, importStatus: null, importError: null, pendingAssetIds: [], notice: null });
     },
 
     update(fn, opts = {}) {
@@ -238,7 +247,8 @@ export const useEditor = create<EditorState>()(
     endTransaction() {
       const { txSnapshot, past, project } = get();
       if (!txSnapshot) return false;
-      if (project === txSnapshot) {
+      // A drag that ends where it began (or snaps back there) records no step.
+      if (project === txSnapshot || (project && sameEdit(project, txSnapshot))) {
         set({ txSnapshot: null });
         return false;
       }

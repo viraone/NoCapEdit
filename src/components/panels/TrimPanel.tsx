@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import { Scissors, ArrowRightToLine, ArrowLeftToLine, Snail, PersonStanding, Rabbit, Zap, SquareSplitHorizontal, Circle, Moon, ZoomOut, ZoomIn, Maximize, Minimize, ChevronDown, Wand2, Square, ScanFace, Undo2 } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
-import { useProject, useTargetClip, useSliderTx } from "./shared";
+import { useProject, useTargetClip, useSliderTx, useReelSlack } from "./shared";
 import { layoutClips, findLayout, toSourceTime } from "@/lib/models/timeline";
 import { SPEED_MAX, SPEED_MIN, TRANSITIONS, ZOOM_MAX, type Clip, type TransitionType } from "@/lib/models/project";
 import { cutAfter, cutBefore, fitZoom, minZoom, splitClipAt } from "@/lib/models/clipOps";
@@ -54,6 +54,7 @@ export function TrimPanel() {
   const update = useEditor((s) => s.update);
   const setNotice = useEditor((s) => s.setNotice);
   const tx = useSliderTx();
+  const reelSlack = useReelSlack();
   const [more, setMore] = useState(false);
   const [enhanceMode, setEnhanceMode] = useState<EnhanceMode>("rnnoise");
   const [job, setJob] = useState<{ kind: "enhance" | "reframe" | "matte"; message: string; progress: number | null } | null>(null);
@@ -404,7 +405,9 @@ export function TrimPanel() {
                 <NumberInput value={clip.outPoint} min={clip.inPoint + 0.1} max={clip.duration} suffix="s" onCommit={(v) => edit((c) => void (c.outPoint = v))} />
               </Field>
             </div>
-            <p className="text-[11px] text-label-3">Output length {formatTime((clip.outPoint - clip.inPoint) / clip.speed)}. Drag the block edges on the timeline for fine trimming.</p>
+            <p className="text-[11px] text-label-3">
+              Output length {formatTime((clip.outPoint - clip.inPoint) / clip.speed)}. Drag the block edges on the timeline for fine trimming{reelSlack ? "; drag them out past the ends to bring back more of the source video" : ""}.
+            </p>
           </PanelSection>
           <PanelSection title="Speed & pitch">
             <Slider label="Playback speed" value={clip.speed} min={SPEED_MIN} max={SPEED_MAX} step={0.05} format={(v) => `${v.toFixed(2)}×`} onChange={(v) => edit((c) => void (c.speed = v), false)} {...tx} />

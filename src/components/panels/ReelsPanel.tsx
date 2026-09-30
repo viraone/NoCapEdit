@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
-import { useProject } from "./shared";
+import { useProject, useReelSlack } from "./shared";
 import { DEFAULT_REEL_SETTINGS, isEmptyReel, listReels, loadReelSettings, makeReels, recutReel, saveReelSettings, type ReelSettings } from "@/lib/edit/reelMaker";
 import { activeModel, listOllamaModels, loadAiSettings, localAiEnabled, saveAiSettings, type AiSettings } from "@/lib/edit/aiHighlights";
 import { AiModelFields } from "./AiModelFields";
@@ -51,6 +51,10 @@ export function ReelsPanel() {
   const abortRef = useRef<AbortController | null>(null);
   const hasCues = project.cues.length > 0;
   const [preview, setPreview] = useState<VideoProject | null>(null);
+  // Inside a one-clip reel: how much of the source video its clip can still be dragged out to show.
+  const slack = useReelSlack();
+  const only = project.clips.length === 1 ? project.clips[0] : null;
+  const canStretch = slack && only ? { before: only.inPoint + slack.before, after: only.duration - only.outPoint + slack.after } : null;
 
   const updateAi = (patch: Partial<AiSettings>) => {
     const next = { ...aiSettings, ...patch };
@@ -192,6 +196,8 @@ export function ReelsPanel() {
     <ul className="space-y-1.5" data-reel-list>
       {reels.map((r) => {
         const current = isReel && r.id === project.id;
+        // The reel being edited reads its length and start from the live project, so a trim or stretch shows at once.
+        const shown = current ? project : r;
         const empty = isEmptyReel(r);
         // Land on the Reels tool so the list of siblings and the way back stay in view.
         const open = () => !current && router.push(`/editor?id=${r.id}&tool=reels`);
@@ -225,7 +231,7 @@ export function ReelsPanel() {
                 </p>
               ) : (
                 <p className="text-[11px] tabular-nums text-label-3">
-                  Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(r.clips))} · from {formatTime(r.reel?.start ?? 0)}
+                  Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(shown.clips))} · from {formatTime(shown.reel?.start ?? 0)}
                 </p>
               )}
             </div>
@@ -275,6 +281,13 @@ export function ReelsPanel() {
           </Button>
           <p className="text-[11px] text-label-3">The source video keeps the full transcript; Make reels there adds to this list. The same link sits at the top of the screen.</p>
         </PanelSection>
+        {canStretch && (canStretch.before > 0.05 || canStretch.after > 0.05) && (
+          <PanelSection title="Want more of the moment?">
+            <p className="text-[11px] leading-snug text-label-2" data-reel-stretch-hint>
+              On the timeline, drag either end of the clip out past where it stops. The video and sound come back from the source, captions included. Still there: {formatTime(canStretch.before)} before this reel and {formatTime(canStretch.after)} after it.
+            </p>
+          </PanelSection>
+        )}
         {(isEmptyReel(project) || job || error || note) && (
           <PanelSection title={isEmptyReel(project) ? "This reel is empty" : undefined}>
             {isEmptyReel(project) && !job && (
