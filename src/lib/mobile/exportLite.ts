@@ -18,7 +18,7 @@
  */
 import { ArrayBufferTarget, Muxer, StreamTarget } from "mp4-muxer";
 import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
-import { drawCue } from "@/lib/captions/renderer";
+import { CaptionLayer } from "@/lib/mobile/captionLayer";
 import { isIOS, resampleLinear } from "@/lib/mobile/audio";
 import { BlobFileSink } from "@/lib/mobile/blobFileSink";
 import { cropRect, DEFAULT_REFRAME, outputFrame, placeWholeFrame, type Reframe } from "@/lib/mobile/reframe";
@@ -65,6 +65,20 @@ export interface LiteExportResult {
   /** Which exporter produced it: the WebCodecs decode pipeline
    * (lib/mobile/fastExport.ts) or this file's real-time playback capture. */
   engine: "fast" | "realtime";
+  stats?: ExportStats;
+}
+
+/** Where the time went, for the on-screen export timer. */
+export interface ExportStats {
+  /** e.g. "3840×2160 hevc 60 fps HDR" */
+  source: string;
+  frames: number;
+  /** Average milliseconds per frame. */
+  msVideo: number;
+  msCaptions: number;
+  /** Everything outside the compositing callback: decode, encode, muxing, waiting. */
+  msOther: number;
+  captionRenders: number;
 }
 
 /** decodeAudioData needs the whole file as an ArrayBuffer; past this it
@@ -193,6 +207,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
   const ctx = canvas.getContext("2d", { alpha: false });
   if (!ctx) throw new Error("Canvas is not available.");
   const frame = { width, height };
+  const captions = new CaptionLayer(cues, style, frame);
 
   const codec = await pickVideoCodec(width, height, fps);
   if (!codec) throw new Error("No supported H.264 encoder configuration for this size.");
@@ -346,9 +361,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
       const timestamp = Math.round(t * 1e6);
       if (timestamp <= lastTimestamp) return;
       ctx.drawImage(video, place.dx, place.dy, place.dw, place.dh);
-      for (const cue of cues) {
-        if (t >= cue.start && t < cue.end) drawCue(ctx, cue, style, frame, t, { showTranslated: false });
-      }
+      captions.draw(ctx, t);
       // Skip a frame rather than stall playback when the encoder is behind.
       if (encoder.encodeQueueSize < 12) {
         const vf = new VideoFrame(canvas, { timestamp, duration: frameUs });

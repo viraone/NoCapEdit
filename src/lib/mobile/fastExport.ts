@@ -15,10 +15,16 @@
  * fall back to the real-time exporter.
  */
 import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
-import { drawCue } from "@/lib/captions/renderer";
+import type { Ctx } from "@/lib/captions/renderer";
+import { CaptionLayer } from "@/lib/mobile/captionLayer";
+import { GlCompositor } from "@/lib/mobile/glCompositor";
 import { BlobFileSink } from "@/lib/mobile/blobFileSink";
 import { cropRect, DEFAULT_REFRAME, outputFrame, placeWholeFrame, type Reframe } from "@/lib/mobile/reframe";
-import type { LiteExportResult, LiteProgress } from "@/lib/mobile/exportLite";
+import type { ExportStats, LiteExportResult, LiteProgress } from "@/lib/mobile/exportLite";
+
+/** The on-screen canvas shows every Nth frame, scaled down. */
+const PREVIEW_EVERY = 15;
+const PREVIEW_MAX_EDGE = 480;
 
 export class FastExportUnsupported extends Error {
   constructor(reason: string) {
@@ -39,6 +45,10 @@ export interface FastExportOptions {
   streaming?: boolean;
   onProgress?: (p: LiteProgress) => void;
   signal?: AbortSignal;
+  /** Profiling only (`?fx=resize-only`): let the library resize and skip
+   * captions/compositing, to measure the pure decode + encode floor.
+   * `?fx=2d` forces the 2D-canvas compositor instead of WebGL. */
+  debugMode?: "resize-only" | "2d";
 }
 
 export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise<LiteExportResult> {
@@ -67,10 +77,34 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     const out = outputFrame(sourceWidth, sourceHeight, reframe, opts.maxEdge ?? 1920);
     const crop = cropRect(sourceWidth, sourceHeight, reframe);
     const place = placeWholeFrame(sourceWidth, sourceHeight, crop, out.width, out.height);
-    canvas.width = out.width;
-    canvas.height = out.height;
-    const ctx = canvas.getContext("2d", { alpha: false });
-    if (!ctx) throw new Error("Canvas is not available.");
+    // Composite off screen. A canvas that is being presented costs the
+    // page compositor on every frame; the on-screen one only gets a small
+    // preview every few frames so the render is still visible.
+    // Preferred: WebGL takes the decoded frame as a texture (no CPU
+    // conversion of a 4K frame per output frame). Fallback: 2D canvas.
+    let gl: GlCompositor | null = null;
+    if (opts.debugMode !== "2d" && GlCompositor.supported()) {
+      try {
+        gl = new GlCompositor(out.width, out.height);
+      } catch (e) {
+        console.warn("[nocap mobile] WebGL compositor unavailable, using 2D canvas", e);
+        gl = null;
+      }
+    }
+    const work: OffscreenCanvas | HTMLCanvasElement =
+      gl?.canvas ?? (typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(out.width, out.height) : canvas);
+    let previewCtx: CanvasRenderingContext2D | null = null;
+    if (work === canvas) {
+      canvas.width = out.width;
+      canvas.height = out.height;
+    } else {
+      const scale = Math.min(1, PREVIEW_MAX_EDGE / Math.max(out.width, out.height));
+      canvas.width = Math.max(2, Math.round(out.width * scale));
+      canvas.height = Math.max(2, Math.round(out.height * scale));
+      previewCtx = canvas.getContext("2d");
+    }
+    const ctx = gl ? null : (work.getContext("2d", { alpha: false }) as Ctx | null);
+    if (!gl && !ctx) throw new Error("Canvas is not available.");
 
     // 60 fps phone footage is halved; anything at or under 30 keeps its own timing.
     const stats = await track.computePacketStats(120).catch(() => null);
@@ -97,6 +131,14 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     });
 
     const frame = { width: out.width, height: out.height };
+    const captions = new CaptionLayer(cues, style, frame);
+    const hdr = await track.hasHighDynamicRange().catch(() => false);
+    // Profiling for the on-screen timer: time inside the callback, split
+    // into video and captions, and the time between callbacks (decode,
+    // encode, muxing, waiting).
+    const spent = { video: 0, captions: 0, other: 0 };
+    let frames = 0;
+    let lastEnd = 0;
     const conversion = await mb.Conversion.init({
       input,
       output,
@@ -110,15 +152,35 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
         // Bake rotation into the pixels before `process`, so the crop
         // rectangle is in the same upright coordinates the preview used.
         allowTransformationMetadata: false,
-        processedWidth: out.width,
-        processedHeight: out.height,
-        process: (sample) => {
-          const t = sample.timestamp;
-          sample.draw(ctx, place.dx, place.dy, place.dw, place.dh);
-          for (const cue of cues) {
-            if (t >= cue.start && t < cue.end) drawCue(ctx, cue, style, frame, t, { showTranslated: false });
+        ...(opts.debugMode === "resize-only"
+          ? { width: out.width, height: out.height, fit: "cover" as const }
+          : { processedWidth: out.width, processedHeight: out.height }),
+        process: opts.debugMode === "resize-only" ? undefined : (sample) => {
+          const t0 = performance.now();
+          if (lastEnd) spent.other += t0 - lastEnd;
+          let t1: number;
+          if (gl) {
+            const showing = captions.update(sample.timestamp);
+            t1 = performance.now();
+            const vf = sample.toVideoFrame();
+            try {
+              const uv = GlCompositor.uvFor(crop, sample.displayWidth, sample.displayHeight, sample.rotation, sample.flip);
+              gl.draw(vf, uv, showing ? { layer: captions.canvas, version: captions.renders } : null);
+            } finally {
+              vf.close();
+            }
+          } else {
+            sample.draw(ctx!, place.dx, place.dy, place.dw, place.dh);
+            t1 = performance.now();
+            captions.draw(ctx!, sample.timestamp);
           }
-          return canvas;
+          const t2 = performance.now();
+          spent.video += t1 - t0;
+          spent.captions += t2 - t1;
+          frames += 1;
+          if (previewCtx && frames % PREVIEW_EVERY === 0) previewCtx.drawImage(work, 0, 0, canvas.width, canvas.height);
+          lastEnd = performance.now();
+          return work;
         },
       },
     });
@@ -146,7 +208,17 @@ export async function fastExportCaptionedVideo(opts: FastExportOptions): Promise
     progress({ phase: "mux", progress: null, message: "Finishing" });
     const blob = sink ? sink.finalize() : new Blob([bufferTarget!.buffer as ArrayBuffer], { type: "video/mp4" });
     const hasAudio = conversion.utilizedTracks.some((t) => t.isAudioTrack());
-    return { blob, width: out.width, height: out.height, audio: hasAudio ? "aac" : "none", seconds: duration, engine: "fast" };
+    const n = Math.max(1, frames);
+    gl?.dispose();
+    const exportStats: ExportStats = {
+      source: `${sourceWidth}×${sourceHeight} ${track.codec ?? "?"} ${Math.round(sourceFps)} fps${hdr ? " HDR" : ""} · ${gl ? "gl" : "2d"}`,
+      frames,
+      msVideo: spent.video / n,
+      msCaptions: spent.captions / n,
+      msOther: spent.other / n,
+      captionRenders: captions.renders,
+    };
+    return { blob, width: out.width, height: out.height, audio: hasAudio ? "aac" : "none", seconds: duration, engine: "fast", stats: exportStats };
   } finally {
     input.dispose();
   }

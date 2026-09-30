@@ -45,7 +45,7 @@ import { CAPTION_PRESETS, getPreset } from "@/lib/captions/presets";
 import { drawCue } from "@/lib/captions/renderer";
 import { ensureFontsLoaded, fontFamily } from "@/lib/captions/fonts";
 import { defaultSubtitleStyle, type CaptionCue, type SubtitleStyle, type WordTiming } from "@/lib/models/project";
-import { checkLiteSupport, exportCaptionedVideo, type LiteExportResult, type LiteProgress, type LiteSupport } from "@/lib/mobile/exportLite";
+import { checkLiteSupport, exportCaptionedVideo, type ExportStats, type LiteExportResult, type LiteProgress, type LiteSupport } from "@/lib/mobile/exportLite";
 import { fastExportCaptionedVideo } from "@/lib/mobile/fastExport";
 import { acquireWakeLock, canShareFiles, saveVideo } from "@/lib/mobile/share";
 import { probeVideo } from "@/lib/media/probe";
@@ -210,6 +210,8 @@ interface ExportTiming {
   outcome: "running" | "done" | "stopped" | "failed";
   engine: string | null;
   clipSeconds: number;
+  output?: string;
+  stats?: ExportStats;
 }
 
 function fmtElapsed(ms: number): string {
@@ -265,6 +267,19 @@ function ExportTimer({ timing }: { timing: ExportTiming }) {
                   {timing.engine ? `${timing.engine} engine` : "total"} · clip {fmtTime(timing.clipSeconds)}
                 </span>
                 <span>{speed ? `${speed.toFixed(1)}× real time` : fmtElapsed(elapsed)}</span>
+              </div>
+            )}
+            {!running && timing.stats && (
+              <div className="space-y-0.5 border-t border-white/10 pt-1 tabular-nums" data-export-stats>
+                <div className="truncate">
+                  {timing.stats.source} → {timing.output}
+                </div>
+                <div>
+                  per frame: draw {timing.stats.msVideo.toFixed(1)} · captions {timing.stats.msCaptions.toFixed(1)} · decode+encode {timing.stats.msOther.toFixed(1)} ms
+                </div>
+                <div>
+                  {timing.stats.frames} frames · {(timing.stats.frames / Math.max(0.001, elapsed / 1000)).toFixed(0)} fps · {timing.stats.captionRenders} caption renders
+                </div>
               </div>
             )}
           </div>
@@ -438,9 +453,11 @@ export function MobileEditor() {
       const at = performance.now();
       setTiming((t) => (t ? { ...t, marks: [...t.marks, { label, at }] } : t));
     };
-    const finishTiming = (outcome: ExportTiming["outcome"], engineUsed: string | null) => {
+    const finishTiming = (outcome: ExportTiming["outcome"], done: LiteExportResult | null) => {
       const at = performance.now();
-      setTiming((t) => (t ? { ...t, endedAt: at, outcome, engine: engineUsed } : t));
+      setTiming((t) =>
+        t ? { ...t, endedAt: at, outcome, engine: done?.engine ?? null, output: done ? `${done.width}×${done.height}` : undefined, stats: done?.stats } : t,
+      );
     };
     const releaseLock = await acquireWakeLock();
     const controller = new AbortController();
@@ -469,6 +486,7 @@ export function MobileEditor() {
             canvas: exportCanvasRef.current,
             signal: controller.signal,
             onProgress,
+            debugMode: params.get("fx") === "resize-only" ? "resize-only" : params.get("fx") === "2d" ? "2d" : undefined,
           });
         } catch (e) {
           if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) throw e;
@@ -492,7 +510,7 @@ export function MobileEditor() {
           onProgress,
         });
       }
-      finishTiming("done", out.engine);
+      finishTiming("done", out);
       setResult(out);
       setStep("done");
     } catch (e) {

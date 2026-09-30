@@ -59,6 +59,7 @@ try {
   const query = new URLSearchParams();
   if (process.env.AUDIO) query.set("audio", process.env.AUDIO);
   if (process.env.EXPORT) query.set("export", process.env.EXPORT);
+  if (process.env.FX) query.set("fx", process.env.FX);
   if (process.env.STREAM === "1") query.set("stream", "1");
   if (process.env.ASR) query.set("asr", process.env.ASR);
   if (process.env.THREADS) query.set("threads", process.env.THREADS);
