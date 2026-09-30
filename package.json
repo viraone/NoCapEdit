@@ -11,7 +11,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "node e2e/smoke.mjs"
+    "test:e2e": "node e2e/smoke.mjs",
+    "test:e2e:mobile": "node e2e/mobile.mjs"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",
@@ -24,6 +25,7 @@
     "fflate": "^0.8.3",
     "idb": "^8.0.3",
     "lucide-react": "^1.48.0",
+    "mp4-muxer": "^5.2.2",
     "next": "16.3.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",

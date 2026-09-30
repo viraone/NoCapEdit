@@ -1,0 +1,370 @@
+/**
+ * Mobile-lite export: burns captions into a video using only browser-native
+ * pieces — a <video> element for decoding, a canvas for compositing,
+ * WebCodecs (hardware H.264 / AAC) for encoding and mp4-muxer for the
+ * container. No ffmpeg.wasm, no SharedArrayBuffer, no cross-origin
+ * isolation, and memory stays flat, which is what makes it work on an
+ * iPhone where the desktop pipeline runs out of memory or never gets
+ * isolated.
+ *
+ * The video is played once at 1× (muted) and every presented frame is
+ * captured with requestVideoFrameCallback, so an export takes about as
+ * long as the clip. That is the trade for never decoding off the main
+ * media path — iOS Safari only decodes reliably through <video>.
+ *
+ * Audio: the source track is decoded with Web Audio and re-encoded to AAC
+ * with AudioEncoder. Browsers without AudioEncoder fall back to a small
+ * single-threaded ffmpeg mux of the original audio.
+ */
+import { ArrayBufferTarget, Muxer } from "mp4-muxer";
+import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
+import { drawCue } from "@/lib/captions/renderer";
+
+export interface LiteProgress {
+  phase: "prepare" | "audio" | "video" | "mux";
+  /** 0..1 within the phase, or null when indeterminate. */
+  progress: number | null;
+  message: string;
+}
+
+export interface LiteExportOptions {
+  file: Blob;
+  cues: CaptionCue[];
+  style: SubtitleStyle;
+  /** The <video> that plays the source; must be in the DOM (iOS decodes off-DOM videos lazily). */
+  video: HTMLVideoElement;
+  /** The canvas frames are composited on; shown to the user as the live render. */
+  canvas: HTMLCanvasElement;
+  /** Longest output edge in pixels. Source aspect is kept. */
+  maxEdge?: number;
+  fps?: number;
+  onProgress?: (p: LiteProgress) => void;
+  signal?: AbortSignal;
+}
+
+export interface LiteExportResult {
+  blob: Blob;
+  width: number;
+  height: number;
+  audio: "aac" | "ffmpeg" | "none";
+  seconds: number;
+}
+
+const H264_CANDIDATES = ["avc1.64002A", "avc1.640028", "avc1.4D402A", "avc1.42E02A", "avc1.42E01E"];
+
+export interface LiteSupport {
+  ok: boolean;
+  reason?: string;
+  audioEncoder: boolean;
+}
+
+/** Whether this browser can run the lite export at all. */
+export async function checkLiteSupport(): Promise<LiteSupport> {
+  if (typeof window === "undefined") return { ok: false, reason: "No window", audioEncoder: false };
+  if (typeof VideoEncoder === "undefined") return { ok: false, reason: "This browser has no WebCodecs video encoder. Safari 16.4+, Chrome 94+ or Edge work.", audioEncoder: false };
+  if (!("requestVideoFrameCallback" in HTMLVideoElement.prototype)) {
+    return { ok: false, reason: "This browser cannot capture video frames (requestVideoFrameCallback).", audioEncoder: false };
+  }
+  const codec = await pickVideoCodec(1080, 1920, 30);
+  if (!codec) return { ok: false, reason: "No supported H.264 encoder configuration.", audioEncoder: false };
+  return { ok: true, audioEncoder: typeof AudioEncoder !== "undefined" };
+}
+
+async function pickVideoCodec(width: number, height: number, fps: number): Promise<string | null> {
+  for (const codec of H264_CANDIDATES) {
+    try {
+      const { supported } = await VideoEncoder.isConfigSupported({ codec, width, height, framerate: fps, avc: { format: "avc" } });
+      if (supported) return codec;
+    } catch {
+      /* try the next one */
+    }
+  }
+  return null;
+}
+
+function even(n: number): number {
+  return Math.max(2, Math.round(n / 2) * 2);
+}
+
+/** Output size: keep the source aspect, cap the long edge, keep it even. */
+export function outputSize(srcW: number, srcH: number, maxEdge: number): { width: number; height: number } {
+  const scale = Math.min(1, maxEdge / Math.max(srcW, srcH));
+  return { width: even(srcW * scale), height: even(srcH * scale) };
+}
+
+function loadMetadata(video: HTMLVideoElement, url: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = () => reject(new Error("This video could not be decoded by your browser."));
+    video.onloadedmetadata = () => {
+      video.onerror = null;
+      resolve();
+    };
+    video.onerror = onError;
+    video.src = url;
+    video.load();
+  });
+}
+
+/** Safari can report a null or negative chunk duration; mp4-muxer rejects
+ * those, so every chunk goes in through the raw API with a sane one. */
+function chunkBytes(chunk: EncodedVideoChunk | EncodedAudioChunk): Uint8Array {
+  const data = new Uint8Array(chunk.byteLength);
+  chunk.copyTo(data);
+  return data;
+}
+function safeDuration(chunk: EncodedVideoChunk | EncodedAudioChunk, fallbackUs: number): number {
+  const d = chunk.duration;
+  return typeof d === "number" && Number.isFinite(d) && d >= 0 ? d : fallbackUs;
+}
+
+/** AAC-LC AudioSpecificConfig for the sample rate / channel count we
+ * configured. Safari's AudioEncoder reports a decoderConfig.description
+ * that is not this 2-byte form (ffmpeg reads it as "object type 0, 0
+ * channels"), so the muxer is always given a synthesised one. */
+const AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+function aacSpecificConfig(sampleRate: number, channels: number): Uint8Array {
+  const freqIndex = AAC_RATES.indexOf(sampleRate);
+  if (freqIndex === -1) throw new Error(`Unsupported AAC sample rate ${sampleRate}`);
+  const objectType = 2; // AAC LC
+  return new Uint8Array([(objectType << 3) | (freqIndex >> 1), ((freqIndex & 1) << 7) | (channels << 3)]);
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
+}
+
+/** Decodes the source audio to planar float PCM at the encoder's rate. */
+async function decodeForExport(file: Blob, sampleRate: number): Promise<AudioBuffer | null> {
+  try {
+    const data = await file.arrayBuffer();
+    const ctx = new OfflineAudioContext(2, 1, sampleRate);
+    return await ctx.decodeAudioData(data);
+  } catch {
+    return null;
+  }
+}
+
+export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<LiteExportResult> {
+  const { file, cues, style, video, canvas, signal } = opts;
+  const fps = opts.fps ?? 30;
+  const maxEdge = opts.maxEdge ?? 1920;
+  const progress = (p: LiteProgress) => opts.onProgress?.(p);
+
+  progress({ phase: "prepare", progress: null, message: "Preparing" });
+  const url = URL.createObjectURL(file);
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  await loadMetadata(video, url);
+  throwIfAborted(signal);
+
+  const { width, height } = outputSize(video.videoWidth, video.videoHeight, maxEdge);
+  const duration = video.duration;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) throw new Error("Canvas is not available.");
+  const frame = { width, height };
+
+  const codec = await pickVideoCodec(width, height, fps);
+  if (!codec) throw new Error("No supported H.264 encoder configuration for this size.");
+
+  // ---- audio (decode + AAC) ------------------------------------------------
+  const AUDIO_RATE = 48000;
+  let audioBuffer: AudioBuffer | null = null;
+  let audioMode: LiteExportResult["audio"] = "none";
+  if (typeof AudioEncoder !== "undefined") {
+    progress({ phase: "audio", progress: null, message: "Decoding audio" });
+    audioBuffer = await decodeForExport(file, AUDIO_RATE);
+    throwIfAborted(signal);
+  }
+  const channels = audioBuffer ? Math.min(2, audioBuffer.numberOfChannels) : 0;
+
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({
+    target,
+    video: { codec: "avc", width, height, frameRate: fps },
+    ...(audioBuffer && channels > 0 ? { audio: { codec: "aac", numberOfChannels: channels, sampleRate: AUDIO_RATE } } : {}),
+    fastStart: "in-memory",
+    firstTimestampBehavior: "offset",
+  });
+
+  if (audioBuffer && channels > 0) {
+    let audioError: Error | null = null;
+    const audioEncoder = new AudioEncoder({
+      output: (chunk, meta) => {
+        try {
+          const fixedMeta: EncodedAudioChunkMetadata | undefined = meta?.decoderConfig
+            ? { ...meta, decoderConfig: { ...meta.decoderConfig, description: aacSpecificConfig(AUDIO_RATE, channels) } }
+            : meta;
+          // AAC frames are 1024 samples.
+          muxer.addAudioChunkRaw(chunkBytes(chunk), chunk.type, chunk.timestamp, safeDuration(chunk, Math.round((1024 / AUDIO_RATE) * 1e6)), fixedMeta);
+        } catch (e) {
+          audioError = e instanceof Error ? e : new Error(String(e));
+        }
+      },
+      error: (e) => {
+        audioError = e;
+      },
+    });
+    const audioConfig: AudioEncoderConfig = { codec: "mp4a.40.2", sampleRate: AUDIO_RATE, numberOfChannels: channels, bitrate: 128_000 };
+    const { supported } = await AudioEncoder.isConfigSupported(audioConfig).catch(() => ({ supported: false }));
+    if (supported) {
+      audioEncoder.configure(audioConfig);
+      const total = audioBuffer.length;
+      const CHUNK = AUDIO_RATE; // one second per AudioData
+      const planar = new Float32Array(CHUNK * channels);
+      for (let offset = 0; offset < total; offset += CHUNK) {
+        throwIfAborted(signal);
+        const frames = Math.min(CHUNK, total - offset);
+        for (let c = 0; c < channels; c++) {
+          planar.set(audioBuffer.getChannelData(c).subarray(offset, offset + frames), c * frames);
+        }
+        const data = new AudioData({
+          format: "f32-planar",
+          sampleRate: AUDIO_RATE,
+          numberOfFrames: frames,
+          numberOfChannels: channels,
+          timestamp: Math.round((offset / AUDIO_RATE) * 1e6),
+          data: planar.subarray(0, frames * channels),
+        });
+        audioEncoder.encode(data);
+        data.close();
+        if (audioError) throw audioError;
+        if (audioEncoder.encodeQueueSize > 16) await new Promise((r) => setTimeout(r, 10));
+        progress({ phase: "audio", progress: Math.min(1, (offset + frames) / total), message: "Encoding audio" });
+      }
+      await audioEncoder.flush();
+      audioEncoder.close();
+      if (audioError) throw audioError;
+      audioMode = "aac";
+    } else {
+      audioEncoder.close();
+      audioBuffer = null;
+    }
+  }
+
+  // ---- video (play once, capture every presented frame) --------------------
+  const frameUs = Math.round(1e6 / fps);
+  let videoError: Error | null = null;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => {
+      try {
+        muxer.addVideoChunkRaw(chunkBytes(chunk), chunk.type, chunk.timestamp, safeDuration(chunk, frameUs), meta);
+      } catch (e) {
+        videoError = e instanceof Error ? e : new Error(String(e));
+      }
+    },
+    error: (e) => {
+      videoError = e;
+    },
+  });
+  const bitrate = Math.min(12_000_000, Math.max(2_500_000, Math.round(width * height * fps * 0.1)));
+  const videoConfig: VideoEncoderConfig = {
+    codec,
+    width,
+    height,
+    framerate: fps,
+    bitrate,
+    latencyMode: "quality",
+    avc: { format: "avc" },
+  };
+  try {
+    encoder.configure({ ...videoConfig, hardwareAcceleration: "prefer-hardware" });
+  } catch {
+    encoder.configure(videoConfig);
+  }
+
+  const keyEvery = fps * 2;
+  let frameIndex = 0;
+  let lastTimestamp = -1;
+
+  await new Promise<void>((resolve, reject) => {
+    let done = false;
+    const finish = (err?: unknown) => {
+      if (done) return;
+      done = true;
+      video.pause();
+      if (err) reject(err);
+      else resolve();
+    };
+    const onAbort = () => finish(new DOMException("Export cancelled", "AbortError"));
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    const tick: VideoFrameRequestCallback = (_now, meta) => {
+      if (done) return;
+      if (videoError) return finish(videoError);
+      const t = meta.mediaTime;
+      const timestamp = Math.round(t * 1e6);
+      if (timestamp > lastTimestamp) {
+        ctx.drawImage(video, 0, 0, width, height);
+        for (const cue of cues) {
+          if (t >= cue.start && t < cue.end) drawCue(ctx, cue, style, frame, t, { showTranslated: false });
+        }
+        // Skip a frame rather than stall playback when the encoder is behind.
+        if (encoder.encodeQueueSize < 12) {
+          const vf = new VideoFrame(canvas, { timestamp, duration: frameUs });
+          encoder.encode(vf, { keyFrame: frameIndex % keyEvery === 0 });
+          vf.close();
+          frameIndex += 1;
+          lastTimestamp = timestamp;
+        }
+        progress({ phase: "video", progress: duration ? Math.min(1, t / duration) : null, message: "Rendering" });
+      }
+      video.requestVideoFrameCallback(tick);
+    };
+
+    video.onended = () => finish();
+    video.onerror = () => finish(new Error("Playback failed during export."));
+    video.currentTime = 0;
+    video.requestVideoFrameCallback(tick);
+    video.play().catch((e) => finish(e));
+  });
+
+  progress({ phase: "mux", progress: null, message: "Finishing" });
+  await encoder.flush();
+  encoder.close();
+  if (videoError) throw videoError;
+  muxer.finalize();
+  URL.revokeObjectURL(url);
+
+  let blob = new Blob([target.buffer], { type: "video/mp4" });
+
+  // No AudioEncoder (or unsupported config): keep the original audio via a
+  // tiny ffmpeg mux. Single-threaded on purpose — no isolation needed.
+  if (audioMode === "none") {
+    try {
+      progress({ phase: "mux", progress: null, message: "Adding audio" });
+      blob = await muxOriginalAudio(blob, file);
+      audioMode = "ffmpeg";
+    } catch (e) {
+      console.warn("Audio mux fallback failed; exporting video only", e);
+    }
+  }
+
+  return { blob, width, height, audio: audioMode, seconds: duration };
+}
+
+async function muxOriginalAudio(videoOnly: Blob, source: Blob): Promise<Blob> {
+  const { loadFFmpeg } = await import("@/lib/ffmpeg/loader");
+  const { ffmpeg } = await loadFFmpeg({ forceSingleThread: true });
+  await ffmpeg.writeFile("lite-video.mp4", new Uint8Array(await videoOnly.arrayBuffer()));
+  await ffmpeg.writeFile("lite-source", new Uint8Array(await source.arrayBuffer()));
+  const code = await ffmpeg.exec([
+    "-i", "lite-video.mp4",
+    "-i", "lite-source",
+    "-map", "0:v:0",
+    "-map", "1:a:0?",
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-shortest",
+    "-movflags", "+faststart",
+    "lite-out.mp4",
+  ]);
+  if (code !== 0) throw new Error(`ffmpeg exited with ${code}`);
+  const out = await ffmpeg.readFile("lite-out.mp4");
+  await Promise.allSettled([ffmpeg.deleteFile("lite-video.mp4"), ffmpeg.deleteFile("lite-source"), ffmpeg.deleteFile("lite-out.mp4")]);
+  const bytes = typeof out === "string" ? new TextEncoder().encode(out) : out;
+  return new Blob([bytes as BlobPart], { type: "video/mp4" });
+}

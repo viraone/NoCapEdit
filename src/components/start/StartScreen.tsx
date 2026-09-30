@@ -194,6 +194,19 @@ export function StartScreen() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-8 py-10 text-[15px]">
+      {/* Phones get the mobile-lite flow: this editor's import and timeline
+          are built for a desktop and feel stuck on a phone. CSS-only so the
+          static export needs no client detection. */}
+      <a
+        href="/m/"
+        className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-sys-blue/30 bg-sys-blue/10 px-4 py-3 text-sm md:hidden [@media(pointer:fine)]:hidden"
+      >
+        <span>
+          <span className="font-semibold">On a phone?</span>{" "}
+          <span className="text-label-2">Use the mobile editor — captions in a tap, saves to Photos.</span>
+        </span>
+        <span className="shrink-0 rounded-full bg-sys-blue px-3 py-1 text-xs font-semibold text-white">Open</span>
+      </a>
       <header className="flex flex-wrap items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-500 text-white shadow-lg shadow-brand-500/40">
