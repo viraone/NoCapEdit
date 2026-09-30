@@ -19,18 +19,22 @@ import { uid } from "@/lib/utils/id";
 
 /** Count and length the user last chose, shared by the Reels and Subtitles panels. */
 export interface ReelSettings {
-  count: 3 | 5 | 8;
+  count: 3 | 5 | 8 | 12;
   targetSeconds: 15 | 30 | 60;
 }
+export const REEL_COUNTS: ReelSettings["count"][] = [3, 5, 8, 12];
 const REEL_SETTINGS_KEY = "reelflow.reels";
-export const DEFAULT_REEL_SETTINGS: ReelSettings = { count: 8, targetSeconds: 30 };
+/** Bumped when the default count changes, so a count saved under the old default is reset once. */
+const REEL_SETTINGS_VERSION = 2;
+export const DEFAULT_REEL_SETTINGS: ReelSettings = { count: 12, targetSeconds: 30 };
 
 export function loadReelSettings(): ReelSettings {
   try {
     const raw = localStorage.getItem(REEL_SETTINGS_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Partial<ReelSettings>) : {};
+    const parsed = raw ? (JSON.parse(raw) as Partial<ReelSettings> & { v?: number }) : {};
+    const current = parsed.v === REEL_SETTINGS_VERSION;
     return {
-      count: [3, 5, 8].includes(parsed.count as number) ? (parsed.count as ReelSettings["count"]) : DEFAULT_REEL_SETTINGS.count,
+      count: current && REEL_COUNTS.includes(parsed.count as ReelSettings["count"]) ? (parsed.count as ReelSettings["count"]) : DEFAULT_REEL_SETTINGS.count,
       targetSeconds: [15, 30, 60].includes(parsed.targetSeconds as number) ? (parsed.targetSeconds as ReelSettings["targetSeconds"]) : DEFAULT_REEL_SETTINGS.targetSeconds,
     };
   } catch {
@@ -40,7 +44,7 @@ export function loadReelSettings(): ReelSettings {
 
 export function saveReelSettings(settings: ReelSettings): void {
   try {
-    localStorage.setItem(REEL_SETTINGS_KEY, JSON.stringify(settings));
+    localStorage.setItem(REEL_SETTINGS_KEY, JSON.stringify({ ...settings, v: REEL_SETTINGS_VERSION }));
   } catch {
     /* storage unavailable */
   }

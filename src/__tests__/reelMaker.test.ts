@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { cuesForRange, overlapsExisting, padRange, reelName } from "@/lib/edit/reelMaker";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cuesForRange, DEFAULT_REEL_SETTINGS, loadReelSettings, overlapsExisting, padRange, reelName, saveReelSettings } from "@/lib/edit/reelMaker";
 import type { CaptionCue } from "@/lib/models/project";
 
 const cue = (id: string, start: number, end: number, words?: [number, number][]): CaptionCue =>
@@ -35,5 +35,30 @@ describe("reel maker helpers", () => {
   it("names reels after the source, index and title", () => {
     expect(reelName("Suitman show", 3, "  The heckler   bit ")).toBe("Suitman show · Reel 3 · The heckler bit");
     expect(reelName("Show", 1, "")).toBe("Show · Reel 1 · Untitled");
+  });
+
+  describe("saved settings", () => {
+    const store = new Map<string, string>();
+    afterEach(() => {
+      store.clear();
+      vi.unstubAllGlobals();
+    });
+    const stub = () => vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
+
+    it("defaults to 12 reels of about 30 s", () => {
+      stub();
+      expect(DEFAULT_REEL_SETTINGS).toEqual({ count: 12, targetSeconds: 30 });
+      expect(loadReelSettings()).toEqual(DEFAULT_REEL_SETTINGS);
+    });
+
+    it("keeps a count the user chose, and resets one saved before 12 became the default", () => {
+      stub();
+      saveReelSettings({ count: 5, targetSeconds: 60 });
+      expect(loadReelSettings()).toEqual({ count: 5, targetSeconds: 60 });
+      store.set("reelflow.reels", JSON.stringify({ count: 8, targetSeconds: 15 }));
+      expect(loadReelSettings()).toEqual({ count: 12, targetSeconds: 15 });
+      store.set("reelflow.reels", JSON.stringify({ count: 7, targetSeconds: 99, v: 2 }));
+      expect(loadReelSettings()).toEqual(DEFAULT_REEL_SETTINGS);
+    });
   });
 });
