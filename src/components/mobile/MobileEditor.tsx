@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   Check,
   ChevronUp,
+  Crop,
   Download,
   Film,
   Loader2,
@@ -47,6 +48,7 @@ import { defaultSubtitleStyle, type CaptionCue, type SubtitleStyle, type WordTim
 import { checkLiteSupport, exportCaptionedVideo, type LiteExportResult, type LiteProgress, type LiteSupport } from "@/lib/mobile/exportLite";
 import { acquireWakeLock, canShareFiles, saveVideo } from "@/lib/mobile/share";
 import { probeVideo } from "@/lib/media/probe";
+import { aspectOf, cropRect, DEFAULT_REFRAME, FRAME_FORMATS, MAX_ZOOM, outputFrame, panBy, withZoom, type Reframe } from "@/lib/mobile/reframe";
 
 type Step = "pick" | "analysing" | "style" | "exporting" | "done";
 
@@ -133,7 +135,7 @@ function SecondaryButton({ className, children, ...props }: React.ButtonHTMLAttr
  */
 function ActionBar({ children }: { children: React.ReactNode }) {
   return (
-    <div className="sticky bottom-0 z-20 -mx-4 mt-4 bg-gradient-to-t from-black via-black/95 to-transparent px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-6">
+    <div className="sticky bottom-0 z-20 -mx-4 mt-4 bg-[linear-gradient(to_top,black_78%,transparent)] px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-7">
       {children}
     </div>
   );
@@ -209,6 +211,7 @@ export function MobileEditor() {
   const [cues, setCues] = useState<CaptionCue[]>([]);
   const [style, setStyle] = useState<SubtitleStyle>(() => ({ ...defaultSubtitleStyle(), presetId: "hormozi", y: 0.74 }));
   const [wordsPerCue, setWordsPerCue] = useState(3);
+  const [reframe, setReframe] = useState<Reframe>(DEFAULT_REFRAME);
   const [result, setResult] = useState<LiteExportResult | null>(null);
   const [saved, setSaved] = useState<"shared" | "downloaded" | null>(null);
   const restartedDuring = useSyncExternalStore(noopSubscribe, readInflight, () => null);
@@ -246,6 +249,7 @@ export function MobileEditor() {
     setSourceAudio(null);
     setWords([]);
     setCues([]);
+    setReframe(DEFAULT_REFRAME);
     setResult(null);
     setSaved(null);
     setError(null);
@@ -352,6 +356,7 @@ export function MobileEditor() {
         file,
         audio: sourceAudio,
         streaming,
+        reframe,
         cues,
         style,
         video: exportVideoRef.current,
@@ -462,6 +467,8 @@ export function MobileEditor() {
             setStyle={setStyle}
             wordsPerCue={wordsPerCue}
             setWordsPerCue={changeWordsPerCue}
+            reframe={reframe}
+            setReframe={setReframe}
             onExport={runExport}
           />
         )}
@@ -663,7 +670,7 @@ function ProgressScreen({
 
 // ---------------------------------------------------------------------------
 
-type Tab = "looks" | "style" | "text";
+type Tab = "frame" | "looks" | "style" | "text";
 
 const POSITION_PRESETS: { label: string; y: number }[] = [
   { label: "Top", y: 0.16 },
@@ -679,6 +686,8 @@ function StyleScreen({
   setStyle,
   wordsPerCue,
   setWordsPerCue,
+  reframe,
+  setReframe,
   onExport,
 }: {
   fileUrl: string;
@@ -688,6 +697,8 @@ function StyleScreen({
   setStyle: (s: SubtitleStyle) => void;
   wordsPerCue: number;
   setWordsPerCue: (n: number) => void;
+  reframe: Reframe;
+  setReframe: (r: Reframe) => void;
   onExport: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -696,33 +707,36 @@ function StyleScreen({
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  /** Source pixel size, known once metadata loads. */
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [tab, setTab] = useState<Tab>("looks");
   const [dragging, setDragging] = useState(false);
   const cuesRef = useRef(cues);
   const styleRef = useRef(style);
+  const reframeRef = useRef(reframe);
   useEffect(() => {
     cuesRef.current = cues;
     styleRef.current = style;
+    reframeRef.current = reframe;
   });
 
-  /** Draws the captions for the video's current time onto the overlay. */
+  /** Draws the captions for the video's current time onto the overlay,
+   * which covers the *output frame* (the crop), not the whole source. */
   const draw = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth) return;
-    const scale = Math.min(1, PREVIEW_MAX_EDGE / Math.max(video.videoWidth, video.videoHeight));
-    const w = Math.round(video.videoWidth * scale);
-    const h = Math.round(video.videoHeight * scale);
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
+    const out = outputFrame(video.videoWidth, video.videoHeight, reframeRef.current, PREVIEW_MAX_EDGE);
+    if (canvas.width !== out.width || canvas.height !== out.height) {
+      canvas.width = out.width;
+      canvas.height = out.height;
     }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, w, h);
+    ctx.clearRect(0, 0, out.width, out.height);
     const t = video.currentTime;
     for (const cue of cuesRef.current) {
-      if (t >= cue.start && t < cue.end) drawCue(ctx, cue, styleRef.current, { width: w, height: h }, t, { showTranslated: false });
+      if (t >= cue.start && t < cue.end) drawCue(ctx, cue, styleRef.current, out, t, { showTranslated: false });
     }
   }, []);
 
@@ -748,6 +762,7 @@ function StyleScreen({
     raf = requestAnimationFrame(loop);
     const onMeta = () => {
       setDuration(video.duration);
+      setDims({ w: video.videoWidth, h: video.videoHeight });
       // iOS Safari shows a black box for a paused video until it has
       // seeked at least once; a tiny seek paints the first frame.
       if (video.currentTime === 0) video.currentTime = 0.01;
@@ -778,10 +793,10 @@ function StyleScreen({
     };
   }, [draw]);
 
-  // Style or cue edits while paused should show immediately.
+  // Style, cue or frame edits while paused should show immediately.
   useEffect(() => {
     draw();
-  }, [cues, style, draw]);
+  }, [cues, style, reframe, draw]);
 
   const preset = getPreset(style.presetId);
   const activeIndex = useMemo(() => cues.findIndex((c) => time >= c.start && time < c.end), [cues, time]);
@@ -799,75 +814,129 @@ function StyleScreen({
     v.currentTime = t;
   };
 
-  /** Where the video's picture sits inside the (object-contain) frame box. */
-  const contentBox = () => {
-    const el = frameRef.current;
-    const video = videoRef.current;
-    if (!el || !video || !video.videoWidth) return null;
-    const rect = el.getBoundingClientRect();
-    const aspect = video.videoWidth / video.videoHeight;
-    const w = Math.min(rect.width, rect.height * aspect);
-    const h = Math.min(rect.height, rect.width / aspect);
-    return { left: rect.left + (rect.width - w) / 2, top: rect.top + (rect.height - h) / 2, w, h };
+  // The frame box has the output shape; the <video> is sized and offset
+  // inside it so exactly the crop rectangle shows (same maths as export).
+  const aspect = dims ? aspectOf(reframe.format, dims.w, dims.h) : 16 / 9;
+  const crop = dims ? cropRect(dims.w, dims.h, reframe) : null;
+  const videoStyle: React.CSSProperties | undefined =
+    dims && crop
+      ? {
+          width: `${(dims.w / crop.w) * 100}%`,
+          height: `${(dims.h / crop.h) * 100}%`,
+          left: `${(-crop.x / crop.w) * 100}%`,
+          top: `${(-crop.y / crop.h) * 100}%`,
+        }
+      : { width: "100%", height: "100%", left: 0, top: 0 };
+
+  // Gestures on the frame. Tap = play/pause. On the Frame tab a drag pans
+  // the video and a two-finger pinch zooms it; on every other tab a drag
+  // moves the caption.
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef<{ moved: boolean; startX: number; startY: number; pinchDist: number; pinchZoom: number } | null>(null);
+  const framing = tab === "frame";
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    if (pointers.current.size === 1) {
+      gesture.current = { moved: false, startX: e.clientX, startY: e.clientY, pinchDist: 0, pinchZoom: reframeRef.current.zoom };
+    } else if (pointers.current.size === 2 && gesture.current) {
+      const [a, b] = [...pointers.current.values()];
+      gesture.current.pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+      gesture.current.pinchZoom = reframeRef.current.zoom;
+      gesture.current.moved = true;
+    }
   };
 
-  // Tap = play/pause. Drag = move the caption. Decided by travel distance.
-  const gesture = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const onPointerDown = (e: React.PointerEvent) => {
-    gesture.current = { x: e.clientX, y: e.clientY, moved: false };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
   const onPointerMove = (e: React.PointerEvent) => {
     const g = gesture.current;
-    if (!g) return;
-    if (!g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) < 8) return;
+    const prev = pointers.current.get(e.pointerId);
+    if (!g || !prev) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const el = frameRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+
+    if (pointers.current.size >= 2) {
+      if (!framing || !g.pinchDist) return;
+      const [a, b] = [...pointers.current.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      setDragging(true);
+      setReframe(withZoom(reframeRef.current, g.pinchZoom * (dist / g.pinchDist)));
+      return;
+    }
+
+    if (!g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < 8) return;
     g.moved = true;
     setDragging(true);
-    const box = contentBox();
-    if (!box) return;
-    const fx = (e.clientX - box.left) / box.w;
-    const fy = (e.clientY - box.top) / box.h;
-    const x = Math.abs(fx - 0.5) < 0.06 ? 0.5 : Math.min(0.85, Math.max(0.15, fx));
-    const y = Math.min(0.95, Math.max(0.08, fy));
-    setStyle({ ...styleRef.current, x, y });
+
+    if (framing) {
+      if (!dims) return;
+      const c = cropRect(dims.w, dims.h, reframeRef.current);
+      const perPx = c.w / rect.width; // source pixels per screen pixel
+      setReframe(panBy(dims.w, dims.h, reframeRef.current, (e.clientX - prev.x) * perPx, (e.clientY - prev.y) * perPx));
+    } else {
+      const fx = (e.clientX - rect.left) / rect.width;
+      const fy = (e.clientY - rect.top) / rect.height;
+      const x = Math.abs(fx - 0.5) < 0.06 ? 0.5 : Math.min(0.85, Math.max(0.15, fx));
+      const y = Math.min(0.95, Math.max(0.08, fy));
+      setStyle({ ...styleRef.current, x, y });
+    }
   };
-  const onPointerUp = () => {
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size > 0) return;
     const g = gesture.current;
     gesture.current = null;
     setDragging(false);
     if (g && !g.moved) togglePlay();
   };
 
-  const summary = `${preset.name} · ${wordsPerCue} word${wordsPerCue === 1 ? "" : "s"} · ${cues.length} captions`;
+  const formatLabel = FRAME_FORMATS.find((f) => f.id === reframe.format)?.label ?? "Original";
+  const summary = `${formatLabel} · ${preset.name} · ${cues.length} captions`;
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* Preview */}
+      {/* Preview: a box in the output shape, the video cropped inside it */}
       <div
         ref={frameRef}
-        className={cx("relative touch-none select-none overflow-hidden rounded-[24px] bg-black shadow-[0_20px_50px_rgba(0,0,0,0.6)]", dragging && "ring-2 ring-brand-400")}
+        className={cx(
+          "relative mx-auto touch-none select-none overflow-hidden rounded-[24px] bg-black shadow-[0_20px_50px_rgba(0,0,0,0.6)]",
+          dragging && "ring-2 ring-brand-400",
+        )}
+        style={{ aspectRatio: String(aspect), width: `min(100%, calc(56dvh * ${aspect}))` }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        <video ref={videoRef} src={`${fileUrl}#t=0.1`} playsInline preload="auto" className="block max-h-[56dvh] w-full bg-black object-contain" />
-        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
+        <video ref={videoRef} src={`${fileUrl}#t=0.1`} playsInline preload="auto" className="absolute max-w-none bg-black object-fill" style={videoStyle} />
+        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+        {framing && (
+          // Rule-of-thirds guide while reframing.
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-40">
+            <div className="absolute inset-y-0 left-1/3 w-px bg-white/60" />
+            <div className="absolute inset-y-0 left-2/3 w-px bg-white/60" />
+            <div className="absolute inset-x-0 top-1/3 h-px bg-white/60" />
+            <div className="absolute inset-x-0 top-2/3 h-px bg-white/60" />
+          </div>
+        )}
         {!playing && !dragging && (
           <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 backdrop-blur">
             <Play size={26} className="translate-x-0.5" />
           </span>
         )}
         {dragging && (
-          <span className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-medium backdrop-blur">
-            Drag to place captions
+          <span className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-medium backdrop-blur">
+            {framing ? "Drag to move · pinch to zoom" : "Drag to place captions"}
           </span>
         )}
         <div
           className="absolute inset-x-0 bottom-0 flex items-center gap-2.5 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-10 text-[12px] tabular-nums"
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <button type="button" onClick={togglePlay} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 backdrop-blur" aria-label={playing ? "Pause" : "Play"}>
+          <button type="button" onClick={togglePlay} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 backdrop-blur" aria-label={playing ? "Pause" : "Play"}>
             {playing ? <Pause size={14} /> : <Play size={14} className="translate-x-px" />}
           </button>
           <span className="w-9 text-right">{fmtTime(time)}</span>
@@ -878,27 +947,81 @@ function StyleScreen({
             step={0.05}
             value={Math.min(time, duration || 0)}
             onChange={(e) => seekTo(Number(e.target.value))}
-            className="h-1 flex-1 accent-white"
+            className="h-1 min-w-0 flex-1 accent-white"
             aria-label="Scrub"
           />
           <span className="w-9 text-label-2">{fmtTime(duration)}</span>
         </div>
       </div>
-      <p className="mt-2 text-center text-[11px] text-label-3">Tap to play · drag the caption to move it</p>
+      <p className="mt-2 text-center text-[11px] text-label-3">
+        {framing ? "Drag the video to move it · pinch to zoom" : "Tap to play · drag the caption to move it"}
+      </p>
 
       {/* Tabs */}
       <Segmented
         className="mt-3 w-full"
         value={tab}
         options={[
-          { value: "looks", label: <span className="inline-flex items-center gap-1.5"><Wand2 size={14} /> Looks</span> },
-          { value: "style", label: <span className="inline-flex items-center gap-1.5"><Type size={14} /> Style</span> },
-          { value: "text", label: <span className="inline-flex items-center gap-1.5"><Check size={14} /> Text</span> },
+          { value: "frame", label: <span className="inline-flex items-center gap-1"><Crop size={14} /> Frame</span> },
+          { value: "looks", label: <span className="inline-flex items-center gap-1"><Wand2 size={14} /> Looks</span> },
+          { value: "style", label: <span className="inline-flex items-center gap-1"><Type size={14} /> Style</span> },
+          { value: "text", label: <span className="inline-flex items-center gap-1"><Check size={14} /> Text</span> },
         ]}
         onChange={setTab}
       />
 
       <div className="mt-3 min-h-[13rem]">
+        {tab === "frame" && (
+          <div className="space-y-2.5">
+            <div className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+              {FRAME_FORMATS.map((f) => {
+                const active = f.id === reframe.format;
+                const ratio = f.ratio ?? (dims ? dims.w / dims.h : 16 / 9);
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    aria-label={`Frame ${f.label}`}
+                    onClick={() => setReframe({ ...DEFAULT_REFRAME, format: f.id })}
+                    className={cx(
+                      "flex h-[84px] w-[92px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border bg-[#141416] transition active:scale-[0.97]",
+                      active ? "border-brand-400 shadow-[0_0_0_3px_rgba(64,156,255,0.25)]" : "border-white/[0.06]",
+                    )}
+                  >
+                    <span
+                      className={cx("block rounded-[4px] border-2", active ? "border-brand-400" : "border-white/50")}
+                      style={ratio >= 1 ? { width: 30, height: 30 / ratio } : { height: 30, width: 30 * ratio }}
+                    />
+                    <span className="text-[13px] font-semibold leading-none">{f.label}</span>
+                    <span className="text-[10px] leading-none text-label-3">{f.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] p-3 pl-4">
+              <span className="text-[14px] font-medium">Zoom</span>
+              <div className="flex items-center gap-2">
+                <button type="button" aria-label="Zoom out" onClick={() => setReframe(withZoom(reframe, +(reframe.zoom - 0.1).toFixed(2)))} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] active:bg-white/15">
+                  <Minus size={15} />
+                </button>
+                <span className="w-12 text-center text-[14px] tabular-nums">{Math.round(reframe.zoom * 100)}%</span>
+                <button type="button" aria-label="Zoom in" onClick={() => setReframe(withZoom(reframe, Math.min(MAX_ZOOM, +(reframe.zoom + 0.1).toFixed(2))))} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] active:bg-white/15">
+                  <Plus size={15} />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] p-3 pl-4">
+              <div>
+                <p className="text-[14px] font-medium">Centre the video</p>
+                <p className="text-[11px] text-label-2">Undo your drag and zoom</p>
+              </div>
+              <SecondaryButton className="h-9 px-4 text-[13px]" onClick={() => setReframe({ ...DEFAULT_REFRAME, format: reframe.format })}>
+                <RotateCcw size={14} /> Reset
+              </SecondaryButton>
+            </div>
+          </div>
+        )}
+
         {tab === "looks" && (
           <div className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]">
             {CAPTION_PRESETS.map((p) => {

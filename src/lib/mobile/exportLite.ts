@@ -20,6 +20,7 @@ import { ArrayBufferTarget, Muxer, StreamTarget } from "mp4-muxer";
 import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import { drawCue } from "@/lib/captions/renderer";
 import { resampleLinear } from "@/lib/mobile/audio";
+import { cropRect, DEFAULT_REFRAME, outputFrame, type Reframe } from "@/lib/mobile/reframe";
 
 export interface LiteProgress {
   phase: "prepare" | "audio" | "video" | "mux";
@@ -40,7 +41,10 @@ export interface LiteExportOptions {
   video: HTMLVideoElement;
   /** The canvas frames are composited on; shown to the user as the live render. */
   canvas: HTMLCanvasElement;
-  /** Longest output edge in pixels. Source aspect is kept. */
+  /** Output shape and where the video sits inside it (lib/mobile/reframe.ts).
+   * Omitted = the whole source frame. */
+  reframe?: Reframe;
+  /** Longest output edge in pixels. */
   maxEdge?: number;
   fps?: number;
   /** Long clips: write a fragmented MP4 in 4 MB chunks that are handed to
@@ -209,7 +213,9 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
   await loadMetadata(video, url);
   throwIfAborted(signal);
 
-  const { width, height } = outputSize(video.videoWidth, video.videoHeight, maxEdge);
+  const reframe = opts.reframe ?? DEFAULT_REFRAME;
+  const { width, height } = outputFrame(video.videoWidth, video.videoHeight, reframe, maxEdge);
+  const crop = cropRect(video.videoWidth, video.videoHeight, reframe);
   const duration = video.duration;
   canvas.width = width;
   canvas.height = height;
@@ -366,7 +372,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
       if (videoError) return finish(videoError);
       const timestamp = Math.round(t * 1e6);
       if (timestamp <= lastTimestamp) return;
-      ctx.drawImage(video, 0, 0, width, height);
+      ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
       for (const cue of cues) {
         if (t >= cue.start && t < cue.end) drawCue(ctx, cue, style, frame, t, { showTranslated: false });
       }

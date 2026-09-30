@@ -7,6 +7,7 @@
 //   AUDIO=ffmpeg node e2e/mobile.mjs   # force the iOS audio-extraction fallback
 //   STREAM=1 node e2e/mobile.mjs       # force the long-clip streaming export
 //   CLIP=path/to/clip.mp4 node e2e/mobile.mjs   # use another input clip
+//   FRAME=9:16 node e2e/mobile.mjs     # reframe to a shape, drag the video, check the export's aspect
 //   E2E_URL=https://nocapedit.com/ node e2e/mobile.mjs   # against a deployment
 import { chromium, webkit } from "playwright";
 import { spawn, execFileSync } from "node:child_process";
@@ -99,6 +100,21 @@ try {
   await page.getByRole("button", { name: "Pause" }).first().click();
   lap(`preview plays (scrubber at ${Number(shown).toFixed(1)}s)`);
 
+  // Reframe (FRAME=9:16): choose the shape and drag the video sideways.
+  if (process.env.FRAME) {
+    await page.getByRole("tab", { name: /frame/i }).click();
+    await page.getByRole("button", { name: `Frame ${process.env.FRAME}` }).click();
+    await page.waitForTimeout(300);
+    const box = await page.locator("video").first().evaluate((v) => v.parentElement.getBoundingClientRect().toJSON());
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 - 60, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: join(outDir, "mobile-3b-frame.png") });
+    lap(`reframed to ${process.env.FRAME} (${Math.round(box.width)}×${Math.round(box.height)} preview)`);
+  }
+
   // Pick a different look, then export.
   await page.getByRole("tab", { name: /looks/i }).click();
   await page.getByRole("button", { name: /^beast$/i }).click();
@@ -144,6 +160,11 @@ try {
   if (!video || video.codec_name !== "h264") throw new Error("Expected an H.264 video stream");
   if (!audio) console.log("WARNING: no audio stream in export");
   else if (audio.codec_name !== "aac") throw new Error(`Expected AAC audio, got ${audio.codec_name}`);
+  if (process.env.FRAME) {
+    const [rw, rh] = process.env.FRAME.split(":").map(Number);
+    const got = video.width / video.height;
+    if (Math.abs(got - rw / rh) > 0.02) throw new Error(`Expected a ${process.env.FRAME} export, got ${video.width}×${video.height}`);
+  }
   console.log("MOBILE E2E OK");
 } finally {
   await browser.close();
