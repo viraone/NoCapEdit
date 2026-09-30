@@ -11,7 +11,7 @@ import { ArrowLeft, Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, 
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useReelSlack } from "./shared";
-import { DEFAULT_REEL_SETTINGS, isEmptyReel, listReels, loadReelSettings, makeReels, recutReel, saveReelSettings, type ReelSettings } from "@/lib/edit/reelMaker";
+import { DEFAULT_REEL_SETTINGS, isEmptyReel, listReels, loadReelSettings, makeReels, recutReel, saveReelSettings, type ReelProgress, type ReelSettings } from "@/lib/edit/reelMaker";
 import { activeModel, listOllamaModels, loadAiSettings, localAiEnabled, saveAiSettings, type AiSettings } from "@/lib/edit/aiHighlights";
 import { AiModelFields } from "./AiModelFields";
 import { getFormat } from "@/lib/models/formats";
@@ -49,7 +49,7 @@ export function ReelsPanel() {
   const permissionHint = isLocalPage ? "" : " Chrome asks whether this site may reach Ollama on your computer: choose Allow in the prompt. If you dismissed it, click the icon left of the address bar, set Local network access to Allow, and reload.";
   const [reels, setReels] = useState<VideoProject[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
-  const [job, setJob] = useState<{ message: string; progress: number | null; started: number } | null>(null);
+  const [job, setJob] = useState<(ReelProgress & { started: number }) | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -140,7 +140,7 @@ export function ReelsPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     setElapsed(0);
-    setJob({ message: "Starting", progress: null, started: nowMs() });
+    setJob({ stage: "Starting", progress: null, started: nowMs() });
     try {
       const result = await makeReels({
         project: useEditor.getState().project!,
@@ -148,7 +148,7 @@ export function ReelsPanel() {
         targetSeconds: settings.targetSeconds,
         settings: aiSettings,
         signal: controller.signal,
-        onProgress: (message, progress) => setJob((j) => (j ? { ...j, message, progress } : j)),
+        onProgress: (p) => setJob((j) => (j ? { ...p, started: j.started } : j)),
       });
       await refreshReels();
       const short = result.found < settings.count ? ` The model only found ${result.found} moment${result.found === 1 ? "" : "s"} that fit ${settings.targetSeconds} s.` : "";
@@ -232,11 +232,11 @@ export function ReelsPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     setElapsed(0);
-    setJob({ message: "Starting", progress: null, started: nowMs() });
+    setJob({ stage: "Starting", progress: null, started: nowMs() });
     try {
       const source = isReel ? await getProject(listOwner) : useEditor.getState().project!;
       if (!source) throw new Error("The source video is no longer on this device.");
-      await recutReel({ source, reel: r, signal: controller.signal, onProgress: (message, progress) => setJob((j) => (j ? { ...j, message, progress } : j)) });
+      await recutReel({ source, reel: r, signal: controller.signal, onProgress: (p) => setJob((j) => (j ? { ...p, started: j.started } : j)) });
       await refreshReels();
       if (r.id === project.id) {
         await useEditor.getState().loadProject(r.id);
@@ -250,15 +250,21 @@ export function ReelsPanel() {
       setJob(null);
     }
   };
+  // The progress card reads top-down: which reel, what step, any detail, the bar, then time and Cancel.
   const jobBlock = job && (
-    <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5" data-reel-job>
-      <ProgressBar value={job.progress} />
-      <p className="text-[11px] text-label-2">
-        {job.message} · {elapsed} s
+    <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-3" data-reel-job>
+      <p className="text-[13px] font-semibold leading-snug text-white" data-job-headline>
+        {job.reel ? `Cutting reel ${job.reel.n} of ${job.reel.of}${job.reel.title ? ` · ${job.reel.title}` : ""}` : job.stage}
       </p>
-      <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}>
-        <Square size={12} /> Cancel
-      </Button>
+      {job.reel && <p className="text-[13px] text-white">{job.stage}</p>}
+      {job.detail && <p className="text-[12px] leading-snug text-label-2">{job.detail}</p>}
+      <ProgressBar value={job.progress} />
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] tabular-nums text-label-2">{formatTime(elapsed, false)} elapsed</span>
+        <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}>
+          <Square size={12} /> Cancel
+        </Button>
+      </div>
     </div>
   );
 
@@ -455,9 +461,10 @@ export function ReelsPanel() {
               </p>
               {captionJob ? (
                 <div className="space-y-1.5" data-caption-job>
+                  <p className="text-[13px] font-semibold text-white">Generating subtitles</p>
+                  <p className="text-[12px] leading-snug text-label-2">{captionJob.message}</p>
                   <ProgressBar value={captionJob.progress} />
-                  <p className="text-[11px] text-label-2">Generating subtitles · {captionJob.message}</p>
-                  {captionJob.partial && <p className="line-clamp-2 text-[11px] italic leading-snug text-label-3">{captionJob.partial}</p>}
+                  {captionJob.partial && <p className="line-clamp-2 text-[12px] italic leading-snug text-label-3">{captionJob.partial}</p>}
                   <Button variant="outline" size="xs" onClick={cancelCaptions}>
                     <Square size={11} /> Cancel
                   </Button>

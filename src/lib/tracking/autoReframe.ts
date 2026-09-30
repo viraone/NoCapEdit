@@ -89,7 +89,9 @@ export async function detectSubjectPath(o: ReframeOptions): Promise<SubjectSampl
           size: best.width / video.videoWidth,
         });
       }
-      o.onProgress?.(`Scanning ${Math.round(t - inPoint)}s / ${Math.round(outPoint - inPoint)}s · ${samples.length} detections${skipped ? ` · ${skipped} skipped` : ""}`, i / total);
+      // Counts frames with a face, not people: one speaker seen 12 times reads "face seen in 12 frames".
+      const seen = samples.length ? `face seen in ${samples.length} frame${samples.length === 1 ? "" : "s"}` : "no face seen yet";
+      o.onProgress?.(`Scanning ${Math.round(t - inPoint)} s of ${Math.round(outPoint - inPoint)} s · ${seen}${skipped ? ` · ${skipped} frame${skipped === 1 ? "" : "s"} skipped` : ""}`, i / total);
     }
   } finally {
     detector.close();

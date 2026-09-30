@@ -110,12 +110,25 @@ export async function listReels(sourceId: string): Promise<VideoProject[]> {
   return all.filter((p) => p.sourceProjectId === sourceId && p.reel).sort((a, b) => (a.reel!.index ?? 0) - (b.reel!.index ?? 0));
 }
 
+/** What the reel maker is doing right now, for the Reels panel's progress card. */
+export interface ReelProgress {
+  /** The step in plain words ("Cutting the video", "Following the face"). */
+  stage: string;
+  /** More about the step ("Scanning 25 s of 29 s · face seen in 12 frames"), when there is any. */
+  detail?: string;
+  /** How far the step has got, 0..1, or null when unknown. */
+  progress: number | null;
+  /** The reel being cut, when one is: its place in this run and its title. */
+  reel?: { n: number; of: number; title: string };
+}
+export type ReelProgressFn = (p: ReelProgress) => void;
+
 export interface MakeReelsOptions {
   project: VideoProject;
   count: number;
   targetSeconds: number;
   settings: AiSettings;
-  onProgress?: (message: string, progress: number | null) => void;
+  onProgress?: ReelProgressFn;
   signal?: AbortSignal;
 }
 
@@ -177,7 +190,6 @@ export async function trimMedia(blob: Blob, sourceStart: number, seconds: number
 /** Cuts the reel's stored range out of the source into the reel project: media, framing, captions and thumbnail. */
 async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeReelsOptions, "onProgress" | "signal">): Promise<VideoProject> {
   const info = reel.reel!;
-  const index = info.index;
   const layouts = layoutClips(source.clips);
   // Reels are cut from a single clip: the one under the range's start.
   const loc = locateFrame(layouts, info.start + 0.01);
@@ -193,13 +205,13 @@ async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeRe
   const asset = await getAsset(layout.clip.assetId);
   if (!asset) throw new Error("The source video is missing from local storage.");
 
-  const label = `Cutting reel ${index}: ${info.title || "clip"} (${Math.round(shown.end - shown.start)} s, plus room to stretch)`;
-  o.onProgress?.(label, null);
-  const media = await trimMedia(asset.blob, sourceStart, seconds, { signal: o.signal, onProgress: (f) => o.onProgress?.(label, f) });
+  const cutting = { stage: "Cutting the video", detail: `${Math.round(shown.end - shown.start)} s, plus room to stretch either end` };
+  o.onProgress?.({ ...cutting, progress: null });
+  const media = await trimMedia(asset.blob, sourceStart, seconds, { signal: o.signal, onProgress: (f) => o.onProgress?.({ ...cutting, progress: f }) });
   if (o.signal?.aborted) throw abortError();
 
   const file = new File([media], `${reel.name.replace(/[\\/:*?"<>|]+/g, " ")}.mp4`, { type: "video/mp4" });
-  const { clip, blob } = await importVideo(file, reel.id, (m) => o.onProgress?.(`Reel ${index}: ${m}`, null));
+  const { clip, blob } = await importVideo(file, reel.id, (m) => o.onProgress?.({ stage: m, progress: null }));
   const source0 = layout.clip;
   // The clip is trimmed to the shown range inside the media; the slack sits outside its in/out points.
   const inPoint = Math.min(shown.start - covered.start, Math.max(0, clip.duration - 0.1));
@@ -208,11 +220,11 @@ async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeRe
   const frame = getFormat(reel.formatId);
   const landscape = clip.width > clip.height && frame.height > frame.width;
   if (landscape) {
-    o.onProgress?.(`Reel ${index}: following the face`, null);
+    o.onProgress?.({ stage: "Following the face", progress: null });
     try {
       const url = URL.createObjectURL(blob);
       try {
-        const keyframes = await autoReframe({ videoUrl: url, clip: finished, frame: { width: frame.width, height: frame.height }, signal: o.signal, onProgress: (m) => o.onProgress?.(`Reel ${index}: ${m}`, null) });
+        const keyframes = await autoReframe({ videoUrl: url, clip: finished, frame: { width: frame.width, height: frame.height }, signal: o.signal, onProgress: (m, p) => o.onProgress?.({ stage: "Following the face", detail: m, progress: p }) });
         finished.reframe = { keyframes, label: "Face tracking" };
       } finally {
         URL.revokeObjectURL(url);
@@ -232,7 +244,7 @@ async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeRe
 }
 
 /** Builds one reel project from a highlight of the source project. A failed or cancelled cut leaves nothing behind. */
-async function makeReel(source: VideoProject, h: Highlight, index: number, o: MakeReelsOptions): Promise<VideoProject> {
+async function makeReel(source: VideoProject, h: Highlight, index: number, o: MakeReelsOptions, run: { n: number; of: number }): Promise<VideoProject> {
   const layouts = layoutClips(source.clips);
   const total = layouts[layouts.length - 1].end;
   const { start, end } = padRange(h.start, h.end, total);
@@ -244,8 +256,10 @@ async function makeReel(source: VideoProject, h: Highlight, index: number, o: Ma
   reel.sourceProjectId = source.id;
   reel.reel = { index, title, score: h.score, hook: h.hook, start, end };
   await saveProject(reel);
+  // Every step reports with this reel's place in the run, so the panel can say "Cutting reel 4 of 12".
+  const onProgress: ReelProgressFn = (p) => o.onProgress?.({ ...p, reel: { n: run.n, of: run.of, title } });
   try {
-    return await fillReel(source, reel, o);
+    return await fillReel(source, reel, { signal: o.signal, onProgress });
   } catch (e) {
     await deleteProject(reel.id).catch(() => undefined);
     throw e;
@@ -255,7 +269,7 @@ async function makeReel(source: VideoProject, h: Highlight, index: number, o: Ma
 export interface RecutOptions {
   source: VideoProject;
   reel: VideoProject;
-  onProgress?: MakeReelsOptions["onProgress"];
+  onProgress?: ReelProgressFn;
   signal?: AbortSignal;
 }
 
@@ -271,14 +285,14 @@ export async function makeReels(o: MakeReelsOptions): Promise<MakeReelsResult> {
   const { project } = o;
   if (!project.clips.length) throw new Error("Add a video first.");
   if (!project.cues.length) throw new Error("Generate captions first; the model reads the transcript.");
-  o.onProgress?.(`Asking ${activeModel(o.settings)} for the ${o.count} best moments`, null);
+  o.onProgress?.({ stage: `Asking ${activeModel(o.settings)} for the ${o.count} best moments`, progress: null });
   const highlights = await findAiHighlights(project.cues, {
     settings: o.settings,
     count: o.count,
     minSeconds: Math.max(8, Math.round(o.targetSeconds * 0.8)),
     maxSeconds: Math.round(o.targetSeconds * 1.2),
     signal: o.signal,
-    onProgress: (m) => o.onProgress?.(m, null),
+    onProgress: (m) => o.onProgress?.({ stage: m, progress: null }),
   });
   const existing = await listReels(project.id);
   let index = existing.reduce((m, r) => Math.max(m, r.reel?.index ?? 0), 0);
@@ -290,10 +304,8 @@ export async function makeReels(o: MakeReelsOptions): Promise<MakeReelsResult> {
       skipped++;
       continue;
     }
-    o.onProgress?.(`Reel ${i + 1} of ${highlights.length}`, (i + 0.1) / highlights.length);
     index++;
-    made.push(await makeReel(project, h, index, o));
-    o.onProgress?.(`Reel ${i + 1} of ${highlights.length} done`, (i + 1) / highlights.length);
+    made.push(await makeReel(project, h, index, o, { n: i + 1, of: highlights.length }));
   }
   return { made, skipped, found: highlights.length };
 }
