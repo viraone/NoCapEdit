@@ -242,7 +242,7 @@ export function MobileEditor() {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-black text-white">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-black text-white">
       <header className="flex items-center justify-between px-4 pb-2 pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/40">
