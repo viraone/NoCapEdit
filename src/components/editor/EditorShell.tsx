@@ -167,7 +167,7 @@ export function EditorShell() {
       <div className="flex min-h-0 flex-1 gap-3">
         <div className="flex shrink-0 gap-3">
           <ToolRail />
-          <aside className="card flex w-[22rem] flex-col overflow-y-auto">
+          <aside className="rf-panel card flex w-[24rem] flex-col overflow-y-auto">
             {tool === "clips" && <ClipsPanel />}
             {tool === "trim" && <TrimPanel />}
             {tool === "subtitles" && <SubtitlesPanel />}

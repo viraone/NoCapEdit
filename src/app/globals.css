@@ -209,3 +209,14 @@ body {
 .no-scrollbar {
   scrollbar-width: none;
 }
+
+/* Side panels read one step larger than the rest of the chrome. Panels size
+   their text with fixed utilities, so the step-up maps each one here rather
+   than in every panel; unlayered, so it wins over the utility layer. */
+.rf-panel .caps { font-size: 11.5px; }
+.rf-panel .text-\[10px\] { font-size: 11.5px; }
+.rf-panel .text-\[11px\] { font-size: 12.5px; }
+.rf-panel .text-\[12px\] { font-size: 13.5px; }
+.rf-panel .text-\[13px\] { font-size: 14px; }
+.rf-panel .text-\[15px\] { font-size: 16px; }
+
