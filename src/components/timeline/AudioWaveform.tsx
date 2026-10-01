@@ -94,7 +94,7 @@ export function AudioWaveform({ assetId, inPoint, outPoint, width, height, color
     <>
       <canvas ref={canvasRef} className="pointer-events-none absolute bottom-0" style={{ left: x0, width: cssW, height }} />
       {label && (
-        <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 truncate rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-label-2" style={{ left: x0 + 6, maxWidth: Math.max(0, cssW - 12) }} data-waveform-status={missing}>
+        <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 truncate rf-read-face rounded bg-black/60 px-1.5 py-0.5 text-[13px] text-white/80" style={{ left: x0 + 6, maxWidth: Math.max(0, cssW - 12) }} data-waveform-status={missing}>
           {label}
         </span>
       )}

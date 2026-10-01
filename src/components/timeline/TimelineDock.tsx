@@ -59,7 +59,7 @@ function stretchGeometry(clip: Clip, width: number, pxPerSec: number) {
 function StretchGhost({ side, width, seconds }: { side: "l" | "r"; width: number; seconds: number }) {
   return (
     <div
-      className={cx("pointer-events-none absolute inset-y-0 flex items-center justify-center overflow-hidden text-[10px] font-semibold text-white", side === "l" ? "left-0" : "right-0")}
+      className={cx("pointer-events-none absolute inset-y-0 flex items-center justify-center overflow-hidden text-[12px] font-semibold text-white", side === "l" ? "left-0" : "right-0")}
       style={{ width, backgroundImage: "repeating-linear-gradient(135deg, rgba(10,132,255,0.45) 0 5px, rgba(10,132,255,0.12) 5px 10px)" }}
       data-stretch-ghost={side}
       title="This part comes back from the source video when you let go"
@@ -95,7 +95,7 @@ function Ruler({ pxPerSec, duration, width }: { pxPerSec: number; duration: numb
       {ticks.map((tick) => (
         <div key={tick.t} className="absolute bottom-0" style={{ left: tick.t * pxPerSec }}>
           <div className={cx("w-px bg-sys-gray3", tick.major ? "h-3" : "h-1.5")} />
-          {tick.major && <span className="absolute bottom-3 left-1 text-[10px] font-semibold tabular-nums text-label-2">{rulerLabel(tick.t, major < 1)}</span>}
+          {tick.major && <span className="absolute bottom-3 left-1 text-[12px] font-semibold leading-none tabular-nums text-white/75">{rulerLabel(tick.t, major < 1)}</span>}
         </div>
       ))}
     </div>
@@ -147,7 +147,7 @@ function CueBlock({ cue, pxPerSec, selected, active, showTranslated }: { cue: Ca
   return (
     <div
       className={cx(
-        "absolute top-1 flex h-[26px] cursor-grab items-center overflow-hidden rounded-md border px-1.5 text-[11px] leading-none select-none",
+        "rf-read-face absolute top-1 flex h-[26px] cursor-grab items-center overflow-hidden rounded-md border px-1.5 text-[13px] leading-none select-none",
         active ? "border-sys-blue bg-sys-blue/30 text-white" : "border-sys-teal/50 bg-sys-teal/15 text-white",
         selected && "ring-1 ring-sys-blue",
       )}
@@ -357,13 +357,13 @@ function ClipBlock({
       </div>
       {geo.left > 0 && <StretchGhost side="l" width={geo.left} seconds={geo.before} />}
       {geo.right > 0 && <StretchGhost side="r" width={geo.right} seconds={geo.after} />}
-      <div className="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/60 px-1 py-0.5 text-[10px] font-semibold text-white">
+      <div className="absolute left-1 top-1 flex items-center gap-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[12px] font-semibold text-white">
         <span className="max-w-32 truncate">{clip.name}</span>
-        <span className="text-label-2">{formatTime(layout.duration)}</span>
+        <span className="text-white/70">{formatTime(layout.duration)}</span>
         {clip.speed !== 1 && <span className="text-sys-yellow">{clip.speed}×</span>}
       </div>
       {layout.transitionOut > 0 && (
-        <div className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-sys-purple/80 px-1 text-[9px] text-white" title={`${clip.transition.type} ${clip.transition.duration}s`}>
+        <div className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-sys-purple/80 px-1 text-[11px] text-white" title={`${clip.transition.type} ${clip.transition.duration}s`}>
           <ArrowLeftRight size={9} /> {clip.transition.type}
         </div>
       )}
@@ -400,7 +400,7 @@ function HoverPreview({ x, time, layout }: { x: number; time: number; layout: Cl
   return (
     <div className="pointer-events-none absolute z-30 -translate-x-1/2 overflow-hidden rounded-lg border border-sys-gray3 bg-black shadow-xl" style={{ left: x, bottom: "100%", marginBottom: 6 }}>
       <canvas ref={canvasRef} className="block" />
-      <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[10px] tabular-nums text-white">{formatTime(time)}</span>
+      <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[12px] tabular-nums text-white">{formatTime(time)}</span>
     </div>
   );
 }
@@ -497,11 +497,13 @@ export function TimelineDock() {
   return (
     <div className="card flex shrink-0 flex-col overflow-hidden" style={{ height: DOCK_CHROME_H + lanesH }}>
       <TransportBar />
-      <div className="flex h-[30px] items-center gap-2 border-b border-sys-gray5 px-3 text-[11px] text-label-2">
+      <div className="flex h-[30px] items-center gap-2 border-b border-sys-gray5 px-3 text-[13px] text-white/70">
         <span className="font-semibold text-white">Timeline</span>
         <span className="tabular-nums">{formatTime(duration)}</span>
         <span className="text-label-3">·</span>
-        <span>{project.clips.length} clips · {project.cues.length} captions</span>
+        <span>
+          {project.clips.length} {project.clips.length === 1 ? "clip" : "clips"} · {project.cues.length} {project.cues.length === 1 ? "caption" : "captions"}
+        </span>
         {stretch.job && (
           <span className="flex min-w-0 items-center gap-2" data-stretch-job>
             <span className="text-label-3">·</span>
@@ -527,19 +529,19 @@ export function TimelineDock() {
         </div>
       </div>
       <div className="flex min-h-0 flex-1">
-        <div className="flex w-20 shrink-0 flex-col border-r border-sys-gray5 text-[10px] uppercase tracking-wide text-label-3">
+        <div className="flex w-24 shrink-0 flex-col border-r border-sys-gray5 text-[12px] font-semibold uppercase tracking-wide text-label-2">
           <div style={{ height: RULER_H }} />
           <div className="flex items-center gap-1 px-2" style={{ height: CUE_H }}>
-            <Captions size={11} /> Captions
+            <Captions size={13} /> Captions
           </div>
           <div className="flex items-center gap-1 px-2" style={{ height: videoH }}>
-            <Film size={11} /> Video
+            <Film size={13} /> Video
           </div>
           <div className="flex items-center gap-1 px-2" style={{ height: audioH }}>
-            <AudioLines size={11} /> Audio
+            <AudioLines size={13} /> Audio
           </div>
           <div className="flex items-center gap-1 px-2" style={{ height: MUSIC_H }}>
-            <Music size={11} /> Music
+            <Music size={13} /> Music
           </div>
         </div>
         <div
@@ -583,12 +585,15 @@ export function TimelineDock() {
               {!hasCues && (
                 <button
                   type="button"
-                  className="absolute inset-x-1 top-1 flex h-[26px] items-center justify-center gap-2 rounded-md border border-sys-gray4 bg-sys-gray5 text-[12px] font-semibold text-label-2 hover:bg-sys-gray4 hover:text-white"
+                  className="absolute inset-x-1 top-1 flex h-[26px] items-center justify-center gap-2 rounded-md border border-sys-gray4 bg-sys-gray5 rf-read-face text-[14px] text-white/80 hover:bg-sys-gray4 hover:text-white"
                   style={{ width: Math.max(0, contentW - 8) }}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => setTool("subtitles")}
                 >
-                  <MessageSquare size={13} /> No subtitles yet — click here, then press Generate captions
+                  <MessageSquare size={14} />
+                  <span>
+                    <b className="font-semibold text-white">No subtitles yet.</b> Click here, then press Generate captions.
+                  </span>
                 </button>
               )}
               {project.cues.map((cue) => (
@@ -672,7 +677,7 @@ export function TimelineDock() {
                 <div
                   key={vo.id}
                   className={cx(
-                    "absolute top-1 z-10 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-orange/60 bg-sys-orange/25 px-1 text-[10px] text-white",
+                    "absolute top-1 z-10 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-orange/60 bg-sys-orange/25 px-1.5 text-[12px] text-white",
                     selection?.kind === "voiceover" && selection.id === vo.id && "ring-1 ring-sys-blue",
                   )}
                   style={{ left: vo.start * pxPerSec, width: Math.max(6, vo.duration * pxPerSec) }}
@@ -690,7 +695,7 @@ export function TimelineDock() {
               ))}
               {music && (
                 <div
-                  className="absolute top-1 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-green/50 bg-sys-green/15 px-1.5 text-[10px] text-white"
+                  className="absolute top-1 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-green/50 bg-sys-green/15 px-1.5 text-[12px] text-white"
                   style={{
                     width: Math.max(6, musicWidth),
                     backgroundImage: `linear-gradient(to right, rgba(16,185,129,0.05) 0, rgba(16,185,129,0.35) ${music.fadeIn * pxPerSec}px, rgba(16,185,129,0.35) calc(100% - ${music.fadeOut * pxPerSec}px), rgba(16,185,129,0.05) 100%)`,

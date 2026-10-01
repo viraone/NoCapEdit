@@ -24,8 +24,8 @@ export function TransportBar() {
       <div />
       <div className="flex items-center gap-1.5">
         {/* Right by the timeline, so a click that cut the wrong spot is one click to take back. */}
-        <Button variant="secondary" size="sm" className="mr-1.5" onClick={undo} disabled={!canUndo} title="Undo the last edit (⌘Z)" data-transport-undo>
-          <Undo2 size={13} /> Undo
+        <Button variant="secondary" size="md" className="mr-1.5" onClick={undo} disabled={!canUndo} title="Undo the last edit (⌘Z)" data-transport-undo>
+          <Undo2 size={15} /> Undo
         </Button>
         <Button variant="ghost" size="iconSm" onClick={() => seek(0)} title="Go to start (Home)">
           <SkipBack size={15} />
@@ -65,25 +65,25 @@ export function TransportBar() {
         >
           <ArrowLeftToLine size={15} />
         </Button>
-        <span className="ml-2 font-mono text-[13px] tabular-nums">
+        <span className="ml-2 font-mono text-[15px] tabular-nums">
           <span className="font-bold text-sys-blue">{formatTimecode(currentTime)}</span> <span className="text-label-3">/</span> <span className="text-label-2">{formatTime(duration)}</span>
         </span>
       </div>
       <div className="flex items-center justify-end gap-1.5">
         {clip && (
           <>
-            <span className="mr-1 flex items-center gap-1.5 truncate text-[12px] text-label-2">
-              <Film size={13} /> {clip.name}
+            <span className="mr-1 flex items-center gap-1.5 truncate text-[13px] text-white/75">
+              <Film size={14} /> {clip.name}
             </span>
-            <Button variant="secondary" size="sm" disabled={index <= 0} onClick={() => update((p) => void moveClip(p, clip.id, -1), { ripple: true })} title="Move this clip earlier">
-              <ArrowLeft size={13} /> Earlier
+            <Button variant="secondary" size="md" disabled={index <= 0} onClick={() => update((p) => void moveClip(p, clip.id, -1), { ripple: true })} title="Move this clip earlier">
+              <ArrowLeft size={15} /> Earlier
             </Button>
-            <Button variant="secondary" size="sm" disabled={index < 0 || index >= clipCount - 1} onClick={() => update((p) => void moveClip(p, clip.id, 1), { ripple: true })} title="Move this clip later">
-              <ArrowRight size={13} /> Later
+            <Button variant="secondary" size="md" disabled={index < 0 || index >= clipCount - 1} onClick={() => update((p) => void moveClip(p, clip.id, 1), { ripple: true })} title="Move this clip later">
+              <ArrowRight size={15} /> Later
             </Button>
             <Button
               variant="danger"
-              size="sm"
+              size="md"
               onClick={() => {
                 let cleared = 0;
                 update((p) => void (cleared = removeClip(p, clip.id).clearedCaptions), { ripple: true });
@@ -92,7 +92,7 @@ export function TransportBar() {
               }}
               title="Remove this clip"
             >
-              <Trash2 size={13} /> Remove
+              <Trash2 size={15} /> Remove
             </Button>
           </>
         )}

@@ -19,7 +19,7 @@ try {
   await page.screenshot({ path: join(out, "shot-start.png") });
   await page.locator('input[type="file"][accept^="video"]').first().setInputFiles([join(here, "fixtures", "test-speech.mp4")]);
   await page.waitForURL(/\/editor\/?\?id=/, { timeout: 60_000 });
-  await page.waitForSelector("text=1 clips", { timeout: 60_000 });
+  await page.waitForSelector("text=/\b1 clip\b/", { timeout: 60_000 });
   await new Promise((r) => setTimeout(r, 1500));
   await page.getByRole("navigation", { name: "Tools" }).getByRole("button", { name: "Trim" }).click();
   await new Promise((r) => setTimeout(r, 800));
