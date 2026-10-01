@@ -1,5 +1,5 @@
 "use client";
-import { Play, Pause, SkipBack, ArrowRightToLine, ArrowLeftToLine, ArrowLeft, ArrowRight, Trash2, Film } from "lucide-react";
+import { Play, Pause, SkipBack, ArrowRightToLine, ArrowLeftToLine, ArrowLeft, ArrowRight, Trash2, Film, Undo2 } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useTargetClip } from "@/components/panels/shared";
 import { engine } from "@/lib/playback/engine";
@@ -14,7 +14,8 @@ export function TransportBar() {
   const currentTime = useEditor((s) => s.currentTime);
   const duration = useEditor((s) => (s.project ? projectDuration(s.project.clips) : 0));
   const clipCount = useEditor((s) => s.project?.clips.length ?? 0);
-  const { seek, update, select, setNotice } = useEditor.getState();
+  const canUndo = useEditor((s) => s.past.length > 0);
+  const { seek, update, select, setNotice, undo } = useEditor.getState();
   const clip = useTargetClip();
   const index = useEditor((s) => (clip ? s.project!.clips.findIndex((c) => c.id === clip.id) : -1));
 
@@ -22,6 +23,10 @@ export function TransportBar() {
     <div className="grid h-11 grid-cols-[1fr_auto_1fr] items-center px-3">
       <div />
       <div className="flex items-center gap-1.5">
+        {/* Right by the timeline, so a click that cut the wrong spot is one click to take back. */}
+        <Button variant="secondary" size="sm" className="mr-1.5" onClick={undo} disabled={!canUndo} title="Undo the last edit (⌘Z)" data-transport-undo>
+          <Undo2 size={13} /> Undo
+        </Button>
         <Button variant="ghost" size="iconSm" onClick={() => seek(0)} title="Go to start (Home)">
           <SkipBack size={15} />
         </Button>
