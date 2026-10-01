@@ -5,7 +5,8 @@ import { TransportBar } from "@/components/canvas/TransportBar";
 import { useEditor } from "@/store/editorStore";
 import { layoutClips, type ClipLayout } from "@/lib/models/timeline";
 import type { CaptionCue, Clip } from "@/lib/models/project";
-import { reorderClip } from "@/lib/models/clipOps";
+import { reorderClip, splitClipAt, splitTarget } from "@/lib/models/clipOps";
+import { playCutSound } from "@/lib/audio/uiSounds";
 import { formatTime } from "@/lib/utils/time";
 import { clamp } from "@/lib/utils/math";
 import { cx } from "@/lib/utils/cx";
@@ -23,6 +24,17 @@ const EDGE = 7;
 const CLIP_PAD = 4;
 /** Pointer travel before a press on a clip body becomes a reorder drag. */
 const DRAG_THRESHOLD = 8;
+/** Pointer travel that turns a click on a clip into a drag, so it no longer cuts. */
+const CLICK_SLOP = 3;
+
+/** Whether a click at project time `t` (x px into the lane) would cut a clip: on a clip, clear of its trim handles. */
+function cuttableAt(layouts: ClipLayout[], t: number, pxPerSec: number): ClipLayout | null {
+  const target = splitTarget(layouts, t);
+  if (!target) return null;
+  const x = t * pxPerSec;
+  if (x - target.start * pxPerSec <= EDGE || target.end * pxPerSec - x <= EDGE) return null;
+  return target;
+}
 
 /** Insertion slot for a pointer at project time t: the number of clips whose middle lies before it. */
 function insertionIndex(layouts: ClipLayout[], t: number): number {
@@ -202,6 +214,8 @@ function ClipBlock({
   onTrimEnd,
   onStretch,
   view,
+  onCut,
+  cutHover,
 }: {
   layout: ClipLayout;
   layouts: ClipLayout[];
@@ -220,6 +234,10 @@ function ClipBlock({
   onStretch: (req: InOut) => void;
   /** Timeline range (px) being drawn: the filmstrip only gets a canvas for its part of it. */
   view: { from: number; to: number };
+  /** A click (no drag) on the body at project time t: cut the clip there. */
+  onCut: (t: number) => void;
+  /** The pointer is over a spot a click would cut: the arrow replaces the grab hand. */
+  cutHover: boolean;
 }) {
   const { update, beginTransaction, endTransaction, select, setTool } = useEditor.getState();
   const { clip } = layout;
@@ -249,7 +267,7 @@ function ClipBlock({
     <div
       className={cx(
         "absolute top-1 overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
-        dragging ? "cursor-grabbing opacity-60" : "cursor-grab",
+        dragging ? "cursor-grabbing opacity-60" : cutHover ? "cursor-default" : "cursor-grab",
         selected || active ? "border-sys-blue" : "border-sys-gray4",
       )}
       style={{ left: layout.start * pxPerSec, width, height: blockH }}
@@ -301,7 +319,12 @@ function ClipBlock({
         } catch {
           /* not captured */
         }
-        if (!d || d.mode === "none") return;
+        if (!d) return;
+        if (d.mode === "none") {
+          // A click, not a drag: cut here. Touch has no hover to show where, so it only selects.
+          if (e.pointerType !== "touch" && e.button === 0 && Math.abs(e.clientX - d.startX) <= CLICK_SLOP) onCut(laneTime(e));
+          return;
+        }
         let stretch: InOut | null = null;
         if (d.mode === "reorder") {
           setDragging(false);
@@ -438,8 +461,23 @@ export function TimelineDock() {
   const lanesH = RULER_H + CUE_H + videoH + audioH + MUSIC_H;
   const fit = () => setZoom(duration > 0 ? (viewW - 80) / duration : 80);
   const scrubbing = useRef(false);
-  const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout } | null>(null);
+  const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout; cut: boolean } | null>(null);
+  const update = useEditor((s) => s.update);
+  const setNotice = useEditor((s) => s.setNotice);
+  /** Splits the clip under project time t (a click on the video or audio lane), with a snip. */
+  const cutAt = (t: number) => {
+    if (stretch.job || !cuttableAt(layouts, t, pxPerSec)) return;
+    let ok = false;
+    update((p) => void (ok = splitClipAt(p, t) !== null));
+    if (!ok) return;
+    playCutSound();
+    seek(t);
+    setHover(null);
+    setNotice(`Cut the clip at ${formatTime(t)}. Press ⌘Z to undo.`);
+  };
   const [dropX, setDropX] = useState<number | null>(null);
+  /** clientX where a press on an audio block began, so a click (not a drag) cuts. */
+  const audioPress = useRef<number | null>(null);
   const timeAt = (clientX: number) => {
     const el = scrollRef.current!;
     const r = el.getBoundingClientRect();
@@ -514,8 +552,9 @@ export function TimelineDock() {
             const el = e.currentTarget;
             const r = el.getBoundingClientRect();
             const y = e.clientY - r.top;
-            const inVideoLane = y >= RULER_H + CUE_H && y <= RULER_H + CUE_H + videoH;
-            if (!inVideoLane || e.pointerType === "touch") {
+            // The video lane and the audio lane under it: both show where a click would cut.
+            const inClipLanes = y >= RULER_H + CUE_H && y <= RULER_H + CUE_H + videoH + audioH;
+            if (!inClipLanes || e.pointerType === "touch") {
               if (hover) setHover(null);
               return;
             }
@@ -525,7 +564,8 @@ export function TimelineDock() {
               if (hover) setHover(null);
               return;
             }
-            setHover({ x: t * pxPerSec, time: t, layout: l });
+            const cut = !scrubbing.current && dropX === null && !stretch.job && e.buttons === 0 && cuttableAt(layouts, t, pxPerSec) !== null;
+            setHover({ x: t * pxPerSec, time: t, layout: l, cut });
           }}
           onPointerLeave={() => setHover(null)}
           onPointerUp={(e) => {
@@ -578,6 +618,8 @@ export function TimelineDock() {
                   onTrimEnd={stretch.finishTrim}
                   onStretch={stretch.start}
                   view={view}
+                  onCut={cutAt}
+                  cutHover={!!hover?.cut && hover.layout.clip.id === layout.clip.id}
                 />
               ))}
               {dropX !== null && <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-sys-blue shadow-[0_0_6px_rgba(10,132,255,0.9)]" data-drop-indicator style={{ left: dropX }} />}
@@ -602,6 +644,14 @@ export function TimelineDock() {
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       select({ kind: "clip", id: layout.clip.id });
+                      audioPress.current = e.clientX;
+                    }}
+                    onPointerUp={(e) => {
+                      const from = audioPress.current;
+                      audioPress.current = null;
+                      if (from === null || e.pointerType === "touch" || e.button !== 0 || Math.abs(e.clientX - from) > CLICK_SLOP) return;
+                      const lane = e.currentTarget.parentElement!;
+                      cutAt((e.clientX - lane.getBoundingClientRect().left) / pxPerSec);
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -654,6 +704,14 @@ export function TimelineDock() {
                 </div>
               )}
             </div>
+            {/* Where a click would cut: a thin line through the video and audio lanes, notched at both ends. */}
+            {hover?.cut && (
+              <div className="pointer-events-none absolute z-20 w-0" style={{ left: hover.x, top: RULER_H + CUE_H + CLIP_PAD, height: videoH + audioH - CLIP_PAD * 2 }} data-cut-indicator>
+                <div className="absolute inset-y-0 -left-px w-px bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
+                <div className="absolute -left-[4px] top-0 h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-white" />
+                <div className="absolute -left-[4px] bottom-0 h-0 w-0 border-x-[4px] border-b-[5px] border-x-transparent border-b-white" />
+              </div>
+            )}
             <Playhead pxPerSec={pxPerSec} scrollRef={scrollRef} height={lanesH} />
           </div>
         </div>

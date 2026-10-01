@@ -1,6 +1,6 @@
 /** Clip edits shared by the Clips panel, Trim panel and timeline (operate on a draft project). */
 import { ZOOM_MIN, type VideoProject } from "./project";
-import { layoutClips, locateFrame, toSourceTime } from "./timeline";
+import { layoutClips, locateFrame, toSourceTime, type ClipLayout } from "./timeline";
 import { uid } from "@/lib/utils/id";
 
 export function moveClip(p: VideoProject, id: string, dir: -1 | 1): boolean {
@@ -50,15 +50,25 @@ export function duplicateClip(p: VideoProject, id: string): string | null {
 }
 
 /**
+ * The clip a split at `time` would cut, or null when it would be refused:
+ * outside every clip, inside a transition overlap, or within 0.1 s of an edge.
+ */
+export function splitTarget(layouts: ClipLayout[], time: number): ClipLayout | null {
+  const loc = locateFrame(layouts, time);
+  if (!loc || loc.secondary) return null;
+  const layout = loc.primary;
+  if (time <= layout.start + 0.1 || time >= layout.end - 0.1) return null;
+  return layout;
+}
+
+/**
  * Splits the clip under `time` into two; returns the new (second) clip id.
  * Refused inside a transition overlap (two clips run there) and within 0.1 s
  * of a clip edge.
  */
 export function splitClipAt(p: VideoProject, time: number): string | null {
-  const loc = locateFrame(layoutClips(p.clips), time);
-  if (!loc || loc.secondary) return null;
-  const layout = loc.primary;
-  if (time <= layout.start + 0.1 || time >= layout.end - 0.1) return null;
+  const layout = splitTarget(layoutClips(p.clips), time);
+  if (!layout) return null;
   const s = toSourceTime(layout, time);
   const i = p.clips.findIndex((c) => c.id === layout.clip.id);
   if (i < 0) return null;
