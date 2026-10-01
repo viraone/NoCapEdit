@@ -5,17 +5,37 @@ import { useEditor, type ToolId } from "@/store/editorStore";
 import { cx } from "@/lib/utils/cx";
 
 /** Apple system colours per tool, like the Halycol rail. */
-const TOOLS: { id: ToolId; label: string; icon: React.ComponentType<{ size?: number }>; color: string }[] = [
-  { id: "clips", label: "Clips", icon: Film, color: "#0a84ff" },
-  { id: "trim", label: "Trim", icon: Scissors, color: "#ff453a" },
-  { id: "subtitles", label: "Subtitles", icon: Captions, color: "#ffd60a" },
-  { id: "style", label: "Style", icon: Palette, color: "#bf5af2" },
-  { id: "text", label: "Text", icon: Type, color: "#ff9f0a" },
-  { id: "picture", label: "Picture", icon: ImageIcon, color: "#ff375f" },
-  { id: "music", label: "Music", icon: Music, color: "#64d2ff" },
-  { id: "reels", label: "Reels", icon: Clapperboard, color: "#ff375f" },
-  { id: "export", label: "Export", icon: Share, color: "#30d158" },
+const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentType<{ size?: number }>; color: string }[] = [
+  { id: "clips", label: "Clips", hint: "Import, order and split your videos", icon: Film, color: "#0a84ff" },
+  { id: "trim", label: "Trim", hint: "Cut, speed, zoom and sound for a clip", icon: Scissors, color: "#ff453a" },
+  { id: "subtitles", label: "Subtitles", hint: "Generate, translate and edit captions", icon: Captions, color: "#ffd60a" },
+  { id: "style", label: "Style", hint: "How the captions look", icon: Palette, color: "#bf5af2" },
+  { id: "text", label: "Text", hint: "Titles and banners on the video", icon: Type, color: "#ff9f0a" },
+  { id: "picture", label: "Picture", hint: "Stickers, logos and images", icon: ImageIcon, color: "#ff375f" },
+  { id: "music", label: "Music", hint: "Music, sound effects and voice-over", icon: Music, color: "#64d2ff" },
+  { id: "reels", label: "Reels", hint: "Cut the best moments into short reels", icon: Clapperboard, color: "#ff375f" },
+  { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
 ];
+
+/**
+ * Name and one-line purpose of a tool, beside the rail while it is hovered or
+ * keyboard-focused. Fixed to the viewport so the rail's scrolling card cannot
+ * clip it; shows at once, unlike the browser's delayed title tooltip.
+ */
+function RailTip({ tip }: { tip: { id: ToolId; x: number; y: number } }) {
+  const t = TOOLS.find((t) => t.id === tip.id)!;
+  return (
+    <div role="tooltip" id="tool-rail-tip" className="pointer-events-none fixed z-50 -translate-y-1/2" style={{ left: tip.x, top: tip.y }} data-rail-tip={t.id}>
+      <span className="absolute -left-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rotate-45 border-b border-l border-sys-gray4 bg-sys-gray5" />
+      <div className="relative max-w-80 rounded-lg border border-sys-gray4 bg-sys-gray5 px-3 py-2 shadow-xl shadow-black/50">
+        <p className="text-[13px] font-semibold" style={{ color: t.color }}>
+          {t.label}
+        </p>
+        <p className="rf-read-note">{t.hint}</p>
+      </div>
+    </div>
+  );
+}
 
 /**
  * The rail fills the height it gets. Every tool gets an equal share of it;
@@ -56,6 +76,11 @@ export function ToolRail() {
   const hasClips = useEditor((s) => (s.project?.clips.length ?? 0) > 0);
   const ref = useRef<HTMLElement>(null);
   const [height, setHeight] = useState(560);
+  const [tip, setTip] = useState<{ id: ToolId; x: number; y: number } | null>(null);
+  const showTip = (id: ToolId, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setTip({ id, x: r.right + 12, y: r.top + r.height / 2 });
+  };
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -71,6 +96,7 @@ export function ToolRail() {
       className="card no-scrollbar flex min-h-0 shrink-0 flex-col items-stretch overflow-y-auto"
       style={{ width: lay.width, padding: RAIL_PAD, gap: GAP }}
       aria-label="Tools"
+      onScroll={() => setTip(null)}
       data-labels={lay.labels || undefined}
       data-tile={lay.tile}
     >
@@ -81,8 +107,13 @@ export function ToolRail() {
             key={id}
             type="button"
             onClick={() => setTool(id)}
+            onMouseEnter={(e) => showTip(id, e.currentTarget)}
+            onMouseLeave={() => setTip(null)}
+            onFocus={(e) => e.currentTarget.matches(":focus-visible") && showTip(id, e.currentTarget)}
+            onBlur={() => setTip(null)}
+            aria-label={label}
+            aria-describedby={tip?.id === id ? "tool-rail-tip" : undefined}
             className={cx("relative flex shrink-0 flex-col items-center gap-1 rounded-[12px] px-1 font-semibold leading-tight transition-colors", lay.tile >= 42 ? "text-[13px]" : "text-[12px]", active ? "" : "hover:bg-sys-gray5")}
-            title={label}
             style={{ paddingTop: lay.padY, paddingBottom: lay.padY, ...(active ? { background: `${color}22`, color } : { color: "rgba(235,235,245,0.75)" }) }}
             aria-current={active ? "page" : undefined}
           >
@@ -94,6 +125,7 @@ export function ToolRail() {
           </button>
         );
       })}
+      {tip && <RailTip tip={tip} />}
     </nav>
   );
 }
