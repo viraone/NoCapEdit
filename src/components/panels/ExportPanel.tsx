@@ -146,7 +146,33 @@ export function ExportPanel() {
 
   return (
     <>
-      <PanelHeader title="Export" description="Encoded by ffmpeg.wasm in a Web Worker on this device. Long renders stream to disk piece by piece." />
+      <PanelHeader
+        title="Export"
+        body={
+          <>
+            <ol className="rf-read rf-steps" data-export-steps>
+              <li>
+                <span>
+                  <b>Check</b> the settings below
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Press</b> Export MP4
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Save</b> the file when it&apos;s done
+                </span>
+              </li>
+            </ol>
+            <p className="rf-read-note mt-2.5">
+              Renders <b>on this device</b>. Long videos stream to disk piece by piece.
+            </p>
+          </>
+        }
+      />
       <PanelSection title="Output">
         <Field label="Resolution" right={`${frame.width}×${frame.height}`}>
           <Select value={opts.resolution} onChange={(e) => set({ resolution: e.target.value as ExportOptions["resolution"] })} disabled={running}>
@@ -291,19 +317,19 @@ export function ExportPanel() {
         ) : (
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={progress.stage === "loading" || progress.stage === "preparing" ? null : progress.progress} />
-            <p className="text-[11px] text-label-2">{progress.message}</p>
+            <p className="rf-read-note">{progress.message}</p>
             {/* After the status line: the first <p> in this box is the live message. */}
-            {progress.notice && <p className="text-[11px] text-sys-orange">{progress.notice}</p>}
+            {progress.notice && <p className="rf-read-note rf-warn">{progress.notice}</p>}
             <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}>
               <Square size={12} /> Cancel
             </Button>
           </div>
         )}
-        {error && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{error}</p>}
+        {error && <p className="rf-read-note rf-error whitespace-pre-wrap">{error}</p>}
         {result && (
-          <div className="space-y-2 rounded-lg border border-sys-green/40 bg-sys-green/10 p-2.5 text-[11px] text-label-2">
-            <p className="flex items-center gap-1.5 text-sys-green">
-              <CheckCircle2 size={13} /> Rendered in {result.seconds.toFixed(0)} s · {formatBytes(result.bytes)} · {result.segments} segment{result.segments === 1 ? "" : "s"}
+          <div className="space-y-2 rounded-lg border border-sys-green/40 bg-sys-green/10 p-2.5">
+            <p className="rf-read-note rf-ok flex items-center gap-1.5">
+              <CheckCircle2 size={15} className="shrink-0" /> Rendered in {result.seconds.toFixed(0)} s · {formatBytes(result.bytes)} · {result.segments} segment{result.segments === 1 ? "" : "s"}
               {result.streamed ? " · saved to disk" : ""}
             </p>
             <div className="flex flex-wrap gap-1.5">

@@ -279,6 +279,10 @@ body {
 .rf-read-note.rf-error {
   color: #ff453a;
 }
+/* A warning said in reading text: system orange. */
+.rf-read-note.rf-warn {
+  color: #ff9f0a;
+}
 /* A success said in reading text: system green. */
 .rf-read-note.rf-ok {
   color: #30d158;
