@@ -96,7 +96,10 @@ function makeLayer(width: number, height: number): { canvas: CaptionCanvas; ctx:
     c.height = height;
     canvas = c;
   }
-  const ctx = canvas.getContext("2d") as Ctx | null;
+  // CPU-backed: the GPU compositor reads the painted rect back with
+  // getImageData every time a caption changes, and reading a GPU-backed
+  // canvas back means waiting on the GPU (most of the caption cost on iPhone).
+  const ctx = canvas.getContext("2d", { willReadFrequently: true }) as Ctx | null;
   if (!ctx) throw new Error("Canvas is not available.");
   return { canvas, ctx };
 }
