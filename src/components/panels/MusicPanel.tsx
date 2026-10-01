@@ -118,14 +118,40 @@ export function MusicPanel() {
 
   return (
     <>
-      <PanelHeader title="Music" description="Background track mixed under the clip audio." />
+      <PanelHeader
+        title="Music"
+        body={
+          <>
+            <ol className="rf-read rf-steps" data-music-steps>
+              <li>
+                <span>
+                  <b>Add</b> a track, or find free music
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Mix</b> it under your voice
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Drop in</b> effects or a voice-over
+                </span>
+              </li>
+            </ol>
+            <p className="rf-read-note mt-2.5">
+              Music plays <b>under the clip audio</b>.
+            </p>
+          </>
+        }
+      />
       <PanelSection>
         <FileDrop accept="audio/*,video/mp4,video/webm" onFiles={onFiles} className="flex flex-col items-center gap-1.5">
-          <Upload size={18} className="text-label-3" />
-          <span className="text-sm">{music ? "Replace music" : "Add a music file"}</span>
-          <span className="text-[11px] text-label-2">MP3, WAV, M4A, OGG</span>
+          <Upload size={18} className="text-label-2" />
+          <span className="text-[13px] font-semibold">{music ? "Replace music" : "Add a music file"}</span>
+          <span className="text-[12px] text-white/70">MP3, WAV, M4A, OGG</span>
         </FileDrop>
-        {error && <p className="text-[11px] text-sys-red">{error}</p>}
+        {error && <p className="rf-read-note rf-error">{error}</p>}
       </PanelSection>
       <PanelSection title="Find free music">
         <MusicSearch />
@@ -155,10 +181,10 @@ export function MusicPanel() {
             Add on every caption
           </Button>
         </div>
-        {sfxError && <p className="text-[11px] text-sys-red">{sfxError}</p>}
+        {sfxError && <p className="rf-read-note rf-error">{sfxError}</p>}
         {sfxCount > 0 && (
-          <div className="flex items-center justify-between text-[11px] text-label-2">
-            <span>
+          <div className="flex items-center justify-between">
+            <span className="rf-read-note">
               {sfxCount} effect{sfxCount === 1 ? "" : "s"} on the timeline
             </span>
             <Button variant="ghost" size="xs" className="text-sys-red" onClick={() => update((p) => void (p.voiceovers = p.voiceovers.filter((v) => v.kind !== "sfx")))}>
@@ -190,7 +216,7 @@ export function MusicPanel() {
         ) : (
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={voJob.progress} />
-            <p className="text-[11px] text-label-2">{voJob.message}</p>
+            <p className="rf-read-note">{voJob.message}</p>
             <Button
               variant="outline"
               size="xs"
@@ -203,7 +229,7 @@ export function MusicPanel() {
             </Button>
           </div>
         )}
-        {voError && <p className="text-[11px] text-sys-red">{voError}</p>}
+        {voError && <p className="rf-read-note rf-error">{voError}</p>}
         {project.voiceovers.some((v) => v.kind !== "sfx") && (
           <ul ref={voListRef} className="space-y-1.5">
             {project.voiceovers.filter((v) => v.kind !== "sfx").map((vo) => (
@@ -217,8 +243,8 @@ export function MusicPanel() {
                   <button type="button" className="rounded p-0.5 text-label-2 hover:bg-sys-gray4 hover:text-white" onClick={() => useEditor.getState().seek(vo.start)} title="Jump to voice-over">
                     <Play size={11} />
                   </button>
-                  <span className="min-w-0 flex-1 truncate text-sm">{vo.name}</span>
-                  <span className="text-[10px] tabular-nums text-label-2">{formatTime(vo.duration)}</span>
+                  <span className="rf-read-face min-w-0 flex-1 truncate text-[14px] text-white">{vo.name}</span>
+                  <span className="text-[12px] tabular-nums text-white/70">{formatTime(vo.duration)}</span>
                   <Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => update((p) => void (p.voiceovers = p.voiceovers.filter((v) => v.id !== vo.id)))} title="Delete">
                     <Trash2 size={12} />
                   </Button>
@@ -236,14 +262,14 @@ export function MusicPanel() {
       </PanelSection>
       {!music ? (
         <PanelSection>
-          <EmptyState icon={<Music size={20} />} title="No music" description="Add a royalty-free track from your device." />
+          <EmptyState icon={<Music size={20} />} title="No music" description="Add a file above, or find free music." />
         </PanelSection>
       ) : (
         <>
           <PanelSection title="Track" right={<Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => update((p) => void (p.music = null))} title="Remove"><Trash2 size={13} /></Button>}>
-            <p className="truncate text-sm">{music.name}</p>
+            <p className="rf-read-face truncate text-[15px] font-semibold text-white">{music.name}</p>
             {music.credit && (
-              <div className="flex items-center justify-between gap-2 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1.5 text-[11px] text-label-2">
+              <div className="flex items-center justify-between gap-2 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1.5 text-[12px] text-white/70">
                 <span className="min-w-0 truncate" title={creditLine(music.credit)}>
                   {licenseLabel(music.credit.license)} · {music.credit.artist}
                 </span>
@@ -252,7 +278,7 @@ export function MusicPanel() {
                 </Button>
               </div>
             )}
-            <p className="text-[11px] text-label-2">{formatTime(music.duration)}</p>
+            <p className="text-[12px] tabular-nums text-white/70">{formatTime(music.duration)}</p>
           </PanelSection>
           <PanelSection title="Mix">
             <Slider label="Volume" value={music.volume} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((m) => void (m.volume = v), false)} {...tx} />

@@ -114,7 +114,7 @@ export function MusicSearch() {
         </Button>
       </form>
       <Toggle checked={commercialOnly} onChange={setCommercialOnly} label="Commercial use OK only" description="CC BY / BY-SA tracks; off also shows non-commercial (BY-NC) and no-derivatives (BY-ND) tracks" />
-      {error && <p className="text-[11px] text-sys-red">{error}</p>}
+      {error && <p className="rf-read-note rf-error">{error}</p>}
       {searching && <ProgressBar value={null} />}
       {results && !searching && (
         <p className="rf-read-note">
@@ -132,13 +132,13 @@ export function MusicSearch() {
                     {previewId === t.id ? <Square size={13} /> : <Play size={13} />}
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-white">{t.title}</p>
-                    <p className="truncate text-[11px] text-label-2">
+                    <p className="rf-read-face truncate text-[14px] font-semibold text-white">{t.title}</p>
+                    <p className="truncate text-[12px] text-white/70">
                       {t.artist} · {formatTime(t.duration)}
                       {t.genres.length ? ` · ${t.genres.slice(0, 2).join(", ")}` : ""}
                     </p>
                   </div>
-                  <span className={cx("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold", t.commercial ? "bg-sys-green/15 text-sys-green" : "bg-sys-orange/15 text-sys-orange")} title={t.commercial ? "Usable in commercial posts with credit" : "Non-commercial or no-derivatives licence"}>
+                  <span className={cx("shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold", t.commercial ? "bg-sys-green/15 text-sys-green" : "bg-sys-orange/15 text-sys-orange")} title={t.commercial ? "Usable in commercial posts with credit" : "Non-commercial or no-derivatives licence"}>
                     {licenseLabel(t.license)}
                   </span>
                   <a href={t.pageUrl} target="_blank" rel="noreferrer" className="shrink-0 text-label-3 hover:text-white" title="Open on Jamendo">
@@ -151,7 +151,7 @@ export function MusicSearch() {
                 {busy && (
                   <div className="mt-2">
                     <ProgressBar value={adding.progress} />
-                    <p className="mt-1 text-[11px] text-label-2">Downloading…</p>
+                    <p className="rf-read-note mt-1">Downloading…</p>
                   </div>
                 )}
               </li>
