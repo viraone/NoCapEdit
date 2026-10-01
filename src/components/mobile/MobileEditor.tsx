@@ -49,6 +49,7 @@ import { checkLiteSupport, exportCaptionedVideo, type ExportStats, type LiteExpo
 import { fastExportCaptionedVideo, type FastExportDebugMode } from "@/lib/mobile/fastExport";
 import { acquireWakeLock, canShareFiles, saveVideo } from "@/lib/mobile/share";
 import { probeVideo } from "@/lib/media/probe";
+import { readDisplaySize } from "@/lib/mobile/displaySize";
 import { aspectOf, cropRect, DEFAULT_REFRAME, FRAME_FORMATS, MAX_ZOOM, outputFrame, panBy, withZoom, type Reframe } from "@/lib/mobile/reframe";
 
 type Step = "pick" | "analysing" | "style" | "exporting" | "done";
@@ -307,6 +308,8 @@ export function MobileEditor() {
   const [support, setSupport] = useState<LiteSupport | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [duration, setDuration] = useState(0);
+  /** The clip's shown size, from the file (see lib/mobile/displaySize.ts). */
+  const [sourceSize, setSourceSize] = useState<{ w: number; h: number } | null>(null);
   const [sourceAudio, setSourceAudio] = useState<SourceAudio | null>(null);
   const [accurate, setAccurate] = useState(true);
   const [status, setStatus] = useState<{ message: string; progress: number | null; detail?: string }>({ message: "", progress: null });
@@ -373,9 +376,12 @@ export function MobileEditor() {
     abortRef.current = controller;
     try {
       setStatus({ message: "Reading your video", progress: null });
+      setSourceSize(null);
       const info = await probeVideo(picked);
       if (controller.signal.aborted) return;
       setDuration(info.duration);
+      setSourceSize(await readDisplaySize(picked));
+      if (controller.signal.aborted) return;
       if (info.duration > MAX_SECONDS) {
         throw new Error(`This clip is ${fmtTime(info.duration)} long. On a phone, keep it under 15 minutes — trim it in Photos first.`);
       }
@@ -651,6 +657,7 @@ export function MobileEditor() {
             setWordsPerCue={changeWordsPerCue}
             reframe={reframe}
             setReframe={setReframe}
+            sourceSize={sourceSize}
             onExport={runExport}
           />
         )}
@@ -870,6 +877,7 @@ function StyleScreen({
   setWordsPerCue,
   reframe,
   setReframe,
+  sourceSize,
   onExport,
 }: {
   fileUrl: string;
@@ -881,6 +889,7 @@ function StyleScreen({
   setWordsPerCue: (n: number) => void;
   reframe: Reframe;
   setReframe: (r: Reframe) => void;
+  sourceSize: { w: number; h: number } | null;
   onExport: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -890,7 +899,10 @@ function StyleScreen({
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   /** Source pixel size, known once metadata loads. */
-  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const [videoDims, setDims] = useState<{ w: number; h: number } | null>(null);
+  // The file's own size wins; what Safari reports is only the fallback.
+  const dims = sourceSize ?? videoDims;
+  const dimsRef = useRef(dims);
   const [tab, setTab] = useState<Tab>("looks");
   const [dragging, setDragging] = useState(false);
   // Which way the window can't move at this zoom (a 9:16 window on a
@@ -905,6 +917,7 @@ function StyleScreen({
     cuesRef.current = cues;
     styleRef.current = style;
     reframeRef.current = reframe;
+    dimsRef.current = dims;
   });
 
   /** Draws the captions for the video's current time onto the overlay,
@@ -912,8 +925,9 @@ function StyleScreen({
   const draw = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || !video.videoWidth) return;
-    const out = outputFrame(video.videoWidth, video.videoHeight, reframeRef.current, PREVIEW_MAX_EDGE);
+    const size = dimsRef.current;
+    if (!video || !canvas || !size) return;
+    const out = outputFrame(size.w, size.h, reframeRef.current, PREVIEW_MAX_EDGE);
     if (canvas.width !== out.width || canvas.height !== out.height) {
       canvas.width = out.width;
       canvas.height = out.height;
@@ -993,7 +1007,7 @@ function StyleScreen({
   // Style, cue or frame edits while paused should show immediately.
   useEffect(() => {
     draw();
-  }, [cues, style, reframe, draw]);
+  }, [cues, style, reframe, dims, draw]);
 
   const preset = getPreset(style.presetId);
   const activeIndex = useMemo(() => cues.findIndex((c) => time >= c.start && time < c.end), [cues, time]);
