@@ -123,12 +123,34 @@ export function PicturePanel() {
 
   return (
     <>
-      <PanelHeader title="Picture" description="Stickers, logos and images. Drag to place, use the corner handle to resize." />
+      <PanelHeader
+        title="Picture"
+        body={
+          <ol className="rf-read rf-steps" data-picture-steps>
+            <li>
+              <span>
+                <b>Add</b> an image or a Lottie animation
+              </span>
+            </li>
+            <li>
+              <span>
+                <b>Drag</b> it into place on the preview
+              </span>
+            </li>
+            <li>
+              <span>
+                <b>Resize</b> it with the corner handle
+              </span>
+            </li>
+          </ol>
+        }
+      />
       <PanelSection>
         <FileDrop accept="image/*" multiple onFiles={onFiles} disabled={!project.clips.length} className="flex flex-col items-center gap-1.5">
-          <Upload size={18} className="text-label-3" />
-          <span className="text-sm">Add images</span>
-          <span className="text-[11px] text-label-2">PNG, JPG, WebP, GIF (first frame)</span>
+          <Upload size={18} className="text-label-2" />
+          <span className="text-[13px] font-semibold">Add images</span>
+          <span className="text-[12px] text-white/70">PNG, JPG, WebP, GIF</span>
+          <span className="rf-read-note">GIFs show their first frame only.</span>
         </FileDrop>
         <input ref={lottieInputRef} type="file" accept=".lottie,.json,application/json" className="hidden" onChange={(e) => {
           const f = e.target.files?.[0];
@@ -138,11 +160,11 @@ export function PicturePanel() {
         <Button variant="secondary" size="sm" className="w-full" onClick={() => lottieInputRef.current?.click()} disabled={!project.clips.length} title="Animated lower thirds, stickers and motion graphics (.lottie or Lottie .json)">
           <Clapperboard size={13} /> Add a Lottie animation
         </Button>
-        {error && <p className="text-[11px] text-sys-red">{error}</p>}
+        {error && <p className="rf-read-note rf-error">{error}</p>}
       </PanelSection>
       <PanelSection title="Stickers & animations">
         {images.length === 0 ? (
-          <EmptyState icon={<ImageIcon size={20} />} title="No images yet" />
+          <EmptyState icon={<ImageIcon size={20} />} title="No images yet" description="Press Add images or Add a Lottie animation above." />
         ) : (
           <ul ref={listRef} className="space-y-1">
             {images.map((img) => (
@@ -164,8 +186,8 @@ export function PicturePanel() {
                       <Clapperboard size={14} />
                     </span>
                   )}
-                  <span className="min-w-0 flex-1 truncate text-sm">{img.name}</span>
-                  <span className="text-[10px] tabular-nums text-label-2">
+                  <span className="rf-read-face min-w-0 flex-1 truncate text-[14px] text-white">{img.name}</span>
+                  <span className="text-[12px] tabular-nums text-white/70">
                     {formatTime(img.start)}–{formatTime(img.end)}
                   </span>
                 </button>
@@ -191,7 +213,7 @@ export function PicturePanel() {
               (bgJob ? (
                 <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
                   <ProgressBar value={bgJob.progress} />
-                  <p className="text-[11px] text-label-2">{bgJob.message}</p>
+                  <p className="rf-read-note">{bgJob.message}</p>
                   <Button variant="outline" size="xs" onClick={() => abortRef.current?.abort()}>
                     <Square size={11} /> Cancel
                   </Button>
