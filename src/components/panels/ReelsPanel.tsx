@@ -308,7 +308,7 @@ export function ReelsPanel() {
                   Reel {r.reel?.index} · empty: the cut didn&apos;t finish
                 </p>
               ) : (
-                <p className="text-[11px] tabular-nums text-label-3">
+                <p className="text-[11px] tabular-nums text-label-2">
                   Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(shown.clips))} · from {formatTime(shown.reel?.start ?? 0)}
                 </p>
               )}
@@ -405,7 +405,7 @@ export function ReelsPanel() {
             {note && <p className="text-[11px] text-sys-green">{note}</p>}
           </PanelSection>
         )}
-        <PanelSection title={`All reels (${reels.length})`}>{reels.length ? reelList() : <p className="text-[11px] text-label-3">Loading…</p>}</PanelSection>
+        <PanelSection title={`All reels (${reels.length})`}>{reels.length ? reelList() : <p className="rf-read-note">Loading…</p>}</PanelSection>
         {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
       </>
     );
@@ -521,7 +521,7 @@ export function ReelsPanel() {
                   <p className="text-[13px] font-semibold text-white">Generating subtitles</p>
                   <p className="text-[12px] leading-snug text-label-2">{captionJob.message}</p>
                   <ProgressBar value={captionJob.progress} />
-                  {captionJob.partial && <p className="line-clamp-2 text-[12px] italic leading-snug text-label-3">{captionJob.partial}</p>}
+                  {captionJob.partial && <p className="rf-read-note line-clamp-2 italic">{captionJob.partial}</p>}
                   <Button variant="outline" size="xs" onClick={cancelCaptions}>
                     <Square size={11} /> Cancel
                   </Button>

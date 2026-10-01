@@ -123,7 +123,7 @@ export function MusicPanel() {
         <FileDrop accept="audio/*,video/mp4,video/webm" onFiles={onFiles} className="flex flex-col items-center gap-1.5">
           <Upload size={18} className="text-label-3" />
           <span className="text-sm">{music ? "Replace music" : "Add a music file"}</span>
-          <span className="text-[11px] text-label-3">MP3, WAV, M4A, OGG</span>
+          <span className="text-[11px] text-label-2">MP3, WAV, M4A, OGG</span>
         </FileDrop>
         {error && <p className="text-[11px] text-sys-red">{error}</p>}
       </PanelSection>
@@ -218,7 +218,7 @@ export function MusicPanel() {
                     <Play size={11} />
                   </button>
                   <span className="min-w-0 flex-1 truncate text-sm">{vo.name}</span>
-                  <span className="text-[10px] tabular-nums text-label-3">{formatTime(vo.duration)}</span>
+                  <span className="text-[10px] tabular-nums text-label-2">{formatTime(vo.duration)}</span>
                   <Button variant="ghost" size="iconSm" className="text-sys-red" onClick={() => update((p) => void (p.voiceovers = p.voiceovers.filter((v) => v.id !== vo.id)))} title="Delete">
                     <Trash2 size={12} />
                   </Button>
@@ -252,7 +252,7 @@ export function MusicPanel() {
                 </Button>
               </div>
             )}
-            <p className="text-[11px] text-label-3">{formatTime(music.duration)}</p>
+            <p className="text-[11px] text-label-2">{formatTime(music.duration)}</p>
           </PanelSection>
           <PanelSection title="Mix">
             <Slider label="Volume" value={music.volume} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((m) => void (m.volume = v), false)} {...tx} />

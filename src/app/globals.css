@@ -264,6 +264,10 @@ body {
   font-family: var(--font-mono);
   font-size: 0.92em;
 }
+/* An error said in reading text: same face and size, system red. */
+.rf-read-note.rf-error {
+  color: #ff453a;
+}
 /* Numbered steps: the number in a small system-blue disc, text hanging beside it. */
 .rf-steps {
   counter-reset: rf-step;

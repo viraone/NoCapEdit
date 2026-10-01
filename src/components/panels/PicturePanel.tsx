@@ -128,7 +128,7 @@ export function PicturePanel() {
         <FileDrop accept="image/*" multiple onFiles={onFiles} disabled={!project.clips.length} className="flex flex-col items-center gap-1.5">
           <Upload size={18} className="text-label-3" />
           <span className="text-sm">Add images</span>
-          <span className="text-[11px] text-label-3">PNG, JPG, WebP, GIF (first frame)</span>
+          <span className="text-[11px] text-label-2">PNG, JPG, WebP, GIF (first frame)</span>
         </FileDrop>
         <input ref={lottieInputRef} type="file" accept=".lottie,.json,application/json" className="hidden" onChange={(e) => {
           const f = e.target.files?.[0];
@@ -165,7 +165,7 @@ export function PicturePanel() {
                     </span>
                   )}
                   <span className="min-w-0 flex-1 truncate text-sm">{img.name}</span>
-                  <span className="text-[10px] tabular-nums text-label-3">
+                  <span className="text-[10px] tabular-nums text-label-2">
                     {formatTime(img.start)}–{formatTime(img.end)}
                   </span>
                 </button>
@@ -201,7 +201,7 @@ export function PicturePanel() {
                   <Button variant="secondary" size="sm" className="w-full" onClick={removeBackground} title="MODNet on this device; the first run downloads the model (about 25 MB on WebGPU, 7 MB on WASM)">
                     <Sparkles size={13} /> Remove background
                   </Button>
-                  <p className="text-[11px] text-label-3">
+                  <p className="rf-read-note">
                     Runs on {mlDeviceLabel(matteDevice)}
                     {matteDevice ? " (last run)" : ""}; works best on people and pets.
                   </p>

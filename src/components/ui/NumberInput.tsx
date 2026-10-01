@@ -61,7 +61,7 @@ export function NumberInput({ value, onCommit, min, max, step = 0.01, decimals =
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         }}
       />
-      {suffix && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-label-3">{suffix}</span>}
+      {suffix && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-label-2">{suffix}</span>}
     </div>
   );
 }

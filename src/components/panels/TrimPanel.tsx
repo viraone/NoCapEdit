@@ -312,7 +312,7 @@ export function TrimPanel() {
             <Tile key={t.id} icon={t.icon} label={t.label} active={quickTransition === t.id} disabled={!hasNext} onClick={() => edit((c) => void (c.transition.type = t.id), true, true)} />
           ))}
         </TileGrid>
-        {!hasNext && <p className="text-[11px] text-label-3">This is the last clip. Transitions apply between clips.</p>}
+        {!hasNext && <p className="rf-read-note">This is the last clip. Transitions apply between clips.</p>}
       </PanelSection>
 
       <PanelSection title={`Picture zoom  ${zoomLabel}`}>
@@ -331,7 +331,7 @@ export function TrimPanel() {
             return <Tile key={f.id} icon={icon} label={f.label} active={(clip.audioFx ?? "none") === f.id} onClick={() => edit((c) => void (c.audioFx = f.id))} title={f.note} disabled={!clip.hasAudio} />;
           })}
         </TileGrid>
-        <p className="text-[11px] text-label-3">{AUDIO_FX.find((f) => f.id === (clip.audioFx ?? "none"))?.note}. The preview uses Web Audio; the export uses the matching ffmpeg filters.</p>
+        <p className="rf-read-note">{AUDIO_FX.find((f) => f.id === (clip.audioFx ?? "none"))?.note}. The preview uses Web Audio; the export uses the matching ffmpeg filters.</p>
       </PanelSection>
 
       <PanelSection
@@ -410,7 +410,7 @@ export function TrimPanel() {
                 <NumberInput value={clip.outPoint} min={clip.inPoint + 0.1} max={clip.duration} suffix="s" onCommit={(v) => edit((c) => void (c.outPoint = v), true, true)} />
               </Field>
             </div>
-            <p className="text-[11px] text-label-3">
+            <p className="rf-read-note">
               Output length {formatTime((clip.outPoint - clip.inPoint) / clip.speed)}. Drag the block edges on the timeline for fine trimming{reelSlack ? "; drag them out past the ends to bring back more of the source video" : ""}.
             </p>
           </PanelSection>
@@ -434,7 +434,7 @@ export function TrimPanel() {
             />
             <Slider label="Pan X" value={clip.pan.x} min={-1} max={1} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => void (c.pan.x = v), false)} {...tx} />
             <Slider label="Pan Y" value={clip.pan.y} min={-1} max={1} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => void (c.pan.y = v), false)} {...tx} />
-            <p className="text-[11px] text-label-3">With the Trim tool active you can also drag the video in the preview to pan it.</p>
+            <p className="rf-read-note">With the Trim tool active you can also drag the video in the preview to pan it.</p>
           </PanelSection>
           <PanelSection title="Transition">
             <Field label="Type">
@@ -500,7 +500,7 @@ export function TrimPanel() {
             </>
           )
         )}
-        <p className="text-[11px] text-label-3">Removes the background from the person in the clip without a green screen. Then place text or stickers behind them (Text / Picture → “Behind the subject”), and pick a background colour above.</p>
+        <p className="rf-read-note">Removes the background from the person in the clip without a green screen. Then place text or stickers behind them (Text / Picture → “Behind the subject”), and pick a background colour above.</p>
       </PanelSection>
 
       <PanelSection title="Auto-reframe">
@@ -518,7 +518,7 @@ export function TrimPanel() {
                 </Button>
               )
             )}
-            <p className="text-[11px] text-label-3">Detects the main face with MediaPipe and animates the pan so it stays centred in the {format.ratio} frame.</p>
+            <p className="rf-read-note">Detects the main face with MediaPipe and animates the pan so it stays centred in the {format.ratio} frame.</p>
             {job && (
               <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
                 <ProgressBar value={job.progress} />

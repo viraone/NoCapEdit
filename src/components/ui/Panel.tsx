@@ -11,7 +11,7 @@ export function PanelHeader({ title, description, body, meta, actions }: { title
           {actions}
         </div>
       </div>
-      {description && <p className="mt-2 text-[12px] leading-snug text-label-2">{description}</p>}
+      {description && <p className="rf-read mt-2">{description}</p>}
       {body && <div className="mt-2.5">{body}</div>}
     </div>
   );
@@ -36,7 +36,7 @@ export function EmptyState({ icon, title, description, action }: { icon?: ReactN
     <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-sys-gray4 px-4 py-8 text-center">
       {icon && <div className="text-sys-gray2">{icon}</div>}
       <p className="text-[13px] font-semibold text-white">{title}</p>
-      {description && <p className="max-w-56 text-[11px] leading-snug text-label-2">{description}</p>}
+      {description && <p className="rf-read-note max-w-60">{description}</p>}
       {action && <div className="mt-1">{action}</div>}
     </div>
   );

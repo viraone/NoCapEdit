@@ -117,7 +117,7 @@ export function MusicSearch() {
       {error && <p className="text-[11px] text-sys-red">{error}</p>}
       {searching && <ProgressBar value={null} />}
       {results && !searching && (
-        <p className="text-[11px] text-label-3">
+        <p className="rf-read-note">
           {total ? `${total.toLocaleString()} tracks on Openverse (Jamendo, Creative Commons)` : "No tracks found. Try another word, or switch off the commercial filter."}
         </p>
       )}

@@ -90,13 +90,13 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         <>
           <Field label="Model" right={refreshLabel("List the Grok models this key can use", () => void cloud.refresh(() => listXaiModels(settings.xaiKey, AbortSignal.timeout(20000)), settings.xaiKey))}>
             <ModelPicker value={settings.xaiModel} models={cloud.models} onChange={(m) => onChange({ xaiModel: m })} placeholder={DEFAULT_AI_SETTINGS.xaiModel} disabled={disabled} />
-            {cloud.pending && <p className="mt-1 text-[11px] text-label-3">Listing models…</p>}
+            {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
           <Field label="xAI API key">
             <Input type="password" value={settings.xaiKey} onChange={(e) => onChange({ xaiKey: e.target.value })} placeholder="xai-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
           </Field>
-          <p className="text-[11px] text-label-3" data-ai-disclaimer>
+          <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to xAI under its terms and is billed to your key, which stays in this browser and is only sent to api.x.ai. Get a key at console.x.ai. The Ollama option keeps everything on this computer.
           </p>
         </>
@@ -104,13 +104,13 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         <>
           <Field label="Model" right={refreshLabel("List the Gemini models this key can use", () => void cloud.refresh(() => listGeminiModels(settings.geminiKey, AbortSignal.timeout(20000)), settings.geminiKey))}>
             <ModelPicker value={settings.geminiModel} models={cloud.models} onChange={(m) => onChange({ geminiModel: m })} placeholder={DEFAULT_AI_SETTINGS.geminiModel} disabled={disabled} />
-            {cloud.pending && <p className="mt-1 text-[11px] text-label-3">Listing models…</p>}
+            {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
           <Field label="Google AI Studio API key">
             <Input type="password" value={settings.geminiKey} onChange={(e) => onChange({ geminiKey: e.target.value })} placeholder="AIza…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
           </Field>
-          <p className="text-[11px] text-label-3" data-ai-disclaimer>
+          <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to Google under its terms and is billed to your key, which stays in this browser and is only sent to generativelanguage.googleapis.com. Get a key at aistudio.google.com. The Ollama option keeps everything on this computer.
           </p>
         </>
@@ -118,13 +118,13 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         <>
           <Field label="Model" right={refreshLabel("List the Claude models this key can use", () => void cloud.refresh(() => listAnthropicModels(settings.anthropicKey, AbortSignal.timeout(20000)), settings.anthropicKey))}>
             <ModelPicker value={settings.anthropicModel} models={cloud.models} onChange={(m) => onChange({ anthropicModel: m })} placeholder={DEFAULT_AI_SETTINGS.anthropicModel} disabled={disabled} />
-            {cloud.pending && <p className="mt-1 text-[11px] text-label-3">Listing models…</p>}
+            {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
           <Field label="Anthropic API key">
             <Input type="password" value={settings.anthropicKey} onChange={(e) => onChange({ anthropicKey: e.target.value })} placeholder="sk-ant-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
           </Field>
-          <p className="text-[11px] text-label-3" data-ai-disclaimer>
+          <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to Anthropic under its terms and is billed to your key, which stays in this browser and is only sent to api.anthropic.com. Get a key at console.anthropic.com. The Ollama option keeps everything on this computer.
           </p>
         </>
@@ -133,7 +133,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
           <div className="grid grid-cols-2 gap-2">
             <Field label="Model" right={refreshLabel("List the models this key can use", () => void cloud.refresh(() => listOpenAiModels(settings.apiBase, settings.apiKey, AbortSignal.timeout(20000)), settings.apiKey))}>
               <ModelPicker value={settings.apiModel} models={cloud.models} onChange={(m) => onChange({ apiModel: m })} placeholder={DEFAULT_AI_SETTINGS.apiModel} disabled={disabled} />
-              {cloud.pending && <p className="mt-1 text-[11px] text-label-3">Listing models…</p>}
+              {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
               {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
             </Field>
             <Field label="Base URL">
@@ -143,7 +143,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
           <Field label="API key">
             <Input type="password" value={settings.apiKey} onChange={(e) => onChange({ apiKey: e.target.value })} placeholder="sk-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
           </Field>
-          <p className="text-[11px] text-label-3" data-ai-disclaimer>
+          <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to this provider under its terms; your key stays in this browser and is only sent to the base URL above. Works with OpenAI, Groq, OpenRouter, LM Studio and Ollama&apos;s /v1 endpoint. The Ollama option keeps everything on this computer.
           </p>
         </>
@@ -152,7 +152,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
           <div className="grid grid-cols-2 gap-2">
             <Field label="Model" right={onRefresh ? refreshLabel("Refresh local models", onRefresh) : undefined}>
               <ModelPicker value={settings.model} models={models} onChange={(m) => onChange({ model: m })} placeholder={DEFAULT_AI_SETTINGS.model} disabled={disabled} />
-              {modelsPending && !models && <p className="mt-1 text-[11px] text-label-3">Listing the models on this computer…{permissionHint}</p>}
+              {modelsPending && !models && <p className="rf-read-note mt-1">Listing the models on this computer…{permissionHint}</p>}
               {modelsError && <p className="mt-1 text-[11px] text-sys-orange">{modelsError}</p>}
             </Field>
             <Field label="Ollama server">

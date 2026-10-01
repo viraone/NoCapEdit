@@ -18,7 +18,7 @@ export function ColorInput({ label, value, onChange, onReset, className }: { lab
     <div className={cx("flex items-center justify-between gap-2", className)}>
       <span className="caps">{label}</span>
       <div className="flex items-center gap-1.5">
-        <span className="font-mono text-[11px] text-label-3">{toHex(value)}</span>
+        <span className="font-mono text-[11px] text-label-2">{toHex(value)}</span>
         <label className="relative h-7 w-9 cursor-pointer overflow-hidden rounded-md border border-sys-gray3" style={{ background: value }}>
           <input type="color" className="absolute inset-0 h-full w-full cursor-pointer opacity-0" value={toHex(value)} onChange={(e) => onChange(e.target.value)} aria-label={label} />
         </label>

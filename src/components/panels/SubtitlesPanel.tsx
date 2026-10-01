@@ -380,7 +380,7 @@ export function SubtitlesPanel() {
             <option value="wasm">WASM (CPU)</option>
           </Select>
         </Field>
-        <p className="text-[11px] text-label-3">{WHISPER_MODELS.find((m) => m.id === model)?.note}</p>
+        <p className="rf-read-note">{WHISPER_MODELS.find((m) => m.id === model)?.note}</p>
         <Field label="Words per caption" hint="Viral styles like Hormozi read best with 1–2 words; Re-group applies it to existing captions.">
           <div className="flex gap-2">
             <Select value={String(wordsPerCue)} onChange={(e) => setWordsPerCue(Number(e.target.value))} disabled={busy}>
@@ -420,7 +420,7 @@ export function SubtitlesPanel() {
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={job.progress} />
             <p className="text-[11px] text-label-2">{job.message}</p>
-            {job.partial && <p className="max-h-16 overflow-hidden text-[11px] leading-snug text-label-3">{job.partial}</p>}
+            {job.partial && <p className="rf-read-note max-h-16 overflow-hidden">{job.partial}</p>}
             <Button variant="outline" size="sm" onClick={cancel}>
               <Square size={12} /> Cancel
             </Button>
@@ -507,7 +507,7 @@ export function SubtitlesPanel() {
         )}
         {aiError && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{aiError}</p>}
         {highlights && highlights.length === 0 && (
-          <p className="text-[11px] text-label-3">{finder === "ai" ? "The model found no clips that fit this length; try a longer clip length." : "Nothing stood out; try a longer clip length."}</p>
+          <p className="rf-read-note">{finder === "ai" ? "The model found no clips that fit this length; try a longer clip length." : "Nothing stood out; try a longer clip length."}</p>
         )}
         {highlights?.map((h, i) => (
           <div key={i} className="space-y-1.5 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2">
@@ -519,7 +519,7 @@ export function SubtitlesPanel() {
             </div>
             {h.title && <p className="text-[12px] font-semibold leading-snug">{h.title}</p>}
             <p className="line-clamp-3 text-[12px] leading-snug">{h.text}</p>
-            {h.title && h.reasons[0] && <p className="line-clamp-2 text-[11px] leading-snug text-label-3">{h.reasons[0]}</p>}
+            {h.title && h.reasons[0] && <p className="rf-read-note line-clamp-2">{h.reasons[0]}</p>}
             <div className="flex gap-1.5">
               <Button variant="ghost" size="xs" onClick={() => seek(h.start)}>
                 <Play size={11} /> Jump
@@ -563,7 +563,7 @@ export function SubtitlesPanel() {
         <Button variant="secondary" className="w-full" onClick={translate} disabled={busy || !project.cues.length || !canTranslate(sourceLang, project.captions.targetLanguage)}>
           <Languages size={14} /> Translate captions
         </Button>
-        {!canTranslate(sourceLang, project.captions.targetLanguage) && <p className="text-[11px] text-label-3">No on-device model for this language pair yet.</p>}
+        {!canTranslate(sourceLang, project.captions.targetLanguage) && <p className="rf-read-note">No on-device model for this language pair yet.</p>}
         <Toggle checked={project.captions.showTranslated} onChange={(v) => update((p) => void (p.captions.showTranslated = v))} label="Show translated captions" description="Applies to the preview and the export" />
       </PanelSection>
       <PanelSection
@@ -588,7 +588,7 @@ export function SubtitlesPanel() {
                   className={cx("rounded-md border px-2 py-1.5", active ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray4", selected && "ring-1 ring-sys-blue")}
                   onClick={() => select({ kind: "cue", id: cue.id })}
                 >
-                  <div className="mb-1 flex items-center gap-1 text-[10px] tabular-nums text-label-3">
+                  <div className="mb-1 flex items-center gap-1 text-[10px] tabular-nums text-label-2">
                     <button type="button" className="rounded p-0.5 hover:bg-sys-gray4 hover:text-white" onClick={(e) => (e.stopPropagation(), seek(cue.start))} title="Jump to cue">
                       <Play size={10} />
                     </button>

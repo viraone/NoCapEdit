@@ -34,7 +34,7 @@ export function Field({ label, hint, right, children, className }: { label: stri
       </div>
       <FieldControlContext.Provider value={control}>{children}</FieldControlContext.Provider>
       {hint && (
-        <p id={control.hintId} className="mt-1.5 text-[11px] leading-snug text-label-3">
+        <p id={control.hintId} className="rf-read-note mt-1.5">
           {hint}
         </p>
       )}

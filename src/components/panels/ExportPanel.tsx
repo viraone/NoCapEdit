@@ -258,7 +258,7 @@ export function ExportPanel() {
         )}
       </PanelSection>
       <PanelSection>
-        <div className="space-y-1 text-[11px] text-label-3">
+        <div className="rf-read-note space-y-1">
           <p className="flex items-center gap-1.5">
             <Cpu size={12} />
             {engine

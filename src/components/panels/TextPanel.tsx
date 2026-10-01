@@ -96,7 +96,7 @@ export function TextPanel() {
                 >
                   <span className="rounded bg-sys-gray4 px-1 text-[10px] uppercase text-label-2">{t.variant}</span>
                   <span className="min-w-0 flex-1 truncate text-sm">{t.text}</span>
-                  <span className="text-[10px] tabular-nums text-label-3">
+                  <span className="text-[10px] tabular-nums text-label-2">
                     {formatTime(t.start)}–{formatTime(t.end)}
                   </span>
                 </button>

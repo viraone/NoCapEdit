@@ -13,7 +13,7 @@ export function Toggle({ checked, onChange, label, description, disabled }: { ch
     >
       <span>
         <span className="block text-[13px] text-white">{label}</span>
-        {description && <span className="block text-[11px] text-label-3">{description}</span>}
+        {description && <span className="rf-read-note mt-0.5 block">{description}</span>}
       </span>
       <span className={cx("relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors", checked ? "bg-sys-green" : "bg-sys-gray3")}>
         <span className={cx("absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all", checked ? "left-[18px]" : "left-[2px]")} />

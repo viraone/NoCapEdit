@@ -83,7 +83,7 @@ export function TrackControls({ overlay }: { overlay: Overlay }) {
           <Crosshair size={13} /> Track motion from the playhead
         </Button>
       )}
-      <p className="text-[11px] text-label-3">Place the element over the subject, then track: it follows whatever is under its centre until the element ends. Drag it afterwards to adjust the offset.</p>
+      <p className="rf-read-note">Place the element over the subject, then track: it follows whatever is under its centre until the element ends. Drag it afterwards to adjust the offset.</p>
       {error && <p className="text-[11px] text-sys-red">{error}</p>}
     </div>
   );

@@ -63,20 +63,43 @@ export function ClipsPanel() {
 
   return (
     <>
-      <PanelHeader title="Clips" description="Import recordings, order them and split at the playhead." />
+      <PanelHeader
+        title="Clips"
+        body={
+          <ol className="rf-read rf-steps" data-clips-steps>
+            <li>
+              <span>
+                <b>Import</b> recordings or images
+              </span>
+            </li>
+            <li>
+              <span>
+                <b>Order</b> them in the sequence
+              </span>
+            </li>
+            <li>
+              <span>
+                <b>Split</b> at the playhead
+              </span>
+            </li>
+          </ol>
+        }
+      />
       <PanelSection>
         <FileDrop accept="video/*,image/*" multiple onFiles={onFiles} disabled={!!status} className="flex flex-col items-center gap-1.5">
           <Upload size={18} className="text-label-2" />
           <span className="text-[13px] font-semibold">Add video or image files</span>
-          <span className="text-[11px] text-label-3">Drag & drop or click · stays on this device</span>
+          <span className="rf-read-note text-center">
+            Drag & drop or click. <b>Stays on this device.</b>
+          </span>
         </FileDrop>
         {status && (
           <div>
             <ProgressBar value={null} />
-            <p className="mt-1 text-[11px] text-label-2">{status}</p>
+            <p className="rf-read-note mt-1">{status}</p>
           </div>
         )}
-        {error && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{error}</p>}
+        {error && <p className="rf-read-note rf-error whitespace-pre-wrap">{error}</p>}
         {canRecord && (
           <Button variant="secondary" size="sm" className="w-full" onClick={() => setRecording(true)} disabled={!!status}>
             <Video size={13} /> Record screen or camera
@@ -159,7 +182,7 @@ export function ClipsPanel() {
         <Button variant="outline" size="sm" className="w-full" onClick={cleanup} disabled={!!status} title="Delete imported files that nothing in the project uses anymore">
           <Broom size={13} /> Clean up unused media
         </Button>
-        {cleanupNote && <p className="text-[11px] text-label-2">{cleanupNote}</p>}
+        {cleanupNote && <p className="rf-read-note">{cleanupNote}.</p>}
       </PanelSection>
     </>
   );
