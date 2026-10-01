@@ -947,9 +947,15 @@ function StyleScreen({
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
+    // iOS Safari can report 0×0 at loadedmetadata (seen when this screen
+    // comes back after Adjust); the real size arrives with `resize` /
+    // `loadeddata`. A 0×0 size would make every crop "the whole video".
+    const syncDims = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) setDims({ w: video.videoWidth, h: video.videoHeight });
+    };
     const onMeta = () => {
       setDuration(video.duration);
-      setDims({ w: video.videoWidth, h: video.videoHeight });
+      syncDims();
       // iOS Safari shows a black box for a paused video until it has
       // seeked at least once; a tiny seek paints the first frame.
       if (video.currentTime === 0) video.currentTime = 0.01;
@@ -962,6 +968,8 @@ function StyleScreen({
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     video.addEventListener("loadedmetadata", onMeta);
+    video.addEventListener("loadeddata", syncDims);
+    video.addEventListener("resize", syncDims);
     video.addEventListener("seeked", onSeeked);
     // Metadata may already be in by the time this effect runs (blob URLs
     // load instantly) — the event would be missed, so apply it now too.
@@ -973,6 +981,8 @@ function StyleScreen({
       stopped = true;
       cancelAnimationFrame(raf);
       video.removeEventListener("loadedmetadata", onMeta);
+      video.removeEventListener("loadeddata", syncDims);
+      video.removeEventListener("resize", syncDims);
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
@@ -1096,13 +1106,16 @@ function StyleScreen({
       lockHintTimer.current = window.setTimeout(() => {
         lockHintTimer.current = null;
         setLockHint(null);
-      }, 1800);
+      }, 3000);
     }
   };
   // The hint belongs to the zoom and shape it was raised at; a pinch or a new shape retires it.
   const lockHint = lockHintState && lockHintState.zoom === reframe.zoom && lockHintState.format === reframe.format ? lockHintState.which : null;
-  const lockText = (which: "x" | "y" | "both") =>
-    which === "both" ? "Zoom in to move the video" : which === "y" ? "Zoom in to move up and down" : "Zoom in to move left and right";
+  const LOCK_COPY = {
+    y: { title: "Can't move up or down yet", body: "The full height is already in the frame. Pinch to zoom in first." },
+    x: { title: "Can't move sideways yet", body: "The full width is already in the frame. Pinch to zoom in first." },
+    both: { title: "The whole video is in the frame", body: "Pinch to zoom in, then drag to reposition." },
+  } as const;
 
   const formatLabel = FRAME_FORMATS.find((f) => f.id === reframe.format)?.label ?? "Original";
   const summary = `${formatLabel} · ${preset.name} · ${cues.length} captions`;
@@ -1138,15 +1151,20 @@ function StyleScreen({
             <Play size={26} className="translate-x-0.5" />
           </span>
         )}
-        {(dragging || lockHint) && (
-          <span
-            className={cx(
-              "pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur",
-              lockHint ? "bg-brand-500/90 text-white" : "bg-black/70",
-            )}
+        {lockHint ? (
+          <div
+            role="status"
+            className="pointer-events-none absolute inset-x-3 top-3 rounded-2xl bg-black/80 px-3 py-2 text-center shadow-lg ring-1 ring-white/15 backdrop-blur"
           >
-            {lockHint ? lockText(lockHint) : framing ? "Drag to move · pinch to zoom" : "Drag to place captions"}
-          </span>
+            <p className="text-[13px] font-semibold text-white">{LOCK_COPY[lockHint].title}</p>
+            <p className="mt-0.5 text-[11.5px] leading-snug text-white/75">{LOCK_COPY[lockHint].body}</p>
+          </div>
+        ) : (
+          dragging && (
+            <span className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-medium backdrop-blur">
+              {framing ? "Drag to reposition · pinch to zoom" : "Drag to place captions"}
+            </span>
+          )
         )}
         <div
           className="absolute inset-x-0 bottom-0 flex items-center gap-2.5 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-10 text-[12px] tabular-nums"
@@ -1173,12 +1191,12 @@ function StyleScreen({
         {!framing
           ? "Tap to play · drag the caption to move it"
           : lockedX && lockedY
-            ? "Pinch to zoom in, then drag to move the video"
+            ? "The whole video fits · pinch to zoom in to reposition"
             : lockedY
-              ? "Drag left or right · zoom in to move up and down"
+              ? "Drag sideways to reposition · pinch to zoom for up and down"
               : lockedX
-                ? "Drag up or down · zoom in to move left and right"
-                : "Drag the video to move it · pinch to zoom"}
+                ? "Drag up or down to reposition · pinch to zoom for sideways"
+                : "Drag to reposition · pinch to zoom"}
       </p>
 
       {/* Tabs */}
