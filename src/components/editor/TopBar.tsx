@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Folder, MoreHorizontal, Home, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft } from "lucide-react";
+import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2 } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useImportClips } from "@/components/panels/useImportClips";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
@@ -14,6 +14,7 @@ export function TopBar() {
   const project = useEditor((s) => s.project)!;
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
+  const saveState = useEditor((s) => s.saveState);
   const { undo, redo, update, setTool } = useEditor.getState();
   const { onFiles, busy } = useImportClips();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -78,12 +79,16 @@ export function TopBar() {
   };
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 px-2">
-      <div className="flex min-w-0 items-center gap-2">
+    <header className="-mx-2.5 -mt-2.5 mb-0.5 flex h-[56px] shrink-0 items-center gap-3 border-b border-white/10 bg-[#141416] px-[16px]" data-top-bar>
+      <div className="flex min-w-0 items-center gap-[10px]">
+        <Link href="/" className="flex h-[40px] shrink-0 items-center gap-2 rounded-[10px] border border-white/5 bg-sys-gray5 px-[14px] text-[14px] font-semibold text-white hover:bg-sys-gray4" title="All projects" data-projects-link>
+          <ArrowLeft size={17} /> Projects
+        </Link>
+        <span className="h-[24px] w-px shrink-0 bg-white/10" />
         {editing ? (
           <input
             autoFocus
-            className="h-8 w-56 rounded-lg border border-sys-blue bg-sys-gray5 px-2 text-[15px] font-bold focus:outline-none"
+            className="h-[40px] w-[300px] rounded-[10px] border border-sys-blue bg-sys-gray5 px-[10px] text-[19px] font-bold focus:outline-none"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={commitName}
@@ -97,32 +102,49 @@ export function TopBar() {
             aria-label="Project name"
           />
         ) : (
-          <button type="button" className="truncate text-[15px] font-bold tracking-tight hover:text-label-2" onClick={openRename} title="Rename">
-            {project.name}
+          <button type="button" className="group flex min-w-0 items-center gap-2 rounded-[10px] px-1.5 py-1 hover:bg-white/5" onClick={openRename} title="Rename" data-project-title>
+            <span className="truncate text-[19px] font-bold tracking-tight">{project.name}</span>
+            <Pencil size={15} className="shrink-0 text-label-2 opacity-0 transition-opacity group-hover:opacity-100" />
           </button>
         )}
-        <Link href="/" className="rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white" title="All projects">
-          <Folder size={16} />
-        </Link>
+        <span className="flex shrink-0 items-center gap-1 text-[12.5px] text-label-2" aria-live="polite" data-save-state={saveState}>
+          {saveState === "saved" ? (
+            <>
+              <Check size={14} className="text-sys-green" /> Saved
+            </>
+          ) : (
+            <>
+              <Loader2 size={14} className="animate-spin" /> Saving…
+            </>
+          )}
+        </span>
         {project.sourceProjectId && (
-          <Link href={`/editor?id=${project.sourceProjectId}&tool=reels`} className="flex items-center gap-1 rounded-md bg-sys-pink/15 px-2 py-1 text-[11px] font-semibold text-sys-pink hover:bg-sys-pink/25" title="Back to the source video and the list of all its reels" data-back-to-source>
-            <ArrowLeft size={12} /> All reels
+          <Link href={`/editor?id=${project.sourceProjectId}&tool=reels`} className="flex h-[36px] shrink-0 items-center gap-1.5 rounded-[10px] bg-sys-pink/15 px-[12px] text-[13px] font-semibold text-sys-pink hover:bg-sys-pink/25" title="Back to the source video and the list of all its reels" data-back-to-source>
+            <ArrowLeft size={15} /> All reels
           </Link>
         )}
-        <div ref={menuRef} className="relative">
-          <button type="button" className={cx("rounded-md p-1 text-label-2 hover:bg-sys-gray5 hover:text-white", menuOpen && "bg-sys-gray5 text-white")} title="Project menu" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
-            <MoreHorizontal size={16} />
+        <div ref={menuRef} className="relative shrink-0">
+          <button
+            type="button"
+            className={cx("flex h-[40px] items-center gap-1.5 rounded-[10px] px-[12px] text-[14px] font-semibold text-white hover:bg-sys-gray5", menuOpen && "bg-sys-gray5")}
+            title="Project menu"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((o) => !o)}
+            data-project-menu
+          >
+            Project <ChevronDown size={16} className={cx("text-label-2 transition-transform", menuOpen && "rotate-180")} />
           </button>
           {menuOpen && (
-            <div role="menu" className="card absolute left-0 top-8 z-40 w-56 p-1 text-[13px]">
-              <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), openRename())}>
-                <Pencil size={14} /> Rename video
+            <div role="menu" className="card absolute left-0 top-[48px] z-40 w-[260px] p-1.5 text-[14px]">
+              <button type="button" role="menuitem" className="flex w-full items-center gap-[10px] rounded-lg px-[10px] py-[8px] text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), openRename())}>
+                <Pencil size={16} /> Rename video
               </button>
-              <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), replaceRef.current?.click())}>
-                <RefreshCw size={14} /> Replace entire video
+              <button type="button" role="menuitem" className="flex w-full items-center gap-[10px] rounded-lg px-[10px] py-[8px] text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), replaceRef.current?.click())}>
+                <RefreshCw size={16} /> Replace entire video
               </button>
-              <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sys-gray4 disabled:opacity-50" disabled={!project.clips.length} onClick={() => (setMenuOpen(false), useEditor.getState().requestReels())}>
-                <Clapperboard size={14} /> Make reels
+              <button type="button" role="menuitem" className="flex w-full items-center gap-[10px] rounded-lg px-[10px] py-[8px] text-left hover:bg-sys-gray4 disabled:opacity-50" disabled={!project.clips.length} onClick={() => (setMenuOpen(false), useEditor.getState().requestReels())}>
+                <Clapperboard size={16} /> Make reels
               </button>
             </div>
           )}
@@ -154,33 +176,26 @@ export function TopBar() {
             </Button>
           </div>
         </Modal>
-        <span className="mx-1 h-4 w-px bg-sys-gray4" />
-        <Button variant="ghost" size="iconSm" onClick={undo} disabled={!canUndo} title="Undo (⌘Z)">
-          <Undo2 size={14} />
+        <span className="h-[24px] w-px shrink-0 bg-white/10" />
+        <Button variant="ghost" size="iconBar" onClick={undo} disabled={!canUndo} title="Undo (⌘Z)" aria-label="Undo">
+          <Undo2 size={18} />
         </Button>
-        <Button variant="ghost" size="iconSm" onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)">
-          <Redo2 size={14} />
+        <Button variant="ghost" size="iconBar" onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">
+          <Redo2 size={18} />
         </Button>
       </div>
 
-      <div className="mx-auto flex items-center rounded-[10px] bg-sys-gray5 p-0.5">
-        <Link href="/" className={cx("flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold text-label-2 hover:text-white")} title="Home">
-          <Home size={15} />
-        </Link>
-        <span className="flex h-8 items-center rounded-lg bg-sys-gray3 px-4 text-[13px] font-bold text-white">Edit</span>
-      </div>
-
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-[10px]">
         <input ref={fileRef} type="file" accept="video/*,image/*" multiple className="hidden" onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
           if (files.length) onFiles(files);
         }} />
-        <Button variant="secondary" size="md" onClick={() => fileRef.current?.click()} disabled={busy}>
-          <Upload size={15} /> Import clips
+        <Button variant="secondary" size="bar" onClick={() => fileRef.current?.click()} disabled={busy}>
+          <Upload size={17} /> Import clips
         </Button>
-        <Button variant="primary" size="md" onClick={() => setTool("export")}>
-          <Share size={15} /> Export video
+        <Button variant="primary" size="bar" onClick={() => setTool("export")}>
+          <Share size={17} /> Export video
         </Button>
       </div>
     </header>
