@@ -20,6 +20,8 @@ import { useReelStretch, type InOut, type TrimDrag } from "./useReelStretch";
 import { RULER_H, CUE_H, MUSIC_H, DOCK_CHROME_H, STRIP_OVERSCAN, drawRange, videoLaneHeight, visibleWindow } from "./dockLayout";
 
 const EDGE = 7;
+/** Below this width (px) a caption chip has no room for words: it is drawn as a plain bar. */
+const CUE_LABEL_MIN_W = 30;
 /** Vertical inset of a clip block inside the video lane. */
 const CLIP_PAD = 4;
 /** Pointer travel before a press on a clip body becomes a reorder drag. */
@@ -144,10 +146,13 @@ function CueBlock({ cue, pxPerSec, selected, active, showTranslated }: { cue: Ca
   const { update, beginTransaction, endTransaction, select, seek, setTool } = useEditor.getState();
   const drag = useRef<{ mode: "move" | "l" | "r"; startX: number; start: number; end: number; moved: boolean } | null>(null);
   const width = Math.max(4, (cue.end - cue.start) * pxPerSec);
+  // Zoomed out, a caption is a few px wide: letters cut to "i…" mean nothing, a bar shows where speech is.
+  const labelled = width >= CUE_LABEL_MIN_W;
   return (
     <div
       className={cx(
-        "rf-read-face absolute top-1 flex h-[26px] cursor-grab items-center overflow-hidden rounded-md border px-1.5 text-[13px] leading-none select-none",
+        "rf-read-face absolute top-1 flex h-[26px] cursor-grab items-center overflow-hidden border text-[13px] leading-none select-none",
+        labelled ? "rounded-md px-1.5" : "rounded-[3px]",
         active ? "border-sys-blue bg-sys-blue/30 text-white" : "border-sys-teal/50 bg-sys-teal/15 text-white",
         selected && "ring-1 ring-sys-blue",
       )}
@@ -195,7 +200,7 @@ function CueBlock({ cue, pxPerSec, selected, active, showTranslated }: { cue: Ca
         setTool("subtitles");
       }}
     >
-      <span className="truncate">{showTranslated && cue.translatedText ? cue.translatedText : cue.text}</span>
+      {labelled && <span className="truncate">{showTranslated && cue.translatedText ? cue.translatedText : cue.text}</span>}
       <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize" />
       <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize" />
     </div>

@@ -20,7 +20,7 @@ export function TransportBar() {
   const index = useEditor((s) => (clip ? s.project!.clips.findIndex((c) => c.id === clip.id) : -1));
 
   return (
-    <div className="grid h-11 grid-cols-[1fr_auto_1fr] items-center px-3">
+    <div className="grid h-11 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3">
       <div />
       <div className="flex items-center gap-1.5">
         {/* Right by the timeline, so a click that cut the wrong spot is one click to take back. */}
@@ -69,21 +69,24 @@ export function TransportBar() {
           <span className="font-bold text-sys-blue">{formatTimecode(currentTime)}</span> <span className="text-label-3">/</span> <span className="text-label-2">{formatTime(duration)}</span>
         </span>
       </div>
-      <div className="flex items-center justify-end gap-1.5">
+      {/* The clip name gives way (ellipsis) before it ever runs into the time. */}
+      <div className="flex min-w-0 items-center justify-end gap-1.5">
         {clip && (
           <>
-            <span className="mr-1 flex items-center gap-1.5 truncate text-[13px] text-white/75">
-              <Film size={14} /> {clip.name}
+            <span className="mr-1 flex min-w-0 items-center gap-1.5 text-[13px] text-white/75" title={clip.name}>
+              <Film size={14} className="shrink-0" />
+              <span className="truncate">{clip.name}</span>
             </span>
-            <Button variant="secondary" size="md" disabled={index <= 0} onClick={() => update((p) => void moveClip(p, clip.id, -1), { ripple: true })} title="Move this clip earlier">
+            <Button variant="secondary" size="md" className="shrink-0" disabled={index <= 0} onClick={() => update((p) => void moveClip(p, clip.id, -1), { ripple: true })} title="Move this clip earlier">
               <ArrowLeft size={15} /> Earlier
             </Button>
-            <Button variant="secondary" size="md" disabled={index < 0 || index >= clipCount - 1} onClick={() => update((p) => void moveClip(p, clip.id, 1), { ripple: true })} title="Move this clip later">
+            <Button variant="secondary" size="md" className="shrink-0" disabled={index < 0 || index >= clipCount - 1} onClick={() => update((p) => void moveClip(p, clip.id, 1), { ripple: true })} title="Move this clip later">
               <ArrowRight size={15} /> Later
             </Button>
             <Button
               variant="danger"
               size="md"
+              className="shrink-0"
               onClick={() => {
                 let cleared = 0;
                 update((p) => void (cleared = removeClip(p, clip.id).clearedCaptions), { ripple: true });
