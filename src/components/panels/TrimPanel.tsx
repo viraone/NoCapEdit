@@ -248,11 +248,30 @@ export function TrimPanel() {
       <PanelHeader
         title="Trim"
         meta={
-          <span className="tabular-nums">
-            {clip.name} · {formatTime(clip.duration)}
+          <span className="flex min-w-0 gap-1 tabular-nums" title={`${clip.name} · ${formatTime(clip.duration)}`}>
+            <span className="truncate">{clip.name}</span>
+            <span className="shrink-0">· {formatTime(clip.duration)}</span>
           </span>
         }
-        description="Press Play and stop where you want to cut. Everything here works on the highlighted clip, at the playhead."
+        body={
+          <ol className="rf-read rf-steps" data-trim-steps>
+            <li>
+              <span>
+                <b>Play</b>, then stop at the cut
+              </span>
+            </li>
+            <li>
+              <span>
+                <b>Split</b>, or cut before/after
+              </span>
+            </li>
+            <li>
+              <span>
+                Acts on the <b>highlighted clip</b>
+              </span>
+            </li>
+          </ol>
+        }
       />
 
       <PanelSection title="Cut at the playhead">
@@ -283,7 +302,7 @@ export function TrimPanel() {
           </Button>
         ) : (
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
-            <p className="text-[12px]">
+            <p className="rf-read">
               Found <b>{mcScan.fillers}</b> filler word{mcScan.fillers === 1 ? "" : "s"} and <b>{mcScan.gaps}</b> gap{mcScan.gaps === 1 ? "" : "s"} · saves {totalDuration(mcScan.ranges).toFixed(1)} s
             </p>
             <div className="flex gap-2">
@@ -366,7 +385,7 @@ export function TrimPanel() {
             <Upload size={13} /> Load a .cube LUT
           </Button>
         )}
-        {lutError && <p className="text-[11px] text-sys-red">{lutError}</p>}
+        {lutError && <p className="rf-read-note rf-error">{lutError}</p>}
         <Toggle checked={showScopes} onChange={setShowScopes} label="Show scopes" description="Histogram and vectorscope of the preview" />
         {showScopes && <Scopes />}
       </PanelSection>
@@ -384,11 +403,11 @@ export function TrimPanel() {
             />
           ))}
         </div>
-        <p className="text-[12px] leading-snug text-label-2">
-          Zoom Out past 1× shrinks the picture and leaves bands above and below in this colour. Posted to the feed, Instagram crops a 9:16 video to 4:5, so bands mostly get cut off.
+        <p className="rf-read-note">
+          <b>Zoom Out past 1×</b> shrinks the picture and leaves bands above and below in this colour. On the feed, Instagram crops 9:16 to 4:5, so the bands mostly get cut off.
         </p>
-        <p className="text-[12px] leading-snug text-label-2">
-          The bars on the timeline are the sound: tall where you&apos;re talking, flat in the gaps — cut in a gap. Click anywhere on the timeline to jump there.
+        <p className="rf-read-note">
+          The yellow bars on the timeline are the sound: tall where you&apos;re talking, flat in the gaps. <b>Cut in a gap.</b>
         </p>
       </PanelSection>
 
@@ -451,7 +470,7 @@ export function TrimPanel() {
           <PanelSection title="Audio">
             <Slider label="Clip volume" value={clip.volume} min={0} max={2} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => void (c.volume = v), false)} disabled={!clip.hasAudio} {...tx} />
             {clip.audioAssetId ? (
-              <div className="flex items-center justify-between rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[11px] text-sys-green">
+              <div className="flex items-center justify-between rf-read-face rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[13px] text-sys-green">
                 <span>Using cleaned audio ({clip.audioLabel ?? "enhanced"})</span>
                 <Button variant="ghost" size="xs" onClick={() => edit((c) => void ((c.audioAssetId = null), (c.audioLabel = null)))}>
                   <Undo2 size={11} /> Original
@@ -478,7 +497,7 @@ export function TrimPanel() {
           </PanelSection>
           <PanelSection title="Subject cut-out">
         {clip.matte ? (
-          <div className="flex items-center justify-between rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[11px] text-sys-green">
+          <div className="flex items-center justify-between rf-read-face rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[13px] text-sys-green">
             <span>Background removed ({clip.matte.count} masks @ {clip.matte.fps} fps)</span>
             <Button variant="ghost" size="xs" onClick={() => edit((c) => void (c.matte = null))}>
               <Undo2 size={11} /> Restore
@@ -505,7 +524,7 @@ export function TrimPanel() {
 
       <PanelSection title="Auto-reframe">
             {clip.reframe ? (
-              <div className="flex items-center justify-between rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[11px] text-sys-green">
+              <div className="flex items-center justify-between rf-read-face rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[13px] text-sys-green">
                 <span>Following the subject ({clip.reframe.keyframes.length} keyframes)</span>
                 <Button variant="ghost" size="xs" onClick={() => edit((c) => void (c.reframe = null))}>
                   <Undo2 size={11} /> Static
@@ -522,13 +541,13 @@ export function TrimPanel() {
             {job && (
               <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
                 <ProgressBar value={job.progress} />
-                <p className="text-[11px] text-label-2">{job.message}</p>
+                <p className="rf-read-note">{job.message}</p>
                 <Button variant="outline" size="xs" onClick={() => abortRef.current?.abort()}>
                   <Square size={11} /> Cancel
                 </Button>
               </div>
             )}
-            {jobError && <p className="text-[11px] text-sys-red">{jobError}</p>}
+            {jobError && <p className="rf-read-note rf-error">{jobError}</p>}
           </PanelSection>
         </>
       )}

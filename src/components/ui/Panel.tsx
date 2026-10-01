@@ -5,8 +5,9 @@ export function PanelHeader({ title, description, body, meta, actions }: { title
   return (
     <div className="sticky top-0 z-10 border-b border-sys-gray5 bg-sys-gray6/95 px-4 pb-3 pt-3.5 backdrop-blur">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="caps">{title}</h2>
-        <div className="flex items-center gap-2 text-[11px] text-label-2">
+        <h2 className="caps shrink-0">{title}</h2>
+        {/* Meta (a clip name, a count) shortens with an ellipsis rather than wrapping. */}
+        <div className="flex min-w-0 items-center gap-2 text-[11px] text-label-2">
           {meta}
           {actions}
         </div>
