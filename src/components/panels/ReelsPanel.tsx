@@ -352,28 +352,48 @@ export function ReelsPanel() {
     const backHref = `/editor?id=${project.sourceProjectId}&tool=reels`;
     return (
       <>
-        <PanelHeader title="Reels" description={`You're editing Reel ${project.reel?.index} of ${sourceName ? `"${sourceName}"` : "the source video"}. Click another reel below to switch to it, or go back to the source video to make more.`} />
+        <PanelHeader
+          title="Reels"
+          body={
+            <>
+              <p className="rf-read">
+                You&apos;re editing <b>Reel {project.reel?.index}</b> of {sourceName ? <b>&ldquo;{sourceName}&rdquo;</b> : "the source video"}.
+              </p>
+              <p className="rf-read-note mt-1.5">Click another reel below to switch, or go back to the source video to make more.</p>
+            </>
+          }
+        />
         <PanelSection>
           <Button variant="primary" size="md" className="w-full min-w-0" onClick={() => router.push(backHref)} data-all-reels title={`Back to ${sourceName ? `"${sourceName}"` : "the source video"} and the list of all its reels`}>
             <ArrowLeft size={14} className="shrink-0" />
             {/* A long source name ellipsizes instead of running past the end of the button. */}
             <span className="min-w-0 truncate">All reels{sourceName ? ` · ${sourceName}` : ""}</span>
           </Button>
-          <p className="text-[11px] text-label-3">The source video keeps the full transcript; Make reels there adds to this list. The same link sits at the top of the screen.</p>
+          <p className="rf-read-note">
+            The source keeps the <b>full transcript</b>. Make reels there adds to this list.
+          </p>
         </PanelSection>
         {canStretch && (canStretch.before > 0.05 || canStretch.after > 0.05) && (
           <PanelSection title="Want more of the moment?">
-            <p className="text-[11px] leading-snug text-label-2" data-reel-stretch-hint>
-              On the timeline, drag either end of the clip out past where it stops. The video and sound come back from the source, captions included. Still there: {formatTime(canStretch.before)} before this reel and {formatTime(canStretch.after)} after it.
-            </p>
+            <div className="space-y-1.5" data-reel-stretch-hint>
+              <p className="rf-read">
+                <b>Drag either end</b> of the clip on the timeline past where it stops. Video, sound and captions come back from the source.
+              </p>
+              <p className="rf-read-note">
+                Still there: <b className="rf-mono">{formatTime(canStretch.before)}</b> before, <b className="rf-mono">{formatTime(canStretch.after)}</b> after.
+              </p>
+            </div>
           </PanelSection>
         )}
         {(isEmptyReel(project) || job || error || note) && (
           <PanelSection title={isEmptyReel(project) ? "This reel is empty" : undefined}>
             {isEmptyReel(project) && !job && (
               <>
-                <p className="flex items-start gap-1.5 text-[11px] leading-snug text-sys-orange" data-empty-reel>
-                  <AlertTriangle size={12} className="mt-0.5 shrink-0" /> Its cut didn&apos;t finish, so there is no video here. Cut it again from the source video (no model needed), or delete it from the source&apos;s list.
+                <p className="rf-read flex items-start gap-2" data-empty-reel>
+                  <AlertTriangle size={15} className="mt-[3px] shrink-0 text-sys-orange" />
+                  <span>
+                    <b>The cut didn&apos;t finish</b>, so there&apos;s no video here. Cut it again (no model needed), or delete it from the source&apos;s list.
+                  </span>
                 </p>
                 <Button variant="primary" size="sm" className="w-full" onClick={() => void recut(project)} data-recut-current>
                   <RefreshCw size={13} /> Cut this reel again
@@ -394,7 +414,14 @@ export function ReelsPanel() {
   if (!aiAvailable) {
     return (
       <>
-        <PanelHeader title="Reels" description="Reels are cut by a model served by Ollama on your own machine; nothing leaves it." />
+        <PanelHeader
+          title="Reels"
+          body={
+            <p className="rf-read">
+              A model in <b>Ollama on your own computer</b> cuts the reels. <b>Nothing leaves it.</b>
+            </p>
+          }
+        />
         <PanelSection>
           <EmptyState
             icon={<Clapperboard size={20} />}
@@ -417,7 +444,7 @@ export function ReelsPanel() {
               </Button>
             }
           />
-          <p className="text-[11px] leading-snug text-label-3">
+          <p className="rf-read-note">
             Terminal, before opening this site: <code className="rounded bg-sys-gray4 px-1">OLLAMA_ORIGINS={typeof location !== "undefined" ? location.origin : "https://nocapedit.com"} ollama serve</code> (or set that variable for the Ollama app).
           </p>
         </PanelSection>
@@ -427,7 +454,34 @@ export function ReelsPanel() {
 
   return (
     <>
-      <PanelHeader title="Reels" description={`${activeModel(aiSettings)} reads the transcript, picks the best moments and cuts each into its own ${format.ratio} reel with captions carried over. Every reel opens and exports on its own.`} />
+      <PanelHeader
+        title="Reels"
+        body={
+          <>
+            <ol className="rf-read rf-steps" data-reels-steps>
+              <li>
+                <span>
+                  <b>Reads</b> your transcript{" "}
+                  <span className="whitespace-nowrap">
+                    with <span className="rf-mono">{activeModel(aiSettings)}</span>
+                  </span>
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Picks</b> the best moments
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Cuts</b> each into its own {format.ratio} reel, captions included
+                </span>
+              </li>
+            </ol>
+            <p className="rf-read-note mt-2.5">Every reel opens and exports on its own.</p>
+          </>
+        }
+      />
       <PanelSection title="Cut reels">
         <div className="grid grid-cols-2 gap-2">
           <Field label="How many">
@@ -456,8 +510,11 @@ export function ReelsPanel() {
         {!hasCues && project.clips.length > 0 && (
           needCaptions ? (
             <div className="space-y-2 rounded-lg border border-sys-orange/40 bg-sys-orange/10 p-2.5" role="status" data-reels-need-captions>
-              <p className="flex items-start gap-1.5 text-[12px] leading-snug text-white">
-                <Captions size={13} className="mt-0.5 shrink-0 text-sys-orange" /> Add subtitles first. The model picks the moments by reading the transcript, and this video has no captions yet.
+              <p className="rf-read flex items-start gap-2">
+                <Captions size={15} className="mt-[3px] shrink-0 text-sys-orange" />
+                <span>
+                  <b>Add subtitles first.</b> The model picks moments by reading the transcript, and this video has none yet.
+                </span>
               </p>
               {captionJob ? (
                 <div className="space-y-1.5" data-caption-job>
@@ -479,14 +536,24 @@ export function ReelsPanel() {
                       <Captions size={13} /> Open Subtitles
                     </Button>
                   </div>
-                  <p className="text-[11px] leading-snug text-label-3">Do this for me transcribes on this device with the default model and then cuts the reels, all from here. Open Subtitles to pick the model, language or speaker detection yourself first.</p>
+                  <ul className="rf-read-note space-y-1">
+                    <li>
+                      <b>Do this for me</b> transcribes on this device, then cuts the reels.
+                    </li>
+                    <li>
+                      <b>Open Subtitles</b> to choose the model, language or speakers first.
+                    </li>
+                  </ul>
                   {captionError && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{captionError}</p>}
                 </>
               )}
             </div>
           ) : (
-            <p className="flex items-start gap-1.5 text-[11px] leading-snug text-label-3">
-              <Captions size={12} className="mt-0.5 shrink-0" /> No captions yet. Make reels needs subtitles: the model reads the transcript to pick the moments.
+            <p className="rf-read-note flex items-start gap-2">
+              <Captions size={14} className="mt-[2px] shrink-0" />
+              <span>
+                <b>No captions yet.</b> Make reels needs them: the model reads the transcript to pick the moments.
+              </span>
             </p>
           )
         )}
@@ -495,7 +562,9 @@ export function ReelsPanel() {
       </PanelSection>
       <PanelSection title="Model">
         <AiModelFields settings={aiSettings} onChange={updateAi} disabled={!!job} permissionHint={permissionHint} models={models} modelsError={modelsError} modelsPending={modelsPending} onRefresh={() => void refreshModels()} />
-        <p className="text-[11px] text-label-3">Default settings: {DEFAULT_REEL_SETTINGS.count} reels of about {DEFAULT_REEL_SETTINGS.targetSeconds} s.</p>
+        <p className="rf-read-note">
+          Default: <b>{DEFAULT_REEL_SETTINGS.count} reels</b> of about <b>{DEFAULT_REEL_SETTINGS.targetSeconds} s</b> each.
+        </p>
       </PanelSection>
       <PanelSection title={`Reels${reels.length ? ` (${reels.length})` : ""}`}>
         {reels.length === 0 ? (

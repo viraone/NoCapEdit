@@ -6,7 +6,7 @@
  * their own key, and is told plainly that the transcript leaves the device.
  */
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, ShieldCheck } from "lucide-react";
 import { DEFAULT_AI_SETTINGS, listAnthropicModels, listGeminiModels, listOllamaModels, listOpenAiModels, listXaiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
 import { Field, Input } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
@@ -159,8 +159,11 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
               <Input value={settings.endpoint} onChange={(e) => onChange({ endpoint: e.target.value })} placeholder={DEFAULT_AI_SETTINGS.endpoint} spellCheck={false} disabled={disabled} aria-label="Ollama server" />
             </Field>
           </div>
-          <p className="text-[11px] text-label-3" data-ai-disclaimer>
-            Everything runs on this computer; nothing leaves it.
+          <p className="rf-read-note flex items-start gap-2" data-ai-disclaimer>
+            <ShieldCheck size={14} className="mt-[2px] shrink-0 text-sys-green" />
+            <span>
+              Runs on this computer. <b>Nothing leaves it.</b>
+            </span>
           </p>
         </>
       )}

@@ -220,3 +220,75 @@ body {
 .rf-panel .text-\[13px\] { font-size: 14px; }
 .rf-panel .text-\[15px\] { font-size: 16px; }
 
+
+/* Reading text: sentences people are meant to read and remember, as opposed
+   to labels, controls and numbers, which stay monospace.
+   - Proportional type: monospace is measurably slower to read in running text.
+     Apple's system face keeps it in the family of the Apple system theme.
+   - 15.5 px with 1.5 line spacing (the WCAG 1.4.12 spacing), short lines.
+   - Contrast well past 4.5:1. Near-white rather than pure white, which glares
+     on a dark ground. --color-label-3 (about 2.3:1) is too faint for reading.
+   - Bold carries the key word of each line (signalling); numbered steps chunk
+     a process (segmenting). Both measurably help people recall what they read. */
+.rf-read {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 15.5px;
+  line-height: 1.5;
+  letter-spacing: -0.003em;
+  color: rgba(235, 235, 245, 0.84);
+}
+.rf-read b,
+.rf-read strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+.rf-read code,
+.rf-read .rf-mono {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  letter-spacing: 0;
+}
+/* Supporting line under reading text: smaller, still comfortably legible. */
+.rf-read-note {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: rgba(235, 235, 245, 0.66);
+}
+.rf-read-note b,
+.rf-read-note strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+}
+.rf-read-note .rf-mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+/* Numbered steps: the number in a small system-blue disc, text hanging beside it. */
+.rf-steps {
+  counter-reset: rf-step;
+  display: grid;
+  gap: 0.45rem;
+}
+.rf-steps > li {
+  counter-increment: rf-step;
+  display: grid;
+  grid-template-columns: 1.4rem 1fr;
+  column-gap: 0.55rem;
+  align-items: start;
+}
+.rf-steps > li::before {
+  content: counter(rf-step);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-top: 0.05rem;
+  border-radius: 999px;
+  background: rgba(10, 132, 255, 0.18);
+  color: #409cff;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}

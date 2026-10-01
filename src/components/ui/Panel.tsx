@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cx } from "@/lib/utils/cx";
 
-export function PanelHeader({ title, description, meta, actions }: { title: string; description?: string; meta?: ReactNode; actions?: ReactNode }) {
+export function PanelHeader({ title, description, body, meta, actions }: { title: string; description?: string; /** Formatted reading text in place of the one-line description. */ body?: ReactNode; meta?: ReactNode; actions?: ReactNode }) {
   return (
     <div className="sticky top-0 z-10 border-b border-sys-gray5 bg-sys-gray6/95 px-4 pb-3 pt-3.5 backdrop-blur">
       <div className="flex items-center justify-between gap-3">
@@ -12,6 +12,7 @@ export function PanelHeader({ title, description, meta, actions }: { title: stri
         </div>
       </div>
       {description && <p className="mt-2 text-[12px] leading-snug text-label-2">{description}</p>}
+      {body && <div className="mt-2.5">{body}</div>}
     </div>
   );
 }
