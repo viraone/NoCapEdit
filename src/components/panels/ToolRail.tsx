@@ -18,18 +18,36 @@ const TOOLS: { id: ToolId; label: string; icon: React.ComponentType<{ size?: num
 ];
 
 /**
- * The rail sizes itself to the height it gets: large tiles and 12 px labels
- * when there is room, the tighter original size on a normal screen, and
- * icons only (scrolling inside the card, no scrollbar) when the timeline is
- * dragged so tall that not even those fit.
+ * The rail fills the height it gets. Every tool gets an equal share of it;
+ * its tile and icon grow to use that share (up to a cap), and labels appear
+ * once a share has room for one under the tile. A timeline dragged very tall
+ * still leaves small tiles that scroll inside the card.
  */
-type Size = "lg" | "md" | "sm";
-/** Height one tool needs at each size (button plus gap, measured in Chromium: 78 and 57 px) and the card padding around the column. */
-const NEEDS: Record<Size, { tool: number; pad: number }> = { lg: { tool: 78, pad: 16 }, md: { tool: 57, pad: 12 }, sm: { tool: 0, pad: 12 } };
-export function railSize(height: number): Size {
-  if (height >= TOOLS.length * NEEDS.lg.tool + NEEDS.lg.pad) return "lg";
-  if (height >= TOOLS.length * NEEDS.md.tool + NEEDS.md.pad) return "md";
-  return "sm";
+export interface RailLayout {
+  labels: boolean;
+  /** Icon tile, px square. */
+  tile: number;
+  icon: number;
+  /** Rail width, px. */
+  width: number;
+  /** Vertical padding inside each tool button, px. */
+  padY: number;
+}
+const RAIL_PAD = 8;
+const GAP = 4;
+/** Below this share per tool (px) a label would shrink the tile under 44 px: icons only, as big as they fit. */
+const LABEL_SHARE = 80;
+export function railLayout(height: number, tools = TOOLS.length): RailLayout {
+  const share = (height - RAIL_PAD * 2) / tools;
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.floor(v)));
+  if (share >= LABEL_SHARE) {
+    // Button: padding 6 + tile + 4 + 16 px label line + padding 6, then the gap.
+    const tile = clamp(share - GAP - 32, 44, 48);
+    return { labels: true, tile, icon: Math.round(tile * 0.54), width: Math.max(88, tile + 44), padY: 6 };
+  }
+  // Button: padding 3 + tile + padding 3, then the gap.
+  const tile = clamp(share - GAP - 6, 26, 50);
+  return { labels: false, tile, icon: Math.round(tile * 0.54), width: tile + 22, padY: 3 };
 }
 
 export function ToolRail() {
@@ -37,23 +55,24 @@ export function ToolRail() {
   const setTool = useEditor((s) => s.setTool);
   const hasClips = useEditor((s) => (s.project?.clips.length ?? 0) > 0);
   const ref = useRef<HTMLElement>(null);
-  const [size, setSize] = useState<Size>("md");
+  const [height, setHeight] = useState(560);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => setSize(railSize(e.contentRect.height)));
+    // The nav is stretched to the row's height, so its own height is what the tools may fill.
+    const ro = new ResizeObserver(([e]) => setHeight(e.contentRect.height + RAIL_PAD * 2));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const lg = size === "lg";
-  const compact = size === "sm";
+  const lay = railLayout(height);
   return (
     <nav
       ref={ref}
-      className={cx("card no-scrollbar flex min-h-0 shrink-0 flex-col items-stretch overflow-y-auto", lg ? "w-[92px] gap-1.5 p-2" : "w-[76px] p-1.5", size === "md" && "gap-1", compact && "gap-0.5")}
+      className="card no-scrollbar flex min-h-0 shrink-0 flex-col items-stretch overflow-y-auto"
+      style={{ width: lay.width, padding: RAIL_PAD, gap: GAP }}
       aria-label="Tools"
-      data-size={size}
-      data-compact={compact || undefined}
+      data-labels={lay.labels || undefined}
+      data-tile={lay.tile}
     >
       {TOOLS.map(({ id, label, icon: Icon, color }) => {
         const active = tool === id;
@@ -62,16 +81,16 @@ export function ToolRail() {
             key={id}
             type="button"
             onClick={() => setTool(id)}
-            className={cx("relative flex shrink-0 flex-col items-center rounded-[10px] px-1 font-semibold transition-colors", lg ? "gap-1.5 py-2.5 text-[13px] leading-tight" : "gap-1 text-[11.5px] leading-tight", size === "md" && "py-1.5", compact && "py-1", active ? "" : "hover:bg-sys-gray5")}
+            className={cx("relative flex shrink-0 flex-col items-center gap-1 rounded-[12px] px-1 font-semibold leading-tight transition-colors", lay.tile >= 42 ? "text-[13px]" : "text-[12px]", active ? "" : "hover:bg-sys-gray5")}
             title={label}
-            style={active ? { background: `${color}22`, color } : { color: "rgba(235,235,245,0.75)" }}
+            style={{ paddingTop: lay.padY, paddingBottom: lay.padY, ...(active ? { background: `${color}22`, color } : { color: "rgba(235,235,245,0.75)" }) }}
             aria-current={active ? "page" : undefined}
           >
-            <span className={cx("flex items-center justify-center", lg ? "h-11 w-11 rounded-xl" : "h-8 w-8 rounded-lg")} style={{ background: active ? color : `${color}26`, color: active ? "#000" : color }}>
-              <Icon size={lg ? 24 : 19} />
+            <span className="flex items-center justify-center" style={{ width: lay.tile, height: lay.tile, borderRadius: Math.round(lay.tile * 0.27), background: active ? color : `${color}26`, color: active ? "#000" : color }}>
+              <Icon size={lay.icon} />
             </span>
-            {!compact && label}
-            {id === "clips" && hasClips && <span className={cx("absolute h-1.5 w-1.5 rounded-full bg-sys-blue", lg ? "right-2.5 top-2" : "right-2 top-1.5")} />}
+            {lay.labels && label}
+            {id === "clips" && hasClips && <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-sys-blue ring-2 ring-[#1c1c1e]" />}
           </button>
         );
       })}
