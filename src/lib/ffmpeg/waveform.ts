@@ -47,11 +47,12 @@ function resampleLinear(input: Float32Array, from: number, to: number): Float32A
  * at `sampleRate`. Returns null when the file has no decodable audio.
  */
 export async function decodeAudio(blob: Blob, sampleRate = SPEECH_SAMPLE_RATE): Promise<DecodedAudio | null> {
-  const data = await blob.arrayBuffer();
+  // decodeAudioData takes ownership of the bytes, so a retry reads the file
+  // again rather than keeping a second copy of it in memory the whole time
+  // (a 10-minute 4K phone video is over 1.5 GB).
   const attempt = async (rate: number) => {
     const ctx = new OfflineAudioContext(1, 1, rate);
-    const decoded = await ctx.decodeAudioData(data.slice(0));
-    return decoded;
+    return ctx.decodeAudioData(await blob.arrayBuffer());
   };
   let buffer: AudioBuffer | null = null;
   try {

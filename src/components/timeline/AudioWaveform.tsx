@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getPeaks, type PeaksRecord } from "@/lib/storage/db";
 import { onAssetReady } from "@/lib/media/events";
+import { ensurePeaks, type BackfillResult } from "@/lib/media/peaksBackfill";
 import { stripScale, type StripWindow } from "./dockLayout";
 
 const cache = new Map<string, Promise<PeaksRecord | undefined>>();
@@ -12,6 +13,14 @@ function loadPeaks(assetId: string, force = false) {
   return p;
 }
 
+const MISSING_LABEL: Record<"drawing" | BackfillResult, string | null> = {
+  drawing: "Drawing the waveform…",
+  ready: null,
+  "no-audio": "No waveform: this audio could not be read",
+  "too-large": "No waveform: the file is over 2 GB",
+  missing: "No waveform: the media file is missing",
+};
+
 /**
  * Mirrored peak bars for the clip's trimmed range, drawn on a canvas. Only
  * the `visible` part of the block gets a canvas (the whole block when it is
@@ -21,15 +30,30 @@ function loadPeaks(assetId: string, force = false) {
 export function AudioWaveform({ assetId, inPoint, outPoint, width, height, color = "rgba(52,211,153,0.85)", visible }: { assetId: string; inPoint: number; outPoint: number; width: number; height: number; color?: string; visible?: StripWindow }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [peaks, setPeaks] = useState<PeaksRecord | undefined>();
+  /** Set while peaks are missing: "drawing" until the background decode settles, then why it could not. */
+  const [missing, setMissing] = useState<"drawing" | BackfillResult | null>(null);
   const x0 = visible?.x0 ?? 0;
   const x1 = Math.min(width, visible?.x1 ?? width);
   const cssW = Math.max(0, x1 - x0);
 
   useEffect(() => {
     let alive = true;
-    loadPeaks(assetId).then((p) => alive && setPeaks(p));
+    loadPeaks(assetId).then((p) => {
+      if (!alive) return;
+      setPeaks(p);
+      if (p) return setMissing(null);
+      // Import skipped it (a very large file) or the asset never went through import
+      // (cleaned-up audio, a cut reel): decode it now, in the background.
+      setMissing("drawing");
+      ensurePeaks(assetId).then((r) => alive && setMissing(r === "ready" ? null : r));
+    });
     const off = onAssetReady("peaks", (id) => {
-      if (id === assetId) loadPeaks(assetId, true).then((p) => alive && setPeaks(p));
+      if (id !== assetId) return;
+      loadPeaks(assetId, true).then((p) => {
+        if (!alive) return;
+        setPeaks(p);
+        if (p) setMissing(null);
+      });
     });
     return () => {
       alive = false;
@@ -65,5 +89,15 @@ export function AudioWaveform({ assetId, inPoint, outPoint, width, height, color
   }, [peaks, inPoint, outPoint, width, height, color, x0, x1, cssW]);
 
   if (cssW <= 0) return null;
-  return <canvas ref={canvasRef} className="pointer-events-none absolute bottom-0" style={{ left: x0, width: cssW, height }} />;
+  const label = missing ? MISSING_LABEL[missing] : null;
+  return (
+    <>
+      <canvas ref={canvasRef} className="pointer-events-none absolute bottom-0" style={{ left: x0, width: cssW, height }} />
+      {label && (
+        <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 truncate rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-label-2" style={{ left: x0 + 6, maxWidth: Math.max(0, cssW - 12) }} data-waveform-status={missing}>
+          {label}
+        </span>
+      )}
+    </>
+  );
 }

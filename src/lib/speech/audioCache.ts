@@ -1,4 +1,5 @@
 import { decodeAudio, type DecodedAudio } from "@/lib/ffmpeg/waveform";
+import { savePeaksIfMissing } from "@/lib/media/savePeaks";
 
 const cache = new Map<string, Promise<DecodedAudio | null>>();
 const MAX_ENTRIES = 3;
@@ -8,6 +9,8 @@ export function getSpeechAudio(assetId: string, blob: Blob): Promise<DecodedAudi
   const hit = cache.get(assetId);
   if (hit) return hit;
   const p = decodeAudio(blob).catch(() => null);
+  // The timeline waveform comes from the same samples, so a file import skipped gets one now.
+  void p.then((d) => d && savePeaksIfMissing(assetId, d)).catch(() => undefined);
   cache.set(assetId, p);
   if (cache.size > MAX_ENTRIES) {
     const first = cache.keys().next().value;
