@@ -351,7 +351,33 @@ export function SubtitlesPanel() {
 
   return (
     <>
-      <PanelHeader title="Subtitles" description="Speech recognition and translation run on this device. Models download once and are cached." />
+      <PanelHeader
+        title="Subtitles"
+        body={
+          <>
+            <ol className="rf-read rf-steps" data-subtitles-steps>
+              <li>
+                <span>
+                  <b>Generate</b> captions from speech
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Translate</b> them if you need to
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Edit</b> any line in the list below
+                </span>
+              </li>
+            </ol>
+            <p className="rf-read-note mt-2.5">
+              Runs on this device. <b>Models download once</b>, then stay cached.
+            </p>
+          </>
+        }
+      />
       <PanelSection title="Auto captions">
         <div className="grid grid-cols-2 gap-2">
           <Field label="Model">
@@ -419,15 +445,15 @@ export function SubtitlesPanel() {
         ) : (
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={job.progress} />
-            <p className="text-[11px] text-label-2">{job.message}</p>
+            <p className="rf-read-note">{job.message}</p>
             {job.partial && <p className="rf-read-note max-h-16 overflow-hidden">{job.partial}</p>}
             <Button variant="outline" size="sm" onClick={cancel}>
               <Square size={12} /> Cancel
             </Button>
           </div>
         )}
-        {error && <p className="text-[11px] text-sys-red">{error}</p>}
-        {notice && <p className="text-[11px] text-sys-green">{notice}</p>}
+        {error && <p className="rf-read-note rf-error">{error}</p>}
+        {notice && <p className="rf-read-note rf-ok">{notice}</p>}
         <div className="flex items-center gap-2">
           <label className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-label-2 hover:text-white">
             <FileUp size={12} /> Import .srt
@@ -497,28 +523,33 @@ export function SubtitlesPanel() {
         {aiJob && (
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
             <ProgressBar value={null} />
-            <p className="text-[11px] text-label-2">
-              {aiJob.message} · {aiElapsed} s
+            <p className="rf-read-note">
+              {aiJob.message} · <span className="rf-mono">{aiElapsed} s</span>
             </p>
             <Button variant="outline" size="sm" onClick={() => aiAbortRef.current?.abort()}>
               <Square size={12} /> Cancel
             </Button>
           </div>
         )}
-        {aiError && <p className="whitespace-pre-wrap text-[11px] text-sys-red">{aiError}</p>}
+        {aiError && <p className="rf-read-note rf-error whitespace-pre-wrap">{aiError}</p>}
         {highlights && highlights.length === 0 && (
           <p className="rf-read-note">{finder === "ai" ? "The model found no clips that fit this length; try a longer clip length." : "Nothing stood out; try a longer clip length."}</p>
         )}
         {highlights?.map((h, i) => (
           <div key={i} className="space-y-1.5 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2">
-            <div className="flex items-center justify-between text-[11px] text-label-2">
+            <div className="flex items-center justify-between text-[12px] text-white/70">
               <span className="tabular-nums">
                 {formatTime(h.start)} – {formatTime(h.end)} · {Math.round(h.end - h.start)} s
               </span>
               {h.title ? <span className="tabular-nums font-semibold text-sys-yellow">{h.score}/10</span> : <span>{h.reasons.slice(0, 2).join(" · ")}</span>}
             </div>
-            {h.title && <p className="text-[12px] font-semibold leading-snug">{h.title}</p>}
-            <p className="line-clamp-3 text-[12px] leading-snug">{h.text}</p>
+            {h.title && (
+              <p className="rf-read">
+                <b>{h.title}</b>
+              </p>
+            )}
+            {/* The spoken words, in the reading face like the caption chips. */}
+            <p className="rf-read-note line-clamp-3">&ldquo;{h.text}&rdquo;</p>
             {h.title && h.reasons[0] && <p className="rf-read-note line-clamp-2">{h.reasons[0]}</p>}
             <div className="flex gap-1.5">
               <Button variant="ghost" size="xs" onClick={() => seek(h.start)}>

@@ -279,6 +279,10 @@ body {
 .rf-read-note.rf-error {
   color: #ff453a;
 }
+/* A success said in reading text: system green. */
+.rf-read-note.rf-ok {
+  color: #30d158;
+}
 /* Numbered steps: the number in a small system-blue disc, text hanging beside it. */
 .rf-steps {
   counter-reset: rf-step;
