@@ -68,7 +68,33 @@ export function TextPanel() {
 
   return (
     <>
-      <PanelHeader title="Text" description="Titles and banners. Drag them on the preview; double-click to edit." />
+      <PanelHeader
+        title="Text"
+        body={
+          <>
+            <ol className="rf-read rf-steps" data-text-steps>
+              <li>
+                <span>
+                  <b>Add</b> a title or banner below
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Drag</b> it into place on the preview
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Double-click</b> it to change the words
+                </span>
+              </li>
+            </ol>
+            <p className="rf-read-note mt-2.5">
+              New text starts <b>at the playhead</b>.
+            </p>
+          </>
+        }
+      />
       <PanelSection>
         <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" onClick={() => add("title")} disabled={!project.clips.length}>
@@ -81,7 +107,7 @@ export function TextPanel() {
       </PanelSection>
       <PanelSection title="Layers">
         {texts.length === 0 ? (
-          <EmptyState icon={<Type size={20} />} title="No text yet" description="Add a title or banner at the playhead." />
+          <EmptyState icon={<Type size={20} />} title="No text yet" description="Press + Title or + Banner above." />
         ) : (
           <ul className="space-y-1">
             {texts.map((t) => (
@@ -94,9 +120,10 @@ export function TextPanel() {
                   }}
                   className={cx("flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left", selected?.id === t.id ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray4 hover:border-sys-gray3")}
                 >
-                  <span className="rounded bg-sys-gray4 px-1 text-[10px] uppercase text-label-2">{t.variant}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{t.text}</span>
-                  <span className="text-[10px] tabular-nums text-label-2">
+                  <span className="rounded bg-sys-gray4 px-1.5 py-0.5 text-[11px] font-semibold uppercase text-white/75">{t.variant}</span>
+                  {/* The words themselves, in the reading face. */}
+                  <span className="rf-read-face min-w-0 flex-1 truncate text-[14px] text-white">{t.text}</span>
+                  <span className="text-[12px] tabular-nums text-white/70">
                     {formatTime(t.start)}–{formatTime(t.end)}
                   </span>
                 </button>
