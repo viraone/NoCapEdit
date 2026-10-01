@@ -1122,12 +1122,16 @@ function StyleScreen({
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* Preview: a box in the output shape, the video cropped inside it */}
+      {/* Preview: a box in the output shape, the video cropped inside it.
+          On the Frame tab the rest of the video shows through, dimmed,
+          around the box, so you can see what you're framing. */}
+      <div className={cx("relative overflow-hidden", framing && "-mx-1 px-1 py-2")}>
       <div
         ref={frameRef}
         className={cx(
-          "relative mx-auto touch-none select-none overflow-hidden rounded-[24px] bg-black shadow-[0_20px_50px_rgba(0,0,0,0.6)]",
-          dragging && "ring-2 ring-brand-400",
+          "relative mx-auto touch-none select-none rounded-[24px] bg-black shadow-[0_20px_50px_rgba(0,0,0,0.6)]",
+          framing ? "overflow-visible" : "overflow-hidden",
+          dragging && !framing && "ring-2 ring-brand-400",
         )}
         style={{ aspectRatio: String(aspect), width: `min(100%, calc(56dvh * ${aspect}))` }}
         onPointerDown={onPointerDown}
@@ -1136,7 +1140,16 @@ function StyleScreen({
         onPointerCancel={onPointerUp}
       >
         <video ref={videoRef} src={`${fileUrl}#t=0.1`} playsInline preload="auto" className="absolute max-w-none bg-black object-fill" style={videoStyle} />
-        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+        {framing && (
+          // The frame's edge, and a dark veil over everything outside it
+          // (a spread shadow, clipped by the wrapper). Lighter while dragging.
+          <div
+            aria-hidden
+            className={cx("pointer-events-none absolute inset-0 rounded-[24px] border-2 transition-[box-shadow]", dragging ? "border-brand-400" : "border-white")}
+            style={{ boxShadow: `0 0 0 100vmax rgba(0,0,0,${dragging ? 0.5 : 0.78})` }}
+          />
+        )}
+        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full overflow-hidden rounded-[24px]" />
         {framing && (
           // Rule-of-thirds guide while reframing.
           <div aria-hidden className="pointer-events-none absolute inset-0 opacity-40">
@@ -1167,7 +1180,7 @@ function StyleScreen({
           )
         )}
         <div
-          className="absolute inset-x-0 bottom-0 flex items-center gap-2.5 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-10 text-[12px] tabular-nums"
+          className="absolute inset-x-0 bottom-0 flex items-center gap-2.5 rounded-b-[24px] bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-10 text-[12px] tabular-nums"
           onPointerDown={(e) => e.stopPropagation()}
         >
           <button type="button" onClick={togglePlay} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 backdrop-blur" aria-label={playing ? "Pause" : "Play"}>
@@ -1186,6 +1199,7 @@ function StyleScreen({
           />
           <span className="w-9 text-label-2">{fmtTime(duration)}</span>
         </div>
+      </div>
       </div>
       <p className="mt-2 text-center text-[11px] text-label-3">
         {!framing
