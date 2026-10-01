@@ -1147,7 +1147,8 @@ function StyleScreen({
           framing ? "overflow-visible" : "overflow-hidden",
           dragging && !framing && "ring-2 ring-brand-400",
         )}
-        style={{ aspectRatio: String(aspect), width: `min(100%, calc(56dvh * ${aspect}))` }}
+        // Tall frames (9:16, 4:5) get more of the screen height; wide ones are bound by the width anyway.
+        style={{ aspectRatio: String(aspect), width: `min(100%, calc(${aspect < 1 ? 62 : 56}dvh * ${aspect}))` }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -1254,16 +1255,20 @@ function StyleScreen({
                     aria-label={`Frame ${f.label}`}
                     onClick={() => setReframe({ ...DEFAULT_REFRAME, format: f.id })}
                     className={cx(
-                      "flex h-[84px] w-[92px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border bg-[#141416] transition active:scale-[0.97]",
+                      "flex h-[58px] shrink-0 items-center gap-2.5 rounded-2xl border bg-[#141416] pl-3 pr-4 transition active:scale-[0.97]",
                       active ? "border-brand-400 shadow-[0_0_0_3px_rgba(64,156,255,0.25)]" : "border-white/[0.06]",
                     )}
                   >
-                    <span
-                      className={cx("block rounded-[4px] border-2", active ? "border-brand-400" : "border-white/50")}
-                      style={ratio >= 1 ? { width: 30, height: 30 / ratio } : { height: 30, width: 30 * ratio }}
-                    />
-                    <span className="text-[13px] font-semibold leading-none">{f.label}</span>
-                    <span className="text-[10px] leading-none text-label-3">{f.hint}</span>
+                    <span className="grid h-7 w-7 shrink-0 place-items-center">
+                      <span
+                        className={cx("block rounded-[4px] border-2", active ? "border-brand-400" : "border-white/50")}
+                        style={ratio >= 1 ? { width: 26, height: 26 / ratio } : { height: 26, width: 26 * ratio }}
+                      />
+                    </span>
+                    <span className="flex flex-col items-start gap-1">
+                      <span className="text-[13px] font-semibold leading-none">{f.label}</span>
+                      <span className="whitespace-nowrap text-[10px] leading-none text-label-3">{f.hint}</span>
+                    </span>
                   </button>
                 );
               })}
@@ -1389,8 +1394,8 @@ function StyleScreen({
       </div>
 
       <ActionBar>
-        <PrimaryButton onClick={onExport}>
-          <Sparkles size={18} /> Export video
+        <PrimaryButton onClick={onExport} className="h-12! text-[16px]!">
+          <Sparkles size={16} /> Export video
         </PrimaryButton>
         <p className="mt-2 text-center text-[11px] text-label-3">{summary}</p>
       </ActionBar>
