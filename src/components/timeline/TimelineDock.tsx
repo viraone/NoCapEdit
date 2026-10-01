@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, ArrowLeftRight, MessageSquare, AudioLines } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, ArrowLeftRight, MessageSquare, AudioLines, Trash2 } from "lucide-react";
 import { TransportBar } from "@/components/canvas/TransportBar";
 import { useEditor } from "@/store/editorStore";
 import { layoutClips, type ClipLayout } from "@/lib/models/timeline";
 import type { CaptionCue, Clip } from "@/lib/models/project";
-import { reorderClip, splitClipAt, splitTarget } from "@/lib/models/clipOps";
+import { captionsClearedNotice, removeClip, reorderClip, splitClipAt, splitTarget } from "@/lib/models/clipOps";
 import { playCutSound } from "@/lib/audio/uiSounds";
 import { formatTime } from "@/lib/utils/time";
 import { clamp } from "@/lib/utils/math";
@@ -221,6 +221,7 @@ function ClipBlock({
   view,
   onCut,
   cutHover,
+  onRemove,
 }: {
   layout: ClipLayout;
   layouts: ClipLayout[];
@@ -243,6 +244,8 @@ function ClipBlock({
   onCut: (t: number) => void;
   /** The pointer is over a spot a click would cut: the arrow replaces the grab hand. */
   cutHover: boolean;
+  /** The trash button on the block was clicked: remove this clip. */
+  onRemove: () => void;
 }) {
   const { update, beginTransaction, endTransaction, select, setTool } = useEditor.getState();
   const { clip } = layout;
@@ -271,9 +274,10 @@ function ClipBlock({
   return (
     <div
       className={cx(
-        "absolute top-1 overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
+        "group absolute top-1 overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
         dragging ? "cursor-grabbing opacity-60" : cutHover ? "cursor-default" : "cursor-grab",
-        selected || active ? "border-sys-blue" : "border-sys-gray4",
+        // Blue means selected: what Remove and Delete act on. The clip under the playhead only gets a faint outline.
+        selected ? "border-sys-blue" : active ? "border-white/30" : "border-sys-gray4",
       )}
       style={{ left: layout.start * pxPerSec, width, height: blockH }}
       data-clip={clip.id}
@@ -371,6 +375,28 @@ function ClipBlock({
         <div className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-sys-purple/80 px-1 text-[11px] text-white" title={`${clip.transition.type} ${clip.transition.duration}s`}>
           <ArrowLeftRight size={9} /> {clip.transition.type}
         </div>
+      )}
+      {width >= 44 && (
+        <button
+          type="button"
+          className={cx(
+            "absolute right-2 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-black/70 text-white/85 shadow transition-opacity hover:bg-sys-red hover:text-white focus-visible:opacity-100",
+            selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          )}
+          title="Remove this clip"
+          aria-label={`Remove ${clip.name}`}
+          data-clip-remove={clip.id}
+          // Its own press: no select, no drag, no cut.
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+        >
+          <Trash2 size={13} />
+        </button>
       )}
       <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availBefore, "before")} data-trim-handle="l" />
       <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availAfter, "after")} data-trim-handle="r" />
@@ -478,7 +504,15 @@ export function TimelineDock() {
     playCutSound();
     seek(t);
     setHover(null);
-    setNotice(`Cut the clip at ${formatTime(t)}. Press ⌘Z to undo.`);
+    setNotice(`Cut at ${formatTime(t)}. To remove a piece, hover it and click its trash button. Undo takes the cut back.`);
+  };
+  /** The trash button on a clip block: remove that clip and close the gap. */
+  const removeAt = (id: string) => {
+    let cleared = 0;
+    update((p) => void (cleared = removeClip(p, id).clearedCaptions), { ripple: true });
+    select(null);
+    setHover(null);
+    setNotice(cleared ? captionsClearedNotice(cleared) : "Removed the clip. Undo brings it back.");
   };
   const [dropX, setDropX] = useState<number | null>(null);
   /** clientX where a press on an audio block began, so a click (not a drag) cuts. */
@@ -571,7 +605,8 @@ export function TimelineDock() {
               if (hover) setHover(null);
               return;
             }
-            const cut = !scrubbing.current && dropX === null && !stretch.job && e.buttons === 0 && cuttableAt(layouts, t, pxPerSec) !== null;
+            const overButton = (e.target as Element).closest?.("[data-clip-remove]") !== null;
+            const cut = !overButton && !scrubbing.current && dropX === null && !stretch.job && e.buttons === 0 && cuttableAt(layouts, t, pxPerSec) !== null;
             setHover({ x: t * pxPerSec, time: t, layout: l, cut });
           }}
           onPointerLeave={() => setHover(null)}
@@ -630,6 +665,7 @@ export function TimelineDock() {
                   view={view}
                   onCut={cutAt}
                   cutHover={!!hover?.cut && hover.layout.clip.id === layout.clip.id}
+                  onRemove={() => removeAt(layout.clip.id)}
                 />
               ))}
               {dropX !== null && <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-sys-blue shadow-[0_0_6px_rgba(10,132,255,0.9)]" data-drop-indicator style={{ left: dropX }} />}
