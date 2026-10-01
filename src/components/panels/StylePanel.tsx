@@ -44,7 +44,33 @@ export function StylePanel() {
 
   return (
     <>
-      <PanelHeader title="Caption style" description={`${CAPTION_PRESETS.length} presets with a per-word accent highlight. Changes apply to every caption.`} />
+      <PanelHeader
+        title="Caption style"
+        body={
+          <>
+            <ol className="rf-read rf-steps" data-style-steps>
+              <li>
+                <span>
+                  <b>Pick</b> one of {CAPTION_PRESETS.length} presets below
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Adjust</b> size, position and colours
+                </span>
+              </li>
+              <li>
+                <span>
+                  Applies to <b>every caption</b>
+                </span>
+              </li>
+            </ol>
+            <p className="rf-read-note mt-2.5">
+              The <b>accent colour</b> marks the word being spoken.
+            </p>
+          </>
+        }
+      />
       {PRESET_CATEGORIES.map((cat) => (
         <PanelSection key={cat.id} title={cat.name}>
           <div className="grid grid-cols-3 gap-2">
@@ -54,15 +80,16 @@ export function StylePanel() {
                 type="button"
                 onClick={() => set((s) => void (s.presetId = p.id))}
                 className={cx(
-                  "flex h-16 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border bg-sys-gray4 px-1",
+                  "flex h-[76px] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg border bg-sys-gray4 px-1",
                   style.presetId === p.id ? "border-sys-blue ring-1 ring-sys-blue/60" : "border-sys-gray4 hover:border-sys-gray2",
                 )}
                 title={p.name}
               >
-                <span className="text-[13px] leading-tight" style={previewStyle(p)}>
+                {/* One line always, so a wide preview (Black box) can't push its name out of the tile. */}
+                <span className="whitespace-nowrap text-[13px] leading-tight" style={previewStyle(p)}>
                   Word <span style={{ color: p.accent }}>up</span>
                 </span>
-                <span className="text-[10px] text-label-2">{p.name}</span>
+                <span className="max-w-full truncate text-[12px] font-semibold text-white/75">{p.name}</span>
               </button>
             ))}
           </div>
