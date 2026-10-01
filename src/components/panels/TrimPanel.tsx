@@ -279,7 +279,7 @@ export function TrimPanel() {
         )}
         {!mcScan ? (
           <Button variant="secondary" size="sm" className="w-full" onClick={scanMagicCut} disabled={mcBusy || !project.clips.length}>
-            <Wand2 size={13} /> {mcBusy ? "Scanning…" : "Scan for filler words & dead air"}
+            <Wand2 size={13} /> {mcBusy ? "Scanning…" : "Scan for fillers & dead air"}
           </Button>
         ) : (
           <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">

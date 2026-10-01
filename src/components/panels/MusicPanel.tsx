@@ -147,7 +147,7 @@ export function MusicPanel() {
           ))}
         </TileGrid>
         <Slider label="Effect volume" value={sfxVolume} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={setSfxVolume} />
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2">
           <Button variant="secondary" size="sm" onClick={() => addSfxAt("playhead")} disabled={!project.clips.length}>
             Add at playhead
           </Button>
