@@ -314,7 +314,11 @@ async function testEditor() {
     record("matte.sticker", !!asset && asset.type === "image/png" && asset.transparent > 0 && asset.opaque >= 0, { ms: Date.now() - t1, asset, device, panelText, gpuOff });
 
     await tool(page, "Trim");
-    await page.locator("[data-clip]").first().click({ position: { x: 40, y: 30 } });
+    // Select the clip without clicking it: a click on a timeline clip cuts it there.
+    await page.evaluate(() => {
+      const s = window.__nocap.useEditor.getState();
+      s.select({ kind: "clip", id: s.project.clips[0].id });
+    });
     await aside(page).getByRole("button", { name: /More options/ }).click();
     await aside(page).getByLabel("Mask rate").selectOption("4");
     const t2 = Date.now();
