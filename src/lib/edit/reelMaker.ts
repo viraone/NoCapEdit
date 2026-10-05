@@ -13,7 +13,8 @@ import { layoutClips, locateFrame, toSourceTime } from "@/lib/models/timeline";
 import { fitZoom } from "@/lib/models/clipOps";
 import { deleteProject, getAsset, listProjects, saveProject } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
-import { ffmpegEngine } from "@/lib/ffmpegEngine";
+import { FFmpegHungError, ffmpegEngine } from "@/lib/ffmpegEngine";
+import { withDeadline } from "@/lib/ffmpeg/deadline";
 import { autoReframe } from "@/lib/tracking/autoReframe";
 import { activeModel, findAiHighlights, type AiSettings } from "./aiHighlights";
 import type { Highlight } from "./highlights";
@@ -144,13 +145,35 @@ export interface TrimMediaOptions {
   signal?: AbortSignal;
   /** Share of the cut done so far, 0..1, from ffmpeg's time reports. */
   onProgress?: (fraction: number) => void;
+  /** The engine stalled and the cut is starting over on a fresh one. */
+  onRetry?: () => void;
+  /** Engine start-up messages ("Loading video engine", and a fallback to the standard engine). */
+  onStatus?: (message: string) => void;
 }
 
-/** Re-encodes one range of a clip's source file into a small MP4 at the source resolution. Cancelling stops ffmpeg at once. */
+/** Longest the worker may take to hand back a finished cut, and to answer each housekeeping call after it. */
+const READ_CUT_SECONDS = 90;
+const HOUSEKEEPING_SECONDS = 20;
+
+/**
+ * Re-encodes one range of a clip's source file into a small MP4 at the source resolution. Cancelling stops ffmpeg at once.
+ * A stalled engine (it never starts, goes silent, or stops answering) is recycled and the cut tried once more on a fresh one,
+ * single-threaded when the threaded engine was the one that stalled; a second stall is an error, never an endless wait.
+ */
 export async function trimMedia(blob: Blob, sourceStart: number, seconds: number, o: TrimMediaOptions = {}): Promise<Blob> {
+  try {
+    return await trimMediaOnce(blob, sourceStart, seconds, o);
+  } catch (e) {
+    if (!(e instanceof FFmpegHungError) || o.signal?.aborted) throw e;
+    o.onRetry?.();
+    return trimMediaOnce(blob, sourceStart, seconds, o);
+  }
+}
+
+async function trimMediaOnce(blob: Blob, sourceStart: number, seconds: number, o: TrimMediaOptions): Promise<Blob> {
   const { signal, onProgress } = o;
-  await ffmpegEngine.load();
-  const mounted = await ffmpegEngine.mountInputs([{ name: "reel_src.bin", blob }]);
+  await ffmpegEngine.load(o.onStatus);
+  const mounted = await withDeadline(ffmpegEngine.mountInputs([{ name: "reel_src.bin", blob }]), HOUSEKEEPING_SECONDS * 1000, () => ffmpegEngine.stalled("opening the video"));
   const out = `/reel_${Date.now().toString(36)}.mp4`;
   const onAbort = () => ffmpegEngine.cancel();
   signal?.addEventListener("abort", onAbort, { once: true });
@@ -169,7 +192,7 @@ export async function trimMedia(blob: Blob, sourceStart: number, seconds: number
     );
     if (signal?.aborted) throw abortError();
     if (code !== 0) throw new Error(`Could not cut the reel.\n${ffmpegEngine.recentLogs()}`);
-    const data = (await ffmpegEngine.instance.readFile(out)) as Uint8Array;
+    const data = (await withDeadline(ffmpegEngine.instance.readFile(out), READ_CUT_SECONDS * 1000, () => ffmpegEngine.stalled("reading the finished cut"))) as Uint8Array;
     return new Blob([new Uint8Array(data)], { type: "video/mp4" });
   } catch (e) {
     // A cancel terminates the worker, which surfaces as its own error; report the cancel instead.
@@ -177,13 +200,19 @@ export async function trimMedia(blob: Blob, sourceStart: number, seconds: number
     throw e;
   } finally {
     signal?.removeEventListener("abort", onAbort);
-    // The worker may be gone after a crash; cleanup must not mask the real error.
-    try {
-      await ffmpegEngine.instance.deleteFile(out).catch(() => undefined);
-    } catch {
-      /* engine already recycled */
-    }
-    await mounted.release().catch(() => undefined);
+    // Housekeeping must neither mask the real error nor wait on a worker that has gone quiet: past the limit, recycle it.
+    const tidy = async () => {
+      try {
+        await ffmpegEngine.instance.deleteFile(out).catch(() => undefined);
+      } catch {
+        /* engine already recycled */
+      }
+      await mounted.release().catch(() => undefined);
+    };
+    await withDeadline(tidy(), HOUSEKEEPING_SECONDS * 1000, () => {
+      ffmpegEngine.cancel();
+      return new Error("cleanup stalled");
+    }).catch(() => undefined);
   }
 }
 
@@ -207,7 +236,16 @@ async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeRe
 
   const cutting = { stage: "Cutting the video", detail: `${Math.round(shown.end - shown.start)} s, plus room to stretch either end` };
   o.onProgress?.({ ...cutting, progress: null });
-  const media = await trimMedia(asset.blob, sourceStart, seconds, { signal: o.signal, onProgress: (f) => o.onProgress?.({ ...cutting, progress: f }) });
+  // When the fast engine would not start the standard one does the cut, about ten times slower: say so.
+  let engineNote = "";
+  const media = await trimMedia(asset.blob, sourceStart, seconds, {
+    signal: o.signal,
+    onProgress: (f) => o.onProgress?.({ ...cutting, detail: cutting.detail + engineNote, progress: f }),
+    onStatus: (m) => {
+      if (/did not start/.test(m)) engineNote = " · the standard video engine is slower";
+    },
+    onRetry: () => o.onProgress?.({ stage: "The video engine stalled", detail: "Starting it again and retrying this cut", progress: null }),
+  });
   if (o.signal?.aborted) throw abortError();
 
   const file = new File([media], `${reel.name.replace(/[\\/:*?"<>|]+/g, " ")}.mp4`, { type: "video/mp4" });

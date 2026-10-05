@@ -6,6 +6,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { BASE_PATH } from "@/lib/basePath";
+import { withDeadline } from "./deadline";
 
 const CORE_VERSION = "0.12.10";
 
@@ -74,6 +75,25 @@ async function exists(url: string): Promise<boolean> {
   }
 }
 
+/**
+ * Seconds the engine may take to start. The threaded core pre-starts a pool of
+ * 32 workers and ffmpeg.load() waits until every one has reported ready, with
+ * no limit of its own: one that never does leaves the page waiting forever.
+ * Starting normally takes a second or two. The clock starts only after the
+ * engine's files are downloaded, so a slow connection is never mistaken for a stall.
+ */
+export const LOAD_STALL_SECONDS = 60;
+
+/** The engine did not finish starting in time (see LOAD_STALL_SECONDS). */
+export class FFmpegLoadStalled extends Error {
+  readonly multithreaded: boolean;
+  constructor(multithreaded: boolean) {
+    super(multithreaded ? "The multi-threaded video engine did not start." : "The video engine did not start.");
+    this.name = "FFmpegLoadStalled";
+    this.multithreaded = multithreaded;
+  }
+}
+
 export interface LoadOptions {
   forceSingleThread?: boolean;
   onStatus?: (message: string) => void;
@@ -109,9 +129,29 @@ export async function loadFFmpeg(opts: LoadOptions = {}): Promise<{ ffmpeg: FFmp
       workerURL = mt ? await toBlobURL(`${cdn}/ffmpeg-core.worker.js`, "text/javascript") : undefined;
     }
 
+    // Fetch the engine's files first (a slow connection is a wait, not a stall); ffmpeg.load then finds them in the HTTP cache.
+    if (source === "local") {
+      await Promise.all([coreURL, wasmURL, workerURL].map(async (u) => {
+        if (!u) return;
+        try {
+          await (await fetch(u, { cache: "force-cache" })).arrayBuffer();
+        } catch {
+          /* ffmpeg.load reports a real failure itself */
+        }
+      }));
+    }
+
     const ffmpeg = new FFmpeg();
     if (debugFlag("debug")) ffmpeg.on("log", ({ message }) => console.debug("[ffmpeg]", message));
-    await ffmpeg.load({ classWorkerURL, coreURL, wasmURL, ...(workerURL ? { workerURL } : {}) });
+    await withDeadline(ffmpeg.load({ classWorkerURL, coreURL, wasmURL, ...(workerURL ? { workerURL } : {}) }), LOAD_STALL_SECONDS * 1000, () => {
+      // Kill the half-started worker so it does not linger, and let the next load start clean.
+      try {
+        ffmpeg.terminate();
+      } catch {
+        /* already gone */
+      }
+      return new FFmpegLoadStalled(mt);
+    });
     if (debugFlag("debug")) console.debug("[ffmpeg] loaded", { multithreaded: mt, source, coreURL });
     instance = ffmpeg;
     info = { multithreaded: mt, source };

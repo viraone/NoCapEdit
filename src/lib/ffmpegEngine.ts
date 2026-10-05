@@ -17,7 +17,7 @@
  */
 import type { FFFSType, FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
-import { loadFFmpeg, resetFFmpeg, setSingleThreadPreference, singleThreadPreferred, supportsMultithread, debugFlag, type FFmpegInfo } from "./ffmpeg/loader";
+import { FFmpegLoadStalled, loadFFmpeg, resetFFmpeg, setSingleThreadPreference, singleThreadPreferred, supportsMultithread, debugFlag, type FFmpegInfo } from "./ffmpeg/loader";
 import { parseTrackTiming, renumberFragments, shiftFragments, stripInitSegment, stripTrailingIndex, type TrackTiming } from "./ffmpeg/mp4";
 import type { OutputSink } from "./ffmpeg/sinks";
 
@@ -387,7 +387,18 @@ export class FFmpegEngine {
   }
 
   async load(onStatus?: (message: string) => void): Promise<FFmpegInfo> {
-    const { ffmpeg, info } = await loadFFmpeg({ onStatus, forceSingleThread: this.preferSingleThread });
+    let loaded: Awaited<ReturnType<typeof loadFFmpeg>>;
+    try {
+      loaded = await loadFFmpeg({ onStatus, forceSingleThread: this.preferSingleThread });
+    } catch (e) {
+      // The fast engine never finished starting: remember that, and start the standard one instead.
+      if (!(e instanceof FFmpegLoadStalled) || !e.multithreaded) throw e;
+      this.preferSingleThread = true;
+      setSingleThreadPreference(true);
+      onStatus?.("The fast video engine did not start; using the standard one");
+      loaded = await loadFFmpeg({ onStatus, forceSingleThread: true });
+    }
+    const { ffmpeg, info } = loaded;
     if (this.ffmpeg !== ffmpeg) {
       this.ffmpeg?.off("log", this.logHandler);
       ffmpeg.on("log", this.logHandler);
@@ -395,6 +406,18 @@ export class FFmpegEngine {
       this.info = info;
     }
     return info;
+  }
+
+  /**
+   * A call to the worker never came back. Recycles the engine (the next call
+   * starts a fresh one, single-threaded if this one was threaded) and returns
+   * the error to throw.
+   */
+  stalled(what: string): FFmpegHungError {
+    const multithreaded = !!this.info?.multithreaded;
+    this.cancel();
+    if (multithreaded) this.preferSingleThread = true;
+    return new FFmpegHungError(multithreaded, `The video engine stopped responding while ${what}.`);
   }
 
   get loadedInfo(): FFmpegInfo | null {
