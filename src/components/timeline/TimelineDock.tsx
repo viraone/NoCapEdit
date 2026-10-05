@@ -222,6 +222,7 @@ function ClipBlock({
   onCut,
   cutHover,
   onRemove,
+  cutSide,
 }: {
   layout: ClipLayout;
   layouts: ClipLayout[];
@@ -246,6 +247,8 @@ function ClipBlock({
   cutHover: boolean;
   /** The trash button on the block was clicked: remove this clip. */
   onRemove: () => void;
+  /** Set right after a cut on the half this block is: which way it pulls apart (see .rf-cut animations). */
+  cutSide?: string;
 }) {
   const { update, beginTransaction, endTransaction, select, setTool } = useEditor.getState();
   const { clip } = layout;
@@ -281,6 +284,7 @@ function ClipBlock({
       )}
       style={{ left: layout.start * pxPerSec, width, height: blockH }}
       data-clip={clip.id}
+      data-cut={cutSide}
       onPointerDown={(e) => {
         e.stopPropagation();
         const r = e.currentTarget.getBoundingClientRect();
@@ -502,13 +506,24 @@ export function TimelineDock() {
   const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout; cut: boolean } | null>(null);
   const update = useEditor((s) => s.update);
   const setNotice = useEditor((s) => s.setNotice);
+  /** The cut just made, for the flash, the "Cut" label and the pull-apart of its two halves; cleared after the animation. */
+  const [cutFx, setCutFx] = useState<{ n: number; x: number; time: number; left: string; right: string } | null>(null);
+  const cutCount = useRef(0);
+  const cutSideOf = (id: string) => (cutFx?.left === id ? `l${cutFx.n % 2}` : cutFx?.right === id ? `r${cutFx.n % 2}` : undefined);
+  useEffect(() => {
+    if (!cutFx) return;
+    const id = setTimeout(() => setCutFx(null), 1700);
+    return () => clearTimeout(id);
+  }, [cutFx]);
   /** Splits the clip under project time t (a click on the video or audio lane), with a snip. */
   const cutAt = (t: number) => {
-    if (stretch.job || !cuttableAt(layouts, t, pxPerSec)) return;
-    let ok = false;
-    update((p) => void (ok = splitClipAt(p, t) !== null));
-    if (!ok) return;
+    const target = stretch.job ? null : cuttableAt(layouts, t, pxPerSec);
+    if (!target) return;
+    let newId: string | null = null;
+    update((p) => void (newId = splitClipAt(p, t)));
+    if (!newId) return;
     playCutSound();
+    setCutFx({ n: ++cutCount.current, x: t * pxPerSec, time: t, left: target.clip.id, right: newId });
     seek(t);
     setHover(null);
     setNotice(`Cut at ${formatTime(t)}. To remove a piece, hover it and click its trash button. Undo takes the cut back.`);
@@ -673,6 +688,7 @@ export function TimelineDock() {
                   onCut={cutAt}
                   cutHover={!!hover?.cut && hover.layout.clip.id === layout.clip.id}
                   onRemove={() => removeAt(layout.clip.id)}
+                  cutSide={cutSideOf(layout.clip.id)}
                 />
               ))}
               {dropX !== null && <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-sys-blue shadow-[0_0_6px_rgba(10,132,255,0.9)]" data-drop-indicator style={{ left: dropX }} />}
@@ -688,6 +704,7 @@ export function TimelineDock() {
                   <div
                     key={layout.clip.id}
                     data-audio-clip={layout.clip.id}
+                    data-cut={cutSideOf(layout.clip.id)}
                     className={cx(
                       "absolute top-1 cursor-pointer overflow-hidden rounded-md border bg-sys-yellow/10",
                       selection?.kind === "clip" && selection.id === layout.clip.id ? "border-sys-blue" : "border-sys-yellow/30",
@@ -763,6 +780,15 @@ export function TimelineDock() {
                 <div className="absolute inset-y-0 -left-px w-px bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
                 <div className="absolute -left-[4px] top-0 h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-white" />
                 <div className="absolute -left-[4px] bottom-0 h-0 w-0 border-x-[4px] border-b-[5px] border-x-transparent border-b-white" />
+              </div>
+            )}
+            {/* The cut just made: a bright line along it and a label, so a click is never silent. */}
+            {cutFx && (
+              <div key={cutFx.n} className="pointer-events-none absolute z-30 w-0" style={{ left: cutFx.x, top: RULER_H + CUE_H + CLIP_PAD, height: videoH + audioH - CLIP_PAD * 2 }} data-cut-fx>
+                <div className="rf-cut-flash absolute inset-y-0 -left-[2px] w-1 rounded-full bg-white shadow-[0_0_14px_3px_rgba(255,255,255,0.9),0_0_0_1px_rgba(0,0,0,0.5)]" data-cut-flash />
+                <div className="rf-cut-pop absolute left-0 flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/30 bg-black/85 px-3 py-1 text-[13px] font-semibold text-white shadow-xl" style={{ top: videoH / 2 }} data-cut-pill>
+                  <span className="h-2 w-2 rounded-full bg-sys-red" /> Cut · <span className="tabular-nums">{formatTime(cutFx.time)}</span>
+                </div>
               </div>
             )}
             <Playhead pxPerSec={pxPerSec} scrollRef={scrollRef} height={lanesH} />

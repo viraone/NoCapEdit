@@ -203,6 +203,63 @@ body {
   }
 }
 
+/* A cut made with a click on the timeline: a flash along the cut, a "Cut" label, and the two halves pulling apart and snapping back. */
+@keyframes rf-cut-flash {
+  0% { opacity: 1; transform: scaleY(1.08); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: scaleY(1); }
+}
+@keyframes rf-cut-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  14% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  26% { transform: translate(-50%, -50%) scale(1); }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -62%) scale(1); }
+}
+@keyframes rf-cut-fade {
+  0% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes rf-cut-left {
+  0% { transform: translateX(0); }
+  22% { transform: translateX(-9px); }
+  100% { transform: translateX(0); }
+}
+@keyframes rf-cut-right {
+  0% { transform: translateX(0); }
+  22% { transform: translateX(9px); }
+  100% { transform: translateX(0); }
+}
+.rf-cut-flash {
+  animation: rf-cut-flash 0.8s ease-out forwards;
+  transform-origin: center;
+}
+.rf-cut-pop {
+  animation: rf-cut-pop 1.6s ease-out forwards;
+}
+/* Two copies of each pull-apart under different names, so a second cut right after the first restarts it. */
+@keyframes rf-cut-left-b {
+  0% { transform: translateX(0); }
+  22% { transform: translateX(-9px); }
+  100% { transform: translateX(0); }
+}
+@keyframes rf-cut-right-b {
+  0% { transform: translateX(0); }
+  22% { transform: translateX(9px); }
+  100% { transform: translateX(0); }
+}
+[data-cut] { animation-duration: 0.55s; animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1); }
+[data-cut="l0"] { animation-name: rf-cut-left; }
+[data-cut="l1"] { animation-name: rf-cut-left-b; }
+[data-cut="r0"] { animation-name: rf-cut-right; }
+[data-cut="r1"] { animation-name: rf-cut-right-b; }
+@media (prefers-reduced-motion: reduce) {
+  .rf-cut-flash { animation: rf-cut-fade 0.8s linear forwards; }
+  .rf-cut-pop { animation: rf-cut-fade 1.6s linear forwards; transform: translate(-50%, -50%); }
+  [data-cut] { animation: none !important; }
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
