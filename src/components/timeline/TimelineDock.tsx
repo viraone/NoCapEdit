@@ -512,6 +512,13 @@ export function TimelineDock() {
     const len = duration > 0 ? duration : musicShown;
     setZoom(len > 0 ? (viewW - 80) / len : 80);
   };
+  // Music added to a project with no video yet: zoom out so the whole song is on screen, not just its first seconds.
+  const musicAssetId = music?.assetId ?? null;
+  useEffect(() => {
+    if (musicAssetId && duration === 0) fit();
+    // Only when a song is added: not when the video changes or the window resizes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [musicAssetId]);
   const scrubbing = useRef(false);
   const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout; cut: boolean } | null>(null);
   const update = useEditor((s) => s.update);

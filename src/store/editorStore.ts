@@ -288,7 +288,7 @@ export const useEditor = create<EditorState>()(
     },
     setPlaying: (isPlaying) => set({ isPlaying }),
     select: (selection) => set({ selection }),
-    setTimelineZoom: (timelineZoom) => set({ timelineZoom: Math.min(600, Math.max(10, timelineZoom)) }),
+    setTimelineZoom: (timelineZoom) => set({ timelineZoom: Math.min(600, Math.max(1, timelineZoom)) }),
     fitTimelineHeightToWindow: () => {
       const timelineHeight = readStoredDockHeight(get().timelineHeight);
       if (timelineHeight !== get().timelineHeight) set({ timelineHeight });
