@@ -497,11 +497,21 @@ export function TimelineDock() {
   }, []);
 
   const pxPerSec = zoom;
-  const contentW = Math.max(viewW, duration * pxPerSec + 160);
+  const music = project.music;
+  /** The whole song from its start offset: drawn in full, even past the end of the video. */
+  const songLen = music ? Math.max(0, music.duration - music.startOffset) : 0;
+  /** What the export uses: the song stops where the video ends (looped to fill it when Loop is on). */
+  const musicUsed = music ? (music.loop ? duration : Math.min(duration, songLen)) : 0;
+  const musicShown = music ? Math.max(musicUsed, songLen) : 0;
+  const contentW = Math.max(viewW, Math.max(duration, musicShown) * pxPerSec + 160);
   // The audio lane matches the video lane, so waveforms read at the same scale as the filmstrip.
   const audioH = videoH;
   const lanesH = RULER_H + CUE_H + videoH + audioH + MUSIC_H;
-  const fit = () => setZoom(duration > 0 ? (viewW - 80) / duration : 80);
+  // Fit the video; with no video yet, fit the song.
+  const fit = () => {
+    const len = duration > 0 ? duration : musicShown;
+    setZoom(len > 0 ? (viewW - 80) / len : 80);
+  };
   const scrubbing = useRef(false);
   const [hover, setHover] = useState<{ x: number; time: number; layout: ClipLayout; cut: boolean } | null>(null);
   const update = useEditor((s) => s.update);
@@ -552,8 +562,6 @@ export function TimelineDock() {
     seek(timeAt(e.clientX));
   };
 
-  const music = project.music;
-  const musicWidth = music ? (music.loop ? duration : Math.min(duration, Math.max(0, music.duration - music.startOffset))) * pxPerSec : 0;
 
   return (
     <div className="card flex shrink-0 flex-col overflow-hidden" style={{ height: DOCK_CHROME_H + lanesH }}>
@@ -760,17 +768,35 @@ export function TimelineDock() {
               ))}
               {music && (
                 <div
-                  className="absolute top-1 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-green/50 bg-sys-green/15 px-1.5 text-[12px] text-white"
+                  className="absolute top-1 h-5 cursor-pointer overflow-hidden rounded-md border border-sys-green/50 bg-sys-green/15 text-[12px] text-white"
                   style={{
-                    width: Math.max(6, musicWidth),
-                    backgroundImage: `linear-gradient(to right, rgba(16,185,129,0.05) 0, rgba(16,185,129,0.35) ${music.fadeIn * pxPerSec}px, rgba(16,185,129,0.35) calc(100% - ${music.fadeOut * pxPerSec}px), rgba(16,185,129,0.05) 100%)`,
+                    width: Math.max(6, musicShown * pxPerSec),
+                    // Fades sit on the part the export uses, which ends with the video.
+                    backgroundImage: `linear-gradient(to right, rgba(16,185,129,0.05) 0, rgba(16,185,129,0.35) ${music.fadeIn * pxPerSec}px, rgba(16,185,129,0.35) ${Math.max(music.fadeIn, musicUsed - music.fadeOut) * pxPerSec}px, rgba(16,185,129,0.05) ${musicUsed * pxPerSec}px, rgba(16,185,129,0.05) 100%)`,
                   }}
+                  title={`${music.name} · ${formatTime(songLen)}`}
+                  data-music-block
                   onPointerDown={(e) => {
                     e.stopPropagation();
                     setTool("music");
                   }}
                 >
-                  <Music size={10} className="mr-1 shrink-0" /> <span className="truncate">{music.name}</span>
+                  {musicShown > musicUsed + 0.05 && (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pr-2"
+                      style={{ left: musicUsed * pxPerSec, backgroundImage: "repeating-linear-gradient(135deg, rgba(0,0,0,0.5) 0 5px, rgba(0,0,0,0.25) 5px 10px)" }}
+                      data-music-unused
+                    >
+                      {(musicShown - musicUsed) * pxPerSec > 260 && (
+                        <span className="rf-read-face truncate rounded bg-black/60 px-1.5 text-[12px] text-white/80">{duration > 0 ? "Past the end of the video · not in the export" : "Plays under your video once you add one"}</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="relative flex h-full items-center gap-1 px-1.5">
+                    <Music size={10} className="shrink-0" />
+                    <span className="truncate">{music.name}</span>
+                    <span className="shrink-0 tabular-nums text-white/60">{formatTime(songLen)}</span>
+                  </div>
                 </div>
               )}
             </div>
