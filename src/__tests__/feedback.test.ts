@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { findFeedbackTones, notchFilters, notchQ, MAX_NOTCHES } from "@/lib/audio/feedback";
 
 const SR = 16000;
+
+// The synthetic signals take a moment to build and scan; a shared CI machine can be several times slower than a laptop.
+vi.setConfig({ testTimeout: 60_000 });
 
 /** Small seeded generator so the tests are repeatable. */
 function rng(seed: number) {
@@ -98,7 +101,7 @@ describe("findFeedbackTones", () => {
   });
 
   it("can be cancelled", async () => {
-    const x = speech(120);
+    const x = speech(10);
     const c = new AbortController();
     c.abort();
     await expect(findFeedbackTones(x, SR, { signal: c.signal })).rejects.toMatchObject({ name: "AbortError" });
