@@ -12,6 +12,8 @@ import { getAsset, putAsset } from "@/lib/storage/db";
 import { uid } from "@/lib/utils/id";
 import { Toggle } from "@/components/ui/Toggle";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { useImportClips } from "./useImportClips";
+import { STILL_SECONDS } from "@/lib/media/stillVideo";
 import { formatTime, nowMs } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
@@ -34,6 +36,8 @@ export function PicturePanel() {
   const images = project.overlays.filter((o): o is ImageOverlay | LottieOverlay => o.kind === "image" || o.kind === "lottie");
   const selected = selection?.kind === "overlay" ? images.find((i) => i.id === selection.id) ?? null : null;
   const duration = projectDuration(project.clips);
+  const noVideo = project.clips.length === 0;
+  const clipImport = useImportClips();
   const lottieInputRef = useRef<HTMLInputElement>(null);
   const [bgJob, setBgJob] = useState<{ message: string; progress: number | null } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -92,6 +96,8 @@ export function PicturePanel() {
     }
   };
 
+  /** With nothing on the timeline an image has nothing to sit on, so it becomes a clip (the Clips panel's import); otherwise a sticker. */
+  const onImages = (files: File[]) => (noVideo ? clipImport.onFiles(files) : onFiles(files));
   const onFiles = async (files: File[]) => {
     setError(null);
     for (const file of files) {
@@ -146,20 +152,33 @@ export function PicturePanel() {
         }
       />
       <PanelSection>
-        <FileDrop accept="image/*" multiple onFiles={onFiles} disabled={!project.clips.length} className="flex flex-col items-center gap-1.5">
+        <FileDrop accept="image/*" multiple onFiles={onImages} disabled={clipImport.busy} className="flex flex-col items-center gap-1.5">
           <Upload size={18} className="text-label-2" />
           <span className="text-[13px] font-semibold">Add images</span>
           <span className="text-[12px] text-white/70">PNG, JPG, WebP, GIF</span>
           <span className="rf-read-note">GIFs show their first frame only.</span>
         </FileDrop>
+        {noVideo && !clipImport.status && (
+          <p className="rf-read-note" data-picture-novideo>
+            <b>No video yet,</b> so images you add become <b>clips</b> ({STILL_SECONDS} s each). Once there is something to put them on, new images go on top as stickers.
+          </p>
+        )}
+        {clipImport.status && (
+          <div className="space-y-1.5" data-picture-importing>
+            <ProgressBar value={null} />
+            <p className="rf-read-note">{clipImport.status}</p>
+          </div>
+        )}
+        {clipImport.error && <p className="rf-read-note rf-error whitespace-pre-wrap">{clipImport.error}</p>}
         <input ref={lottieInputRef} type="file" accept=".lottie,.json,application/json" className="hidden" onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
           if (f) addLottie(f);
         }} />
-        <Button variant="secondary" size="sm" className="w-full" onClick={() => lottieInputRef.current?.click()} disabled={!project.clips.length} title="Animated lower thirds, stickers and motion graphics (.lottie or Lottie .json)">
+        <Button variant="secondary" size="sm" className="w-full" onClick={() => lottieInputRef.current?.click()} disabled={noVideo} title={noVideo ? "Needs a video or image to sit on first" : "Animated lower thirds, stickers and motion graphics (.lottie or Lottie .json)"}>
           <Clapperboard size={13} /> Add a Lottie animation
         </Button>
+        {noVideo && <p className="rf-read-note">Animations need a clip to sit on: add an image or a video first.</p>}
         {error && <p className="rf-read-note rf-error">{error}</p>}
       </PanelSection>
       <PanelSection title="Stickers & animations">
