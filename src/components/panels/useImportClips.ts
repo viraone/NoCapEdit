@@ -1,7 +1,7 @@
 "use client";
 import { useEditor } from "@/store/editorStore";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
-import { toClipFile } from "@/lib/media/stillVideo";
+import { isImageFile, toClipFile } from "@/lib/media/stillVideo";
 import { uid } from "@/lib/utils/id";
 import { importErrorText } from "@/lib/media/importFeedback";
 
@@ -39,7 +39,8 @@ export function useImportClips() {
           if (!current()) continue;
           state.registerAsset(assetId, blob);
           const isFirst = useEditor.getState().project?.clips.length === 0;
-          state.update((p) => void p.clips.push(clip));
+          // A picture becomes a still clip whose length can be changed later.
+          state.update((p) => void p.clips.push(isImageFile(raw) ? { ...clip, still: true } : clip));
           if (isFirst) updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
           added++;
         } catch (e) {

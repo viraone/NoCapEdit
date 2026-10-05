@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useMlDevice } from "./useMlDevice";
 import { FeedbackSection } from "./FeedbackSection";
+import { StillLengthSection } from "./StillLengthSection";
 import { mlDeviceLabel } from "@/lib/speech/mlDevice";
 
 const SPEEDS: { value: number; label: string; icon: React.ReactNode }[] = [
@@ -274,6 +275,8 @@ export function TrimPanel() {
           </ol>
         }
       />
+
+      <StillLengthSection clip={clip} project={project} />
 
       <PanelSection title="Cut at the playhead">
         <TileGrid cols={3}>

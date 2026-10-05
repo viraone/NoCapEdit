@@ -24,6 +24,8 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { MusicSearch } from "./MusicSearch";
 import { creditLine, licenseLabel } from "@/lib/stock/openverse";
+import { projectDuration } from "@/lib/models/timeline";
+import { useIsStill, useStillLength } from "./useStillLength";
 
 export function MusicPanel() {
   const project = useProject();
@@ -31,6 +33,12 @@ export function MusicPanel() {
   const tx = useSliderTx();
   const [error, setError] = useState<string | null>(null);
   const music = project.music;
+  // A song longer than a picture-only video: offer to hold the last picture for the whole song.
+  const videoLen = projectDuration(project.clips);
+  const songLen = music ? Math.max(0, music.duration - music.startOffset) : 0;
+  const lastClip = project.clips[project.clips.length - 1];
+  const lastStill = useIsStill(lastClip);
+  const stillLen = useStillLength();
   const selection = useEditor((s) => s.selection);
   const voListRef = useRef<HTMLUListElement>(null);
   // A voice-over picked on the timeline scrolls its row into view.
@@ -280,6 +288,23 @@ export function MusicPanel() {
             )}
             <p className="text-[12px] tabular-nums text-white/70">{formatTime(music.duration)}</p>
           </PanelSection>
+          {lastStill && songLen > videoLen + 0.5 && (
+            <PanelSection title="Song is longer" >
+              <p className="rf-read-note" data-song-longer>
+                The song runs <b>{formatTime(songLen - videoLen)}</b> past your video, and the export stops where the video ends. The last clip is a picture, so it can simply stay on screen longer.
+              </p>
+              <Button variant="primary" size="md" className="w-full" disabled={stillLen.busy} onClick={() => void stillLen.run(lastClip.id, (lastClip.outPoint - lastClip.inPoint) / lastClip.speed + (songLen - videoLen))} data-stretch-picture>
+                Show the picture for the whole song
+              </Button>
+              {stillLen.busy && (
+                <div className="space-y-1.5">
+                  <ProgressBar value={null} />
+                  <p className="rf-read-note">{stillLen.status}</p>
+                </div>
+              )}
+              {stillLen.error && <p className="rf-read-note rf-error whitespace-pre-wrap">{stillLen.error}</p>}
+            </PanelSection>
+          )}
           <PanelSection title="Mix">
             <Slider label="Volume" value={music.volume} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((m) => void (m.volume = v), false)} {...tx} />
             <Slider label="Fade in" value={music.fadeIn} min={0} max={10} step={0.1} format={(v) => `${v.toFixed(1)} s`} onChange={(v) => edit((m) => void (m.fadeIn = v), false)} {...tx} />

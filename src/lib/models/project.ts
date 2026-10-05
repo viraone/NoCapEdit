@@ -98,6 +98,8 @@ export interface Clip {
   reframe?: Reframe | null;
   /** Audio enhancement preset (see lib/audio/fx.ts). */
   audioFx?: "none" | "voice" | "podcast" | "loud" | "music";
+  /** Made from a picture (flyer, photo): a silent video of one frame, whose length can be changed (lib/media/stillLength.ts). */
+  still?: boolean;
   /** Frequencies (Hz) of mic-feedback tones notched out of the clip's audio (see lib/audio/feedback.ts). Empty or absent: none. */
   feedbackNotches?: number[];
   /** Colour grade: optional 3D LUT asset plus ffmpeg-eq style adjustments. */
