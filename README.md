@@ -27,6 +27,10 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
   text-to-speech voice-overs (MMS-TTS via Transformers.js) placed on the timeline.
 - Noise removal per clip with ffmpeg's RNNoise (`arnndn`) and spectral (`afftdn`)
   denoisers; the cleaned track replaces the clip audio in preview and export.
+- **Mic feedback removal** (Trim): finds whistles that sit at one pitch for much of
+  the clip (a steady narrow spectral peak; speech moves, feedback does not) and notches
+  just those pitches out, live in the preview (Web Audio) and in the export (ffmpeg
+  `bandreject`). Stored on the clip as the optional `feedbackNotches` list of Hz.
 - Undo/redo, autosave to IndexedDB, project manager with thumbnails, storage usage.
 - **Magic Cut**: one click removes filler words (from Whisper word timings) and dead
   air (from the waveform), re-timing captions, overlays and voice-overs.

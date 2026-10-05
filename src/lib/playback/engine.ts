@@ -7,6 +7,7 @@ import type { TransitionType, VideoProject } from "@/lib/models/project";
 import { layoutClips, locateFrame, toProjectTime, toSourceTime, type ClipLayout } from "@/lib/models/timeline";
 import { clamp } from "@/lib/utils/math";
 import { audioFx, type AudioFxPreset } from "@/lib/audio/fx";
+import { MAX_NOTCHES, notchQ } from "@/lib/audio/feedback";
 
 interface FxChain {
   source: MediaElementAudioSourceNode;
@@ -14,7 +15,10 @@ interface FxChain {
   peaks: [BiquadFilterNode, BiquadFilterNode];
   compressor: DynamicsCompressorNode;
   gain: GainNode;
-  preset: AudioFxPreset;
+  /** Fixed pool of notch filters for feedback tones; the unused ones are flat. */
+  notches: BiquadFilterNode[];
+  /** Preset and notch frequencies currently set, so an unchanged clip is not touched again. */
+  key: string;
 }
 
 export interface EngineFrame {
@@ -147,9 +151,10 @@ export class PlaybackEngine {
   }
 
   /** Routes a media element through the Web Audio preset chain (created on first play). */
-  private applyFx(el: HTMLMediaElement, preset: AudioFxPreset) {
+  private applyFx(el: HTMLMediaElement, preset: AudioFxPreset, tones: readonly number[] = []) {
+    const plain = preset === "none" && tones.length === 0;
     if (!this.audioCtx) {
-      if (preset === "none") return;
+      if (plain) return;
       try {
         this.audioCtx = new AudioContext();
       } catch {
@@ -159,9 +164,15 @@ export class PlaybackEngine {
     const ctx = this.audioCtx;
     let chain = this.chains.get(el);
     if (!chain) {
-      if (preset === "none") return;
+      if (plain) return;
       try {
         const source = ctx.createMediaElementSource(el);
+        const notches = Array.from({ length: MAX_NOTCHES }, () => {
+          const n = ctx.createBiquadFilter();
+          n.type = "peaking";
+          n.gain.value = 0;
+          return n;
+        });
         const highpass = ctx.createBiquadFilter();
         highpass.type = "highpass";
         const p1 = ctx.createBiquadFilter();
@@ -170,14 +181,29 @@ export class PlaybackEngine {
         p2.type = "peaking";
         const compressor = ctx.createDynamicsCompressor();
         const gain = ctx.createGain();
-        source.connect(highpass).connect(p1).connect(p2).connect(compressor).connect(gain).connect(ctx.destination);
-        chain = { source, highpass, peaks: [p1, p2], compressor, gain, preset: "none" };
+        let tail: AudioNode = source;
+        for (const n of notches) tail = tail.connect(n);
+        tail.connect(highpass).connect(p1).connect(p2).connect(compressor).connect(gain).connect(ctx.destination);
+        chain = { source, highpass, peaks: [p1, p2], compressor, gain, notches, key: "none|" };
         this.chains.set(el, chain);
       } catch {
         return;
       }
     }
-    if (chain.preset === preset) return;
+    const key = `${preset}|${tones.join(",")}`;
+    if (chain.key === key) return;
+    chain.notches.forEach((node, i) => {
+      const f = tones[i];
+      if (f) {
+        node.type = "notch";
+        node.frequency.value = f;
+        node.Q.value = notchQ(f);
+      } else {
+        // Unused: a peaking filter with no gain passes everything unchanged.
+        node.type = "peaking";
+        node.gain.value = 0;
+      }
+    });
     const fx = audioFx(preset).web;
     chain.highpass.frequency.value = fx.highpass ?? 10;
     chain.peaks.forEach((node, i) => {
@@ -193,14 +219,14 @@ export class PlaybackEngine {
     chain.compressor.release.value = c?.release ?? 0.25;
     chain.compressor.knee.value = c?.knee ?? 0;
     chain.gain.gain.value = fx.gain;
-    chain.preset = preset;
+    chain.key = key;
   }
 
   private syncFx() {
     if (!this.project) return;
     for (const clip of this.project.clips) {
       const el = this.clipAudio.get(clip.id) ?? this.videos.get(clip.id);
-      if (el) this.applyFx(el, clip.audioFx ?? "none");
+      if (el) this.applyFx(el, clip.audioFx ?? "none", clip.feedbackNotches ?? []);
     }
   }
 

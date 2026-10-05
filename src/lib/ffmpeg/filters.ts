@@ -7,6 +7,7 @@ import type { Placement } from "@/lib/models/placement";
 import { getGlTransition, isGlTransition } from "@/lib/gl/transitions";
 import { hdrToSdrChain, type SourceColor } from "@/lib/ffmpegEngine";
 import { audioFx } from "@/lib/audio/fx";
+import { notchFilters } from "@/lib/audio/feedback";
 import { isNeutralLook } from "@/lib/models/project";
 
 /** Maps a transition id to an ffmpeg xfade name (GPU shaders fall back to the nearest native effect). */
@@ -199,6 +200,8 @@ function audioChain(c: ClipInputPlan, i: number): string {
     `aresample=${AUDIO_RATE}`,
     ...speedFilters(clip.speed, clip.preservePitch),
     `volume=${num(clip.volume, 3)}`,
+    // Feedback tones come out first, before any compression or loudness work lifts them.
+    ...notchFilters(clip.feedbackNotches),
     ...audioFx(clip.audioFx).ffmpeg,
     AFORMAT,
     `atrim=duration=${dur}`,

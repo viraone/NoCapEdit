@@ -31,6 +31,7 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useMlDevice } from "./useMlDevice";
+import { FeedbackSection } from "./FeedbackSection";
 import { mlDeviceLabel } from "@/lib/speech/mlDevice";
 
 const SPEEDS: { value: number; label: string; icon: React.ReactNode }[] = [
@@ -351,6 +352,10 @@ export function TrimPanel() {
           })}
         </TileGrid>
         <p className="rf-read-note">{AUDIO_FX.find((f) => f.id === (clip.audioFx ?? "none"))?.note}. The preview uses Web Audio; the export uses the matching ffmpeg filters.</p>
+      </PanelSection>
+
+      <PanelSection title="Mic feedback">
+        <FeedbackSection key={clip.id} clip={clip} edit={edit} />
       </PanelSection>
 
       <PanelSection
