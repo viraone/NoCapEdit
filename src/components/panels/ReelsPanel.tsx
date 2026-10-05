@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Clapperboard, FolderOpen, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle, Sparkles } from "lucide-react";
+import { ArrowLeft, Clapperboard, Copy, FolderOpen, KeyRound, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle, Sparkles } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useReelSlack } from "./shared";
@@ -30,6 +30,9 @@ import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 
+/** Seconds without any progress report after which the panel says the cut may be stuck. */
+const STALL_NOTICE_SECONDS = 90;
+
 export function ReelsPanel() {
   const project = useProject();
   const router = useRouter();
@@ -49,7 +52,10 @@ export function ReelsPanel() {
   const permissionHint = isLocalPage ? "" : " Chrome asks whether this site may reach Ollama on your computer: choose Allow in the prompt. If you dismissed it, click the icon left of the address bar, set Local network access to Allow, and reload.";
   const [reels, setReels] = useState<VideoProject[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
-  const [job, setJob] = useState<(ReelProgress & { started: number }) | null>(null);
+  const [job, setJob] = useState<(ReelProgress & { started: number; /** When the last progress report arrived. */ at: number }) | null>(null);
+  /** Seconds since the last progress report: a long quiet spell means the cut is stuck. */
+  const [quiet, setQuiet] = useState(0);
+  const lastReportRef = useRef(0);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -113,11 +119,24 @@ export function ReelsPanel() {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+  // Keyed on the start time, not the whole job: every progress update makes a new job object, and
+  // a timer rebuilt on each one never got to fire while updates came faster than once a second.
+  const jobStarted = job?.started ?? null;
+  const jobAt = job?.at ?? null;
   useEffect(() => {
-    if (!job) return;
-    const id = setInterval(() => setElapsed(Math.round((nowMs() - job.started) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, [job]);
+    lastReportRef.current = jobAt ?? 0;
+  }, [jobAt]);
+  useEffect(() => {
+    if (jobStarted === null) return;
+    const id = setInterval(() => {
+      setElapsed(Math.round((nowMs() - jobStarted) / 1000));
+      setQuiet(Math.round((nowMs() - lastReportRef.current) / 1000));
+    }, 1000);
+    return () => {
+      clearInterval(id);
+      setQuiet(0);
+    };
+  }, [jobStarted]);
   useEffect(() => () => abortRef.current?.abort(), []);
   const cancelCaptions = () => {
     if (!captionAbortRef.current) return;
@@ -140,7 +159,7 @@ export function ReelsPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     setElapsed(0);
-    setJob({ stage: "Starting", progress: null, started: nowMs() });
+    setJob({ stage: "Starting", progress: null, started: nowMs(), at: nowMs() });
     try {
       const result = await makeReels({
         project: useEditor.getState().project!,
@@ -148,7 +167,7 @@ export function ReelsPanel() {
         targetSeconds: settings.targetSeconds,
         settings: aiSettings,
         signal: controller.signal,
-        onProgress: (p) => setJob((j) => (j ? { ...p, started: j.started } : j)),
+        onProgress: (p) => setJob((j) => (j ? { ...p, started: j.started, at: nowMs() } : j)),
       });
       await refreshReels();
       const short = result.found < settings.count ? ` The model only found ${result.found} moment${result.found === 1 ? "" : "s"} that fit ${settings.targetSeconds} s.` : "";
@@ -232,11 +251,11 @@ export function ReelsPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     setElapsed(0);
-    setJob({ stage: "Starting", progress: null, started: nowMs() });
+    setJob({ stage: "Starting", progress: null, started: nowMs(), at: nowMs() });
     try {
       const source = isReel ? await getProject(listOwner) : useEditor.getState().project!;
       if (!source) throw new Error("The source video is no longer on this device.");
-      await recutReel({ source, reel: r, signal: controller.signal, onProgress: (p) => setJob((j) => (j ? { ...p, started: j.started } : j)) });
+      await recutReel({ source, reel: r, signal: controller.signal, onProgress: (p) => setJob((j) => (j ? { ...p, started: j.started, at: nowMs() } : j)) });
       await refreshReels();
       if (r.id === project.id) {
         await useEditor.getState().loadProject(r.id);
@@ -265,6 +284,11 @@ export function ReelsPanel() {
           <Square size={12} /> Cancel
         </Button>
       </div>
+      {quiet >= STALL_NOTICE_SECONDS && (
+        <p className="rf-read-note rf-warn" data-job-stalled>
+          <b>No progress for {formatTime(quiet, false)}.</b> It may be stuck. Press Cancel, then Make reels again. Reels already made are kept.
+        </p>
+      )}
     </div>
   );
 
@@ -412,41 +436,75 @@ export function ReelsPanel() {
   }
 
   if (!aiAvailable) {
+    const origin = typeof location !== "undefined" ? location.origin : "https://nocapedit.com";
+    const command = `OLLAMA_ORIGINS=${origin} ollama serve`;
+    /** Turns the Reels tool on in this browser; `provider` also picks who reads the transcript (Ollama stays the default otherwise). */
+    const enable = (provider?: AiSettings["provider"]) => {
+      try {
+        localStorage.setItem("reelflow.localAi", "1");
+      } catch {
+        /* storage unavailable */
+      }
+      if (provider) updateAi({ provider });
+      setAiAvailable(true);
+    };
     return (
       <>
         <PanelHeader
           title="Reels"
           body={
-            <p className="rf-read">
-              A model in <b>Ollama on your own computer</b> cuts the reels. <b>Nothing leaves it.</b>
+            <p className="rf-read" data-reels-choose>
+              A model <b>reads your transcript</b> and picks the best moments. <b>Choose how it runs.</b>
             </p>
           }
         />
         <PanelSection>
-          <EmptyState
-            icon={<Clapperboard size={20} />}
-            title="Uses Ollama on this computer"
-            description="Install Ollama, pull a model (ollama pull qwen3.8:27b) and start it with OLLAMA_ORIGINS set to this site's address so the browser may call it. Then enable local AI here."
-            action={
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  try {
-                    localStorage.setItem("reelflow.localAi", "1");
-                  } catch {
-                    /* storage unavailable */
-                  }
-                  setAiAvailable(true);
-                }}
-              >
-                Enable local AI in this browser
-              </Button>
-            }
-          />
-          <p className="rf-read-note">
-            Terminal, before opening this site: <code className="rounded bg-sys-gray4 px-1">OLLAMA_ORIGINS={typeof location !== "undefined" ? location.origin : "https://nocapedit.com"} ollama serve</code> (or set that variable for the Ollama app).
-          </p>
+          <div className="space-y-2.5 rounded-xl border border-sys-gray4 bg-sys-gray5/40 p-3" data-reels-option="ollama">
+            <p className="flex items-center justify-between gap-2 text-[13px] font-semibold text-white">
+              <span>Ollama on this computer</span>
+              <span className="shrink-0 rounded bg-sys-green/15 px-1.5 py-0.5 text-[11px] text-sys-green">Free · private</span>
+            </p>
+            <ol className="rf-read-note rf-steps">
+              <li>
+                <span>
+                  <b>Install</b> Ollama from ollama.com
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Pull</b> a model: <span className="rf-mono whitespace-nowrap">ollama pull qwen3.8:27b</span>
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Start</b> it so this site may call it:
+                </span>
+              </li>
+            </ol>
+            <code className="rf-mono block whitespace-pre-wrap rounded-lg border border-sys-gray4 bg-sys-gray5 px-2.5 py-2 text-[12px] leading-snug text-white/85 [overflow-wrap:anywhere]" data-ollama-command>
+              {/* A line break may fall after the "=", so the address stays whole; the copied text has none. */}
+              {command.replace("=", "=\u200b")}
+            </code>
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => navigator.clipboard?.writeText(command).then(() => setNote("Copied the command."))} title="Copy the command">
+              <Copy size={13} /> Copy the command
+            </Button>
+            <Button variant="primary" size="md" className="w-full" onClick={() => enable()} data-use-ollama>
+              <Clapperboard size={14} /> Use Ollama
+            </Button>
+          </div>
+          <div className="space-y-2.5 rounded-xl border border-sys-gray4 bg-sys-gray5/40 p-3" data-reels-option="key">
+            <p className="flex items-center justify-between gap-2 text-[13px] font-semibold text-white">
+              <span>Your own API key</span>
+              <span className="shrink-0 rounded bg-sys-orange/15 px-1.5 py-0.5 text-[11px] text-sys-orange">Billed to you</span>
+            </p>
+            <p className="rf-read-note">
+              <b>Claude, Gemini, Grok</b> or any OpenAI-compatible API. Only the <b>transcript</b> is sent, never the video. Your key <b>stays in this browser</b>.
+            </p>
+            <Button variant="secondary" size="md" className="w-full" onClick={() => enable("anthropic")} data-use-own-key>
+              <KeyRound size={14} /> Use my own key
+            </Button>
+          </div>
+          {note && <p className="rf-read-note rf-ok">{note}</p>}
         </PanelSection>
       </>
     );
