@@ -263,7 +263,7 @@ function ClipBlock({
     return onTrimEnd({ clipId: clip.id, from, to: { inPoint: now.inPoint, outPoint: now.outPoint } });
   };
   // The waveform keeps its 28-of-68 share of the block as the lane grows, within sane bounds.
-  const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null } | null>(null);
+  const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null; onTag: boolean } | null>(null);
   const [dragging, setDragging] = useState(false);
   /** Project time under the pointer, measured against the lane so scrolling is accounted for. */
   const laneTime = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -287,7 +287,8 @@ function ClipBlock({
         const lx = e.clientX - r.left;
         const mode = lx < EDGE ? "l" : lx > r.width - EDGE ? "r" : "none";
         select({ kind: "clip", id: clip.id });
-        drag.current = { mode, startX: e.clientX, inPoint: clip.inPoint, outPoint: clip.outPoint, slot: null };
+        // Where the press began: the block captures the pointer, so the release no longer says.
+        drag.current = { mode, startX: e.clientX, inPoint: clip.inPoint, outPoint: clip.outPoint, slot: null, onTag: (e.target as Element).closest("[data-clip-tag]") !== null };
         e.currentTarget.setPointerCapture(e.pointerId);
         if (mode !== "none") beginTransaction();
       }}
@@ -331,7 +332,9 @@ function ClipBlock({
         if (!d) return;
         if (d.mode === "none") {
           // A click, not a drag: cut here. Touch has no hover to show where, so it only selects.
-          if (e.pointerType !== "touch" && e.button === 0 && Math.abs(e.clientX - d.startX) <= CLICK_SLOP) onCut(laneTime(e));
+          // The name tag and a Shift / Option / ⌘ click only select.
+          const selectOnly = e.shiftKey || e.altKey || e.metaKey || d.onTag;
+          if (!selectOnly && e.pointerType !== "touch" && e.button === 0 && Math.abs(e.clientX - d.startX) <= CLICK_SLOP) onCut(laneTime(e));
           return;
         }
         let stretch: InOut | null = null;
@@ -366,7 +369,11 @@ function ClipBlock({
       </div>
       {geo.left > 0 && <StretchGhost side="l" width={geo.left} seconds={geo.before} />}
       {geo.right > 0 && <StretchGhost side="r" width={geo.right} seconds={geo.after} />}
-      <div className="absolute left-1 top-1 flex items-center gap-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[12px] font-semibold text-white">
+      <div
+        className="absolute left-1 top-1 flex cursor-pointer items-center gap-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[12px] font-semibold text-white hover:bg-black/85 hover:ring-1 hover:ring-white/40"
+        data-clip-tag={clip.id}
+        title="Click to select this clip without cutting it. A click anywhere else on the clip cuts it; Shift-click selects too."
+      >
         <span className="max-w-32 truncate">{clip.name}</span>
         <span className="text-white/70">{formatTime(layout.duration)}</span>
         {clip.speed !== 1 && <span className="text-sys-yellow">{clip.speed}×</span>}
@@ -605,8 +612,8 @@ export function TimelineDock() {
               if (hover) setHover(null);
               return;
             }
-            const overButton = (e.target as Element).closest?.("[data-clip-remove]") !== null;
-            const cut = !overButton && !scrubbing.current && dropX === null && !stretch.job && e.buttons === 0 && cuttableAt(layouts, t, pxPerSec) !== null;
+            const overButton = (e.target as Element).closest?.("[data-clip-remove], [data-clip-tag]") !== null;
+            const cut = !overButton && !e.shiftKey && !e.altKey && !e.metaKey && !scrubbing.current && dropX === null && !stretch.job && e.buttons === 0 && cuttableAt(layouts, t, pxPerSec) !== null;
             setHover({ x: t * pxPerSec, time: t, layout: l, cut });
           }}
           onPointerLeave={() => setHover(null)}
@@ -695,7 +702,7 @@ export function TimelineDock() {
                     onPointerUp={(e) => {
                       const from = audioPress.current;
                       audioPress.current = null;
-                      if (from === null || e.pointerType === "touch" || e.button !== 0 || Math.abs(e.clientX - from) > CLICK_SLOP) return;
+                      if (from === null || e.pointerType === "touch" || e.button !== 0 || e.shiftKey || e.altKey || e.metaKey || Math.abs(e.clientX - from) > CLICK_SLOP) return;
                       const lane = e.currentTarget.parentElement!;
                       cutAt((e.clientX - lane.getBoundingClientRect().left) / pxPerSec);
                     }}
