@@ -9,6 +9,7 @@ import { captionsClearedNotice, removeClip, reorderClip, splitClipAt, splitTarge
 import { playCutSound } from "@/lib/audio/uiSounds";
 import { formatTime } from "@/lib/utils/time";
 import { clamp } from "@/lib/utils/math";
+import { musicLoops, musicSpan, setMusicSpan, setMusicStart } from "@/lib/models/musicTrim";
 import { cx } from "@/lib/utils/cx";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -499,9 +500,9 @@ export function TimelineDock() {
   const pxPerSec = zoom;
   const music = project.music;
   /** The whole song from its start offset: drawn in full, even past the end of the video. */
-  const songLen = music ? Math.max(0, music.duration - music.startOffset) : 0;
+  const songLen = music ? musicSpan(music) : 0;
   /** What the export uses: the song stops where the video ends (looped to fill it when Loop is on). */
-  const musicUsed = music ? (music.loop ? duration : Math.min(duration, songLen)) : 0;
+  const musicUsed = music ? (musicLoops(music) ? duration : Math.min(duration, songLen)) : 0;
   const musicShown = music ? Math.max(musicUsed, songLen) : 0;
   const contentW = Math.max(viewW, Math.max(duration, musicShown) * pxPerSec + 160);
   // The audio lane matches the video lane, so waveforms read at the same scale as the filmstrip.
@@ -556,6 +557,9 @@ export function TimelineDock() {
   const [dropX, setDropX] = useState<number | null>(null);
   /** clientX where a press on an audio block began, so a click (not a drag) cuts. */
   const audioPress = useRef<number | null>(null);
+  /** A drag on the music block's left or right edge: how long the block was and where its trims stood. */
+  const musicDrag = useRef<{ mode: "l" | "r"; startX: number; shown: number; startOffset: number } | null>(null);
+  const { beginTransaction, endTransaction } = useEditor.getState();
   const timeAt = (clientX: number) => {
     const el = scrollRef.current!;
     const r = el.getBoundingClientRect();
@@ -781,13 +785,51 @@ export function TimelineDock() {
                     // Fades sit on the part the export uses, which ends with the video.
                     backgroundImage: `linear-gradient(to right, rgba(16,185,129,0.05) 0, rgba(16,185,129,0.35) ${music.fadeIn * pxPerSec}px, rgba(16,185,129,0.35) ${Math.max(music.fadeIn, musicUsed - music.fadeOut) * pxPerSec}px, rgba(16,185,129,0.05) ${musicUsed * pxPerSec}px, rgba(16,185,129,0.05) 100%)`,
                   }}
-                  title={`${music.name} · ${formatTime(songLen)}`}
+                  title={`${music.name} · ${formatTime(songLen)} · drag an edge to trim`}
                   data-music-block
                   onPointerDown={(e) => {
                     e.stopPropagation();
                     setTool("music");
+                    const r = e.currentTarget.getBoundingClientRect();
+                    const lx = e.clientX - r.left;
+                    const mode = lx < EDGE ? "l" : lx > r.width - EDGE ? "r" : null;
+                    if (!mode) return;
+                    musicDrag.current = { mode, startX: e.clientX, shown: musicShown, startOffset: music.startOffset };
+                    beginTransaction();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const d = musicDrag.current;
+                    if (!d) return;
+                    const dt = (e.clientX - d.startX) / pxPerSec;
+                    update(
+                      (p) => {
+                        const m = p.music;
+                        if (!m) return;
+                        if (d.mode === "l") setMusicStart(m, d.startOffset + dt);
+                        else setMusicSpan(m, d.shown + dt);
+                      },
+                      { history: false },
+                    );
+                  }}
+                  onPointerUp={(e) => {
+                    if (!musicDrag.current) return;
+                    musicDrag.current = null;
+                    endTransaction();
+                    try {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    } catch {
+                      /* not captured */
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    if (!musicDrag.current) return;
+                    musicDrag.current = null;
+                    endTransaction();
                   }}
                 >
+                  <div className="absolute inset-y-0 left-0 z-10 w-[7px] cursor-col-resize touch-none bg-white/40 hover:bg-white/70" data-music-handle="l" />
+                  <div className="absolute inset-y-0 right-0 z-10 w-[7px] cursor-col-resize touch-none bg-white/40 hover:bg-white/70" data-music-handle="r" />
                   {musicShown > musicUsed + 0.05 && (
                     <div
                       className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pr-2"

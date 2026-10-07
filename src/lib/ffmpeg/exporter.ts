@@ -23,6 +23,7 @@ import { even } from "@/lib/utils/math";
 import { safeFilename } from "@/lib/utils/download";
 import { captureFrames, needsCompositor } from "@/lib/playback/compositor";
 import { musicSourceTime } from "@/lib/playback/engine";
+import { musicFadeEnd, musicLoops, musicSpan } from "@/lib/models/musicTrim";
 import {
   ffmpegEngine,
   encoderArgs,
@@ -421,8 +422,8 @@ async function runExport(
           const seek = musicSourceTime(project.music, seg.start);
           if (seek !== null) {
             const { inputSeek, headTrim } = splitMusicSeek(seek);
-            music = { inputIndex: idx++, volume: project.music.volume, fadeIn: project.music.fadeIn, fadeOut: project.music.fadeOut, segmentStart: seg.start, totalDuration: duration, headTrim };
-            musicFile = { path: ctx.inputPath(nameOf.get(project.music.assetId)!), seek: inputSeek, loop: project.music.loop };
+            music = { inputIndex: idx++, volume: project.music.volume, fadeIn: project.music.fadeIn, fadeOut: project.music.fadeOut, segmentStart: seg.start, totalDuration: musicFadeEnd(project.music, duration), headTrim, ...((project.music.endTrim ?? 0) > 0 ? { playLength: Math.max(0, musicSpan(project.music) - seg.start) } : {}) };
+            musicFile = { path: ctx.inputPath(nameOf.get(project.music.assetId)!), seek: inputSeek, loop: musicLoops(project.music) };
           }
         }
         const voiceovers: VoiceoverPlan[] = [];

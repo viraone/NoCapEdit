@@ -84,6 +84,12 @@ describe("buildFilterGraph", () => {
     const { graph } = buildFilterGraph(plan([a], { music: { inputIndex: 1, volume: 1, fadeIn: 0, fadeOut: 0, segmentStart: 0, totalDuration: 30, headTrim: 0 } }));
     expect(graph).not.toContain("atrim=start=");
   });
+  it("stops the music where its trimmed tail ends", () => {
+    const a = clip(10, { hasAudio: false });
+    const { graph } = buildFilterGraph(plan([a], { music: { inputIndex: 1, volume: 1, fadeIn: 0, fadeOut: 2, segmentStart: 0, totalDuration: 6, headTrim: 0, playLength: 6 } }));
+    expect(graph).toContain("(6-t-0)/2");
+    expect(graph).toMatch(/atrim=duration=6,asetpts=PTS-STARTPTS\[mus\]/);
+  });
   it("overlays the caption layer when present", () => {
     const { graph } = buildFilterGraph(plan([clip(3)], { overlayInput: 1 }));
     expect(graph).toContain("[v0][1:v]overlay=x=0:y=0:eof_action=repeat[vov]");

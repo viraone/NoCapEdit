@@ -264,6 +264,8 @@ export interface MusicTrack {
   fadeOut: number;
   /** Seconds trimmed from the head of the music file. */
   startOffset: number;
+  /** Seconds trimmed from the tail of the music file (absent or 0: the song plays to its end). A trimmed tail does not loop. */
+  endTrim?: number;
   loop: boolean;
   /** Attribution for a track found through a Creative Commons library (optional, absent for the user's own files). */
   credit?: { title: string; artist: string; license: string; licenseUrl: string | null; pageUrl: string; source: "openverse" } | null;

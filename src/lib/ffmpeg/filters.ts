@@ -51,8 +51,10 @@ export interface MusicPlan {
   fadeOut: number;
   /** Project time at which this segment starts (fades are global). */
   segmentStart: number;
-  /** Whole project duration (for the fade-out). */
+  /** Project time at which the fade-out ends (the video's end, or an earlier cut of the song). */
   totalDuration: number;
+  /** Seconds of song left at the segment's start when the tail is trimmed; the audio stops there. Absent: plays on. */
+  playLength?: number;
   /**
    * Seconds of extra audio decoded before the segment's real start and then
    * dropped (see MUSIC_SEEK_PREROLL): warms up the MP3 decoder's bit
@@ -266,7 +268,7 @@ export function buildFilterGraph(plan: ExportPlan): { graph: string; vout: strin
   if (plan.music) {
     const m = plan.music;
     const headTrim = m.headTrim > 0 ? `,atrim=start=${num(m.headTrim)}` : "";
-    parts.push(`[${m.inputIndex}:a]aresample=${AUDIO_RATE},${AFORMAT}${headTrim},asetpts=PTS-STARTPTS,volume=volume='${musicGainExpression(m)}':eval=frame,atrim=duration=${dur},asetpts=PTS-STARTPTS[mus]`);
+    parts.push(`[${m.inputIndex}:a]aresample=${AUDIO_RATE},${AFORMAT}${headTrim},asetpts=PTS-STARTPTS,volume=volume='${musicGainExpression(m)}':eval=frame,atrim=duration=${m.playLength !== undefined ? num(Math.min(plan.duration, m.playLength)) : dur},asetpts=PTS-STARTPTS[mus]`);
     mixInputs.push("mus");
   }
   plan.voiceovers.forEach((vo, k) => {

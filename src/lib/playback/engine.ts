@@ -6,6 +6,7 @@
 import type { TransitionType, VideoProject } from "@/lib/models/project";
 import { layoutClips, locateFrame, toProjectTime, toSourceTime, type ClipLayout } from "@/lib/models/timeline";
 import { clamp } from "@/lib/utils/math";
+import { musicFadeEnd, musicLoops, musicSpan } from "@/lib/models/musicTrim";
 import { audioFx, type AudioFxPreset } from "@/lib/audio/fx";
 import { MAX_NOTCHES, notchQ } from "@/lib/audio/feedback";
 
@@ -331,7 +332,8 @@ export class PlaybackEngine {
     if (!m) return 0;
     let g = 1;
     if (m.fadeIn > 0 && t < m.fadeIn) g = Math.min(g, t / m.fadeIn);
-    if (m.fadeOut > 0 && t > this.duration - m.fadeOut) g = Math.min(g, Math.max(0, (this.duration - t) / m.fadeOut));
+    const end = musicFadeEnd(m, this.duration);
+    if (m.fadeOut > 0 && t > end - m.fadeOut) g = Math.min(g, Math.max(0, (end - t) / m.fadeOut));
     return clamp(g * m.volume, 0, 1);
   }
 
@@ -430,11 +432,12 @@ export class PlaybackEngine {
 }
 
 /** Position inside the music file for project time t (null = silence). */
-export function musicSourceTime(m: { duration: number; startOffset: number; loop: boolean }, t: number): number | null {
+export function musicSourceTime(m: { duration: number; startOffset: number; endTrim?: number; loop: boolean }, t: number): number | null {
   const available = m.duration - m.startOffset;
-  if (available <= 0.05 || m.duration <= 0.05) return null;
-  if (t < available) return m.startOffset + t;
-  if (!m.loop) return null;
+  const span = musicSpan(m);
+  if (span <= 0.05 || m.duration <= 0.05) return null;
+  if (t < span) return m.startOffset + t;
+  if (!musicLoops(m)) return null;
   return (t - available) % m.duration;
 }
 

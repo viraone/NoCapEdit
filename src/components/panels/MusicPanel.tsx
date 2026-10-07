@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Upload, Trash2, Music, Mic2, Volume2, Square, Play } from "lucide-react";
+import { Upload, Trash2, Music, Mic2, Volume2, Square, Play, Scissors, RotateCcw } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
 import { importAudio } from "@/lib/media/import";
@@ -26,6 +26,7 @@ import { MusicSearch } from "./MusicSearch";
 import { creditLine, licenseLabel } from "@/lib/stock/openverse";
 import { projectDuration } from "@/lib/models/timeline";
 import { useIsStill, useStillLength } from "./useStillLength";
+import { MIN_MUSIC_SECONDS, musicSpan, setMusicSpan, setMusicStart } from "@/lib/models/musicTrim";
 
 export function MusicPanel() {
   const project = useProject();
@@ -35,7 +36,8 @@ export function MusicPanel() {
   const music = project.music;
   // A song longer than a picture-only video: offer to hold the last picture for the whole song.
   const videoLen = projectDuration(project.clips);
-  const songLen = music ? Math.max(0, music.duration - music.startOffset) : 0;
+  const songLen = music ? musicSpan(music) : 0;
+  const currentTime = useEditor((s) => s.currentTime);
   const lastClip = project.clips[project.clips.length - 1];
   const lastStill = useIsStill(lastClip);
   const stillLen = useStillLength();
@@ -116,6 +118,11 @@ export function MusicPanel() {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+  const room = music ? Math.max(0, music.duration - music.startOffset) : 0;
+  const trimmed = !!music && (music.startOffset > 0 || (music.endTrim ?? 0) > 0);
+  /** The playhead is inside the part of the song that plays, with enough left on both sides. */
+  const canStartHere = !!music && currentTime > 0.05 && songLen - currentTime >= MIN_MUSIC_SECONDS;
+  const canEndHere = !!music && currentTime >= MIN_MUSIC_SECONDS && songLen - currentTime > 0.05;
   const edit = (fn: (m: MusicTrack) => void, history = true) =>
     update(
       (p) => {
@@ -309,8 +316,22 @@ export function MusicPanel() {
             <Slider label="Volume" value={music.volume} min={0} max={1.5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((m) => void (m.volume = v), false)} {...tx} />
             <Slider label="Fade in" value={music.fadeIn} min={0} max={10} step={0.1} format={(v) => `${v.toFixed(1)} s`} onChange={(v) => edit((m) => void (m.fadeIn = v), false)} {...tx} />
             <Slider label="Fade out" value={music.fadeOut} min={0} max={10} step={0.1} format={(v) => `${v.toFixed(1)} s`} onChange={(v) => edit((m) => void (m.fadeOut = v), false)} {...tx} />
-            <Slider label="Start offset (in track)" value={music.startOffset} min={0} max={Math.max(0, music.duration - 1)} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => void (m.startOffset = v), false)} {...tx} />
-            <Toggle checked={music.loop} onChange={(v) => edit((m) => void (m.loop = v))} label="Loop to fill the reel" />
+          </PanelSection>
+          <PanelSection title="Trim" right={trimmed ? <Button variant="ghost" size="xs" onClick={() => edit((m) => { m.startOffset = 0; m.endTrim = 0; })} title="Play the whole song again" data-music-reset><RotateCcw size={12} /> Reset</Button> : undefined}>
+            <p className="rf-read-note">
+              Drag either end of the green music block on the timeline, or cut at the playhead. Playing <b>{formatTime(songLen)}</b> of {formatTime(music.duration)}.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="secondary" size="sm" disabled={!canStartHere} onClick={() => edit((m) => setMusicStart(m, m.startOffset + currentTime))} title="Cut away the song before the playhead" data-music-start-here>
+                <Scissors size={13} /> Start here
+              </Button>
+              <Button variant="secondary" size="sm" disabled={!canEndHere} onClick={() => edit((m) => setMusicSpan(m, currentTime))} title="Cut away the song after the playhead" data-music-end-here>
+                <Scissors size={13} /> End here
+              </Button>
+            </div>
+            <Slider label="Start in the song" value={music.startOffset} min={0} max={Math.max(0, music.duration - (music.endTrim ?? 0) - MIN_MUSIC_SECONDS)} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => setMusicStart(m, v), false)} {...tx} />
+            <Slider label="Length played" value={songLen} min={Math.min(MIN_MUSIC_SECONDS, room)} max={room} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => setMusicSpan(m, v), false)} {...tx} />
+            <Toggle checked={music.loop && !((music.endTrim ?? 0) > 0)} disabled={(music.endTrim ?? 0) > 0} onChange={(v) => edit((m) => void (m.loop = v))} label="Loop to fill the reel" description={(music.endTrim ?? 0) > 0 ? "Off while the end is trimmed. Reset the trim to loop." : undefined} />
           </PanelSection>
         </>
       )}

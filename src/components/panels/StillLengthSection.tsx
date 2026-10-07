@@ -2,6 +2,7 @@
 import { Music2 } from "lucide-react";
 import type { Clip, VideoProject } from "@/lib/models/project";
 import { MAX_STILL_SECONDS } from "@/lib/media/stillLength";
+import { musicSpan } from "@/lib/models/musicTrim";
 import { formatTime } from "@/lib/utils/time";
 import { Button } from "@/components/ui/Button";
 import { NumberInput } from "@/components/ui/NumberInput";
@@ -15,7 +16,7 @@ export function StillLengthSection({ clip, project }: { clip: Clip; project: Vid
   if (!still) return null;
   const shown = (clip.outPoint - clip.inPoint) / clip.speed;
   const music = project.music;
-  const song = music ? Math.max(0, music.duration - music.startOffset) : 0;
+  const song = music ? musicSpan(music) : 0;
   return (
     <div className="space-y-2.5 px-4 py-3" data-still-length>
       <h3 className="caps">Show this picture for</h3>
