@@ -33,7 +33,7 @@ export function useImportClips() {
         state.markAssetPending(assetId);
         try {
           const status = (s: string) => current() && state.setImportStatus(`${s} (${i + 1}/${files.length})`);
-          // Images (flyers, posters) become 8 s still clips.
+          // Images (flyers, posters) become STILL_SECONDS-long still clips.
           const file = await toClipFile(raw, status);
           const { clip, blob } = await importVideo(file, project.id, status, assetId);
           if (!current()) continue;

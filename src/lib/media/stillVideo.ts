@@ -7,7 +7,7 @@
  */
 import { ffmpegEngine } from "@/lib/ffmpegEngine";
 
-export const STILL_SECONDS = 8;
+export const STILL_SECONDS = 12;
 export const STILL_FPS = 30;
 const MAX_SIDE = 1920;
 
