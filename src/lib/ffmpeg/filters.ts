@@ -55,6 +55,8 @@ export interface MusicPlan {
   totalDuration: number;
   /** Seconds of song left at the segment's start when the tail is trimmed; the audio stops there. Absent: plays on. */
   playLength?: number;
+  /** A cut song: one input per stretch of the file that falls in this segment, played back to back. Replaces `inputIndex`. */
+  parts?: { inputIndex: number; headTrim: number; length: number }[];
   /**
    * Seconds of extra audio decoded before the segment's real start and then
    * dropped (see MUSIC_SEEK_PREROLL): warms up the MP3 decoder's bit
@@ -267,8 +269,18 @@ export function buildFilterGraph(plan: ExportPlan): { graph: string; vout: strin
   const mixInputs = [a];
   if (plan.music) {
     const m = plan.music;
-    const headTrim = m.headTrim > 0 ? `,atrim=start=${num(m.headTrim)}` : "";
-    parts.push(`[${m.inputIndex}:a]aresample=${AUDIO_RATE},${AFORMAT}${headTrim},asetpts=PTS-STARTPTS,volume=volume='${musicGainExpression(m)}':eval=frame,atrim=duration=${m.playLength !== undefined ? num(Math.min(plan.duration, m.playLength)) : dur},asetpts=PTS-STARTPTS[mus]`);
+    if (m.parts?.length) {
+      m.parts.forEach((p, k) => {
+        const head = p.headTrim > 0 ? `,atrim=start=${num(p.headTrim)}` : "";
+        parts.push(`[${p.inputIndex}:a]aresample=${AUDIO_RATE},${AFORMAT}${head},asetpts=PTS-STARTPTS,atrim=duration=${num(p.length)},asetpts=PTS-STARTPTS[mp${k}]`);
+      });
+      const joined = m.parts.length > 1 ? `${m.parts.map((_, k) => `[mp${k}]`).join("")}concat=n=${m.parts.length}:v=0:a=1[mjoin]` : null;
+      if (joined) parts.push(joined);
+      parts.push(`[${joined ? "mjoin" : "mp0"}]volume=volume='${musicGainExpression(m)}':eval=frame,atrim=duration=${dur},asetpts=PTS-STARTPTS[mus]`);
+    } else {
+      const headTrim = m.headTrim > 0 ? `,atrim=start=${num(m.headTrim)}` : "";
+      parts.push(`[${m.inputIndex}:a]aresample=${AUDIO_RATE},${AFORMAT}${headTrim},asetpts=PTS-STARTPTS,volume=volume='${musicGainExpression(m)}':eval=frame,atrim=duration=${m.playLength !== undefined ? num(Math.min(plan.duration, m.playLength)) : dur},asetpts=PTS-STARTPTS[mus]`);
+    }
     mixInputs.push("mus");
   }
   plan.voiceovers.forEach((vo, k) => {
@@ -298,6 +310,8 @@ export interface ExportFiles {
   /** image2 pattern, e.g. /fr0/f%05d.jpg */
   framesPattern: string | null;
   music: { path: string; seek: number; loop: boolean } | null;
+  /** A cut song: the file read once per stretch, seeking to `seek` (aligned with the plan's `parts`). */
+  musicParts?: { path: string; seek: number }[];
   voiceovers: string[];
   output: string;
 }
@@ -314,7 +328,10 @@ export function buildInputArgs(plan: ExportPlan, files: ExportFiles): string[] {
   });
   if (plan.overlayInput !== null && files.overlayList) args.push("-f", "concat", "-safe", "0", "-i", files.overlayList);
   if (plan.framesInput !== null && files.framesPattern) args.push("-framerate", String(plan.fps), "-start_number", "0", "-i", files.framesPattern);
-  if (plan.music && files.music) {
+  if (plan.music?.parts?.length && files.musicParts) {
+    // Each stretch reads from its pre-roll through its length; the filter graph drops the pre-roll.
+    plan.music.parts.forEach((p, i) => args.push("-ss", num(files.musicParts![i].seek), "-t", num(p.length + p.headTrim + 1), "-i", files.musicParts![i].path));
+  } else if (plan.music && files.music) {
     if (files.music.loop) args.push("-stream_loop", "-1");
     // Reads from headTrim seconds before the real start (dropped in the filter graph above) so the decoder is warm.
     args.push("-ss", num(files.music.seek), "-t", num(plan.duration + 1 + (plan.music.headTrim ?? 0)), "-i", files.music.path);

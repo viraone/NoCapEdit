@@ -9,7 +9,8 @@ import { captionsClearedNotice, removeClip, reorderClip, splitClipAt, splitTarge
 import { playCutSound } from "@/lib/audio/uiSounds";
 import { formatTime } from "@/lib/utils/time";
 import { clamp } from "@/lib/utils/math";
-import { musicLoops, musicSpan, setMusicSpan, setMusicStart } from "@/lib/models/musicTrim";
+import { musicLoops, musicSpan } from "@/lib/models/musicTrim";
+import { MusicLane } from "./MusicLane";
 import { cx } from "@/lib/utils/cx";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -561,9 +562,6 @@ export function TimelineDock() {
   const audioPress = useRef<number | null>(null);
   /** Whether the audio block pressed was already selected: the first click selects, the next one cuts. */
   const audioWasSelected = useRef(false);
-  /** A drag on the music block's left or right edge: how long the block was and where its trims stood. */
-  const musicDrag = useRef<{ mode: "l" | "r"; startX: number; shown: number; startOffset: number } | null>(null);
-  const { beginTransaction, endTransaction } = useEditor.getState();
   const timeAt = (clientX: number) => {
     const el = scrollRef.current!;
     const r = el.getBoundingClientRect();
@@ -782,77 +780,7 @@ export function TimelineDock() {
                   <span className="truncate">{vo.kind === "sfx" ? "🔔" : "🎙"} {vo.name}</span>
                 </div>
               ))}
-              {music && (
-                <div
-                  className="absolute top-1 h-5 cursor-pointer overflow-hidden rounded-md border border-sys-green/50 bg-sys-green/15 text-[12px] text-white"
-                  style={{
-                    width: Math.max(6, musicShown * pxPerSec),
-                    // Fades sit on the part the export uses, which ends with the video.
-                    backgroundImage: `linear-gradient(to right, rgba(16,185,129,0.05) 0, rgba(16,185,129,0.35) ${music.fadeIn * pxPerSec}px, rgba(16,185,129,0.35) ${Math.max(music.fadeIn, musicUsed - music.fadeOut) * pxPerSec}px, rgba(16,185,129,0.05) ${musicUsed * pxPerSec}px, rgba(16,185,129,0.05) 100%)`,
-                  }}
-                  title={`${music.name} · ${formatTime(songLen)} · drag an edge to trim`}
-                  data-music-block
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    setTool("music");
-                    const r = e.currentTarget.getBoundingClientRect();
-                    const lx = e.clientX - r.left;
-                    const mode = lx < EDGE ? "l" : lx > r.width - EDGE ? "r" : null;
-                    if (!mode) return;
-                    musicDrag.current = { mode, startX: e.clientX, shown: musicShown, startOffset: music.startOffset };
-                    beginTransaction();
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                  }}
-                  onPointerMove={(e) => {
-                    const d = musicDrag.current;
-                    if (!d) return;
-                    const dt = (e.clientX - d.startX) / pxPerSec;
-                    update(
-                      (p) => {
-                        const m = p.music;
-                        if (!m) return;
-                        if (d.mode === "l") setMusicStart(m, d.startOffset + dt);
-                        else setMusicSpan(m, d.shown + dt);
-                      },
-                      { history: false },
-                    );
-                  }}
-                  onPointerUp={(e) => {
-                    if (!musicDrag.current) return;
-                    musicDrag.current = null;
-                    endTransaction();
-                    try {
-                      e.currentTarget.releasePointerCapture(e.pointerId);
-                    } catch {
-                      /* not captured */
-                    }
-                  }}
-                  onPointerCancel={() => {
-                    if (!musicDrag.current) return;
-                    musicDrag.current = null;
-                    endTransaction();
-                  }}
-                >
-                  <div className="absolute inset-y-0 left-0 z-10 w-[7px] cursor-col-resize touch-none bg-white/40 hover:bg-white/70" data-music-handle="l" />
-                  <div className="absolute inset-y-0 right-0 z-10 w-[7px] cursor-col-resize touch-none bg-white/40 hover:bg-white/70" data-music-handle="r" />
-                  {musicShown > musicUsed + 0.05 && (
-                    <div
-                      className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pr-2"
-                      style={{ left: musicUsed * pxPerSec, backgroundImage: "repeating-linear-gradient(135deg, rgba(0,0,0,0.5) 0 5px, rgba(0,0,0,0.25) 5px 10px)" }}
-                      data-music-unused
-                    >
-                      {(musicShown - musicUsed) * pxPerSec > 260 && (
-                        <span className="rf-read-face truncate rounded bg-black/60 px-1.5 text-[12px] text-white/80">{duration > 0 ? "Past the end of the video · not in the export" : "Plays under your video once you add one"}</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="relative flex h-full items-center gap-1 px-1.5">
-                    <Music size={10} className="shrink-0" />
-                    <span className="truncate">{music.name}</span>
-                    <span className="shrink-0 tabular-nums text-white/60">{formatTime(songLen)}</span>
-                  </div>
-                </div>
-              )}
+              {music && <MusicLane music={music} pxPerSec={pxPerSec} shown={musicShown} used={musicUsed} duration={duration} />}
             </div>
             {/* Where a click would cut: a thin line through the video and audio lanes, notched at both ends. */}
             {hover?.cut && (

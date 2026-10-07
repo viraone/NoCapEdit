@@ -1,5 +1,6 @@
 import { uid } from "@/lib/utils/id";
 import { DEFAULT_FORMAT_ID, type SafeZoneKind } from "./formats";
+import type { MusicPiece } from "./musicTrim";
 
 export const PROJECT_VERSION = 1;
 
@@ -266,6 +267,8 @@ export interface MusicTrack {
   startOffset: number;
   /** Seconds trimmed from the tail of the music file (absent or 0: the song plays to its end). A trimmed tail does not loop. */
   endTrim?: number;
+  /** Set once the song is cut: the stretches of the file that play back to back (see lib/models/musicTrim.ts). Absent: one stretch. */
+  pieces?: MusicPiece[];
   loop: boolean;
   /** Attribution for a track found through a Creative Commons library (optional, absent for the user's own files). */
   credit?: { title: string; artist: string; license: string; licenseUrl: string | null; pageUrl: string; source: "openverse" } | null;
@@ -500,6 +503,12 @@ export function normalizeProject(raw: VideoProject): VideoProject {
   project.overlays = raw.overlays ?? [];
   project.voiceovers = raw.voiceovers ?? [];
   project.music = raw.music ?? null;
+  if (project.music?.pieces) {
+    const d = project.music.duration;
+    const ok = project.music.pieces.filter((p) => Number.isFinite(p.from) && Number.isFinite(p.to) && p.from >= 0 && p.to > p.from && p.to <= d + 0.01);
+    if (ok.length >= 2) project.music.pieces = ok;
+    else delete project.music.pieces;
+  }
   return project;
 }
 

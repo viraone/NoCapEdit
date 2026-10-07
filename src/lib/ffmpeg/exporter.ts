@@ -23,7 +23,7 @@ import { even } from "@/lib/utils/math";
 import { safeFilename } from "@/lib/utils/download";
 import { captureFrames, needsCompositor } from "@/lib/playback/compositor";
 import { musicSourceTime } from "@/lib/playback/engine";
-import { musicFadeEnd, musicLoops, musicSpan } from "@/lib/models/musicTrim";
+import { musicFadeEnd, musicIsCut, musicLoops, musicSlices, musicSpan } from "@/lib/models/musicTrim";
 import {
   ffmpegEngine,
   encoderArgs,
@@ -418,7 +418,17 @@ async function runExport(
 
         let music: MusicPlan | null = null;
         let musicFile: ExportFiles["music"] = null;
-        if (project.music && nameOf.has(project.music.assetId)) {
+        let musicParts: ExportFiles["musicParts"];
+        if (project.music && musicIsCut(project.music) && nameOf.has(project.music.assetId)) {
+          // A cut song: one input per stretch of the file that falls in this segment, joined in the filter graph.
+          const path = ctx.inputPath(nameOf.get(project.music.assetId)!);
+          const slices = musicSlices(project.music, seg.start, seg.end);
+          if (slices.length) {
+            const parts = slices.map((sl) => ({ ...splitMusicSeek(sl.source), length: sl.length }));
+            music = { inputIndex: idx, volume: project.music.volume, fadeIn: project.music.fadeIn, fadeOut: project.music.fadeOut, segmentStart: seg.start, totalDuration: musicFadeEnd(project.music, duration), headTrim: parts[0].headTrim, parts: parts.map((p) => ({ inputIndex: idx++, headTrim: p.headTrim, length: p.length })) };
+            musicParts = parts.map((p) => ({ path, seek: p.inputSeek }));
+          }
+        } else if (project.music && nameOf.has(project.music.assetId)) {
           const seek = musicSourceTime(project.music, seg.start);
           if (seek !== null) {
             const { inputSeek, headTrim } = splitMusicSeek(seek);
@@ -450,7 +460,7 @@ async function runExport(
           tsOffset: fragmented ? seg.start : 0,
           audioTailTrim: fragmented && !isLast ? AAC_PRIMING_SECONDS : 0,
         };
-        const files: ExportFiles = { clips: clipPaths, clipAudio, overlayList, framesPattern, music: musicFile, voiceovers: voFiles, output: ctx.output };
+        const files: ExportFiles = { clips: clipPaths, clipAudio, overlayList, framesPattern, music: musicFile, musicParts, voiceovers: voFiles, output: ctx.output };
         const { graph, vout, aout } = buildFilterGraph(plan);
         args = [
           "-hide_banner",

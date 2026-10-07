@@ -6,7 +6,7 @@
 import type { TransitionType, VideoProject } from "@/lib/models/project";
 import { layoutClips, locateFrame, toProjectTime, toSourceTime, type ClipLayout } from "@/lib/models/timeline";
 import { clamp } from "@/lib/utils/math";
-import { musicFadeEnd, musicLoops, musicSpan } from "@/lib/models/musicTrim";
+import { musicFadeEnd, musicLayout, musicLoops, musicPieceAt, musicSpan, type MusicPiece } from "@/lib/models/musicTrim";
 import { audioFx, type AudioFxPreset } from "@/lib/audio/fx";
 import { MAX_NOTCHES, notchQ } from "@/lib/audio/feedback";
 
@@ -37,6 +37,8 @@ export class PlaybackEngine {
   private voices = new Map<string, HTMLAudioElement>();
   private music: HTMLAudioElement | null = null;
   private musicAssetId: string | null = null;
+  /** The piece of a cut song that was playing at the last sync: a change means a jump in the file. */
+  private musicPiece: number | null = null;
   private audioCtx: AudioContext | null = null;
   private chains = new Map<HTMLMediaElement, FxChain>();
   private project: VideoProject | null = null;
@@ -345,7 +347,10 @@ export class PlaybackEngine {
       if (!music.paused) music.pause();
       return;
     }
-    if (force || Math.abs(music.currentTime - mt) > 0.3) music.currentTime = mt;
+    const piece = this.project?.music ? musicPieceAt(this.project.music, this.time) : null;
+    const jumped = piece !== this.musicPiece;
+    this.musicPiece = piece;
+    if (force || jumped || Math.abs(music.currentTime - mt) > 0.3) music.currentTime = mt;
     music.volume = this.musicGain(this.time);
     if (this.playing && music.paused) music.play().catch(() => undefined);
     if (!this.playing && !music.paused) music.pause();
@@ -432,7 +437,11 @@ export class PlaybackEngine {
 }
 
 /** Position inside the music file for project time t (null = silence). */
-export function musicSourceTime(m: { duration: number; startOffset: number; endTrim?: number; loop: boolean }, t: number): number | null {
+export function musicSourceTime(m: { duration: number; startOffset: number; endTrim?: number; loop: boolean; pieces?: MusicPiece[] }, t: number): number | null {
+  if (m.pieces?.length) {
+    for (const { piece, start, end } of musicLayout(m)) if (t < end) return t >= start ? piece.from + (t - start) : null;
+    return null;
+  }
   const available = m.duration - m.startOffset;
   const span = musicSpan(m);
   if (span <= 0.05 || m.duration <= 0.05) return null;

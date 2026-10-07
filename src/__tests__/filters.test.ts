@@ -90,6 +90,20 @@ describe("buildFilterGraph", () => {
     expect(graph).toContain("(6-t-0)/2");
     expect(graph).toMatch(/atrim=duration=6,asetpts=PTS-STARTPTS\[mus\]/);
   });
+  it("joins the stretches of a cut song before the gain and the mix", () => {
+    const a = clip(10, { hasAudio: false });
+    const { graph } = buildFilterGraph(plan([a], { music: { inputIndex: 1, volume: 1, fadeIn: 0, fadeOut: 0, segmentStart: 0, totalDuration: 10, headTrim: 0, parts: [{ inputIndex: 1, headTrim: 0, length: 4 }, { inputIndex: 2, headTrim: 1, length: 6 }] } }));
+    expect(graph).toMatch(/\[1:a\]aresample=48000,[^;]*,asetpts=PTS-STARTPTS,atrim=duration=4,asetpts=PTS-STARTPTS\[mp0\]/);
+    expect(graph).toMatch(/\[2:a\]aresample=48000,[^;]*,atrim=start=1,asetpts=PTS-STARTPTS,atrim=duration=6,asetpts=PTS-STARTPTS\[mp1\]/);
+    expect(graph).toContain("[mp0][mp1]concat=n=2:v=0:a=1[mjoin]");
+    expect(graph).toContain("[mjoin]volume=volume='1':eval=frame,atrim=duration=10,asetpts=PTS-STARTPTS[mus]");
+  });
+  it("reads a one-stretch cut song straight into the gain", () => {
+    const a = clip(10, { hasAudio: false });
+    const { graph } = buildFilterGraph(plan([a], { music: { inputIndex: 1, volume: 1, fadeIn: 0, fadeOut: 0, segmentStart: 0, totalDuration: 10, headTrim: 0, parts: [{ inputIndex: 1, headTrim: 0, length: 3 }] } }));
+    expect(graph).not.toContain("concat");
+    expect(graph).toContain("[mp0]volume=");
+  });
   it("overlays the caption layer when present", () => {
     const { graph } = buildFilterGraph(plan([clip(3)], { overlayInput: 1 }));
     expect(graph).toContain("[v0][1:v]overlay=x=0:y=0:eof_action=repeat[vov]");
@@ -143,6 +157,24 @@ describe("buildInputArgs music pre-roll", () => {
     };
     const args = buildInputArgs(p, musicFiles(inputSeek));
     expect(args).toEqual(["-ss", "3", "-t", "12", "-i", "/mnt/music.mp3"]);
+  });
+});
+
+describe("buildInputArgs cut music", () => {
+  it("reads the file once per stretch, each from its own seek", () => {
+    const p: ExportPlan = {
+      width: frame.width,
+      height: frame.height,
+      fps: 30,
+      duration: 10,
+      clips: [],
+      overlayInput: null,
+      framesInput: null,
+      music: { inputIndex: 0, volume: 1, fadeIn: 0, fadeOut: 0, segmentStart: 0, totalDuration: 10, headTrim: 0, parts: [{ inputIndex: 0, headTrim: 0, length: 4 }, { inputIndex: 1, headTrim: 1, length: 6 }] },
+      voiceovers: [],
+    };
+    const files: ExportFiles = { clips: [], overlayList: null, framesPattern: null, music: null, musicParts: [{ path: "/mnt/m.mp3", seek: 0 }, { path: "/mnt/m.mp3", seek: 49 }], voiceovers: [], output: "out.mp4" };
+    expect(buildInputArgs(p, files)).toEqual(["-ss", "0", "-t", "5", "-i", "/mnt/m.mp3", "-ss", "49", "-t", "8", "-i", "/mnt/m.mp3"]);
   });
 });
 

@@ -26,7 +26,7 @@ import { MusicSearch } from "./MusicSearch";
 import { creditLine, licenseLabel } from "@/lib/stock/openverse";
 import { projectDuration } from "@/lib/models/timeline";
 import { useIsStill, useStillLength } from "./useStillLength";
-import { MIN_MUSIC_SECONDS, musicSpan, setMusicSpan, setMusicStart } from "@/lib/models/musicTrim";
+import { MIN_MUSIC_SECONDS, cutMusicAfter, cutMusicBefore, musicIsCut, musicLayout, musicLoops, musicMaxSpan, musicPieces, musicSpan, musicStart, setMusicSpan, setMusicStart, splitMusicAt } from "@/lib/models/musicTrim";
 
 export function MusicPanel() {
   const project = useProject();
@@ -118,8 +118,13 @@ export function MusicPanel() {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
-  const room = music ? Math.max(0, music.duration - music.startOffset) : 0;
-  const trimmed = !!music && (music.startOffset > 0 || (music.endTrim ?? 0) > 0);
+  const cut = !!music && musicIsCut(music);
+  const trimmed = !!music && (music.startOffset > 0 || (music.endTrim ?? 0) > 0 || cut);
+  /** Whether a cut at the playhead would land at least a moment away from the edges and from any cut already there. */
+  const canSplit = (() => {
+    if (!music) return false;
+    return splitMusicAt(structuredClone(music), currentTime);
+  })();
   /** The playhead is inside the part of the song that plays, with enough left on both sides. */
   const canStartHere = !!music && currentTime > 0.05 && songLen - currentTime >= MIN_MUSIC_SECONDS;
   const canEndHere = !!music && currentTime >= MIN_MUSIC_SECONDS && songLen - currentTime > 0.05;
@@ -317,21 +322,25 @@ export function MusicPanel() {
             <Slider label="Fade in" value={music.fadeIn} min={0} max={10} step={0.1} format={(v) => `${v.toFixed(1)} s`} onChange={(v) => edit((m) => void (m.fadeIn = v), false)} {...tx} />
             <Slider label="Fade out" value={music.fadeOut} min={0} max={10} step={0.1} format={(v) => `${v.toFixed(1)} s`} onChange={(v) => edit((m) => void (m.fadeOut = v), false)} {...tx} />
           </PanelSection>
-          <PanelSection title="Trim" right={trimmed ? <Button variant="ghost" size="xs" onClick={() => edit((m) => { m.startOffset = 0; m.endTrim = 0; })} title="Play the whole song again" data-music-reset><RotateCcw size={12} /> Reset</Button> : undefined}>
+          <PanelSection title="Trim" right={trimmed ? <Button variant="ghost" size="xs" onClick={() => edit((m) => { m.startOffset = 0; m.endTrim = 0; delete m.pieces; })} title="Play the whole song again" data-music-reset><RotateCcw size={12} /> Reset</Button> : undefined}>
             <p className="rf-read-note">
-              Drag either end of the green music block on the timeline, or cut at the playhead. Playing <b>{formatTime(songLen)}</b> of {formatTime(music.duration)}.
+              Drag either end of the green music block on the timeline to trim it. Click the block, then click it again to cut it there. Or cut at the playhead. Playing <b>{formatTime(songLen)}</b> of {formatTime(music.duration)}
+              {cut && <> in <b>{musicLayout(music).length} pieces</b></>}.
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" size="sm" disabled={!canStartHere} onClick={() => edit((m) => setMusicStart(m, m.startOffset + currentTime))} title="Cut away the song before the playhead" data-music-start-here>
+            <div className="grid grid-cols-3 gap-2">
+              <Button variant="secondary" size="sm" disabled={!canStartHere} onClick={() => edit((m) => void cutMusicBefore(m, currentTime))} title="Cut away the song before the playhead" data-music-start-here>
                 <Scissors size={13} /> Start here
               </Button>
-              <Button variant="secondary" size="sm" disabled={!canEndHere} onClick={() => edit((m) => setMusicSpan(m, currentTime))} title="Cut away the song after the playhead" data-music-end-here>
+              <Button variant="secondary" size="sm" disabled={!canSplit} onClick={() => edit((m) => void splitMusicAt(m, currentTime))} title="Cut the song in two at the playhead. Then remove either piece from the timeline." data-music-split-here>
+                <Scissors size={13} /> Split
+              </Button>
+              <Button variant="secondary" size="sm" disabled={!canEndHere} onClick={() => edit((m) => void cutMusicAfter(m, currentTime))} title="Cut away the song after the playhead" data-music-end-here>
                 <Scissors size={13} /> End here
               </Button>
             </div>
-            <Slider label="Start in the song" value={music.startOffset} min={0} max={Math.max(0, music.duration - (music.endTrim ?? 0) - MIN_MUSIC_SECONDS)} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => setMusicStart(m, v), false)} {...tx} />
-            <Slider label="Length played" value={songLen} min={Math.min(MIN_MUSIC_SECONDS, room)} max={room} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => setMusicSpan(m, v), false)} {...tx} />
-            <Toggle checked={music.loop && !((music.endTrim ?? 0) > 0)} disabled={(music.endTrim ?? 0) > 0} onChange={(v) => edit((m) => void (m.loop = v))} label="Loop to fill the reel" description={(music.endTrim ?? 0) > 0 ? "Off while the end is trimmed. Reset the trim to loop." : undefined} />
+            <Slider label="Start in the song" value={musicStart(music)} min={0} max={Math.max(0, musicPieces(music)[0].to - MIN_MUSIC_SECONDS)} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => setMusicStart(m, v), false)} {...tx} />
+            <Slider label="Length played" value={songLen} min={Math.min(MIN_MUSIC_SECONDS, musicMaxSpan(music))} max={musicMaxSpan(music)} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => setMusicSpan(m, v), false)} {...tx} />
+            <Toggle checked={musicLoops(music)} disabled={(music.endTrim ?? 0) > 0 || cut} onChange={(v) => edit((m) => void (m.loop = v))} label="Loop to fill the reel" description={(music.endTrim ?? 0) > 0 || cut ? "Off while the music is cut or its end is trimmed. Reset the trim to loop." : undefined} />
           </PanelSection>
         </>
       )}
