@@ -267,7 +267,7 @@ function ClipBlock({
     return onTrimEnd({ clipId: clip.id, from, to: { inPoint: now.inPoint, outPoint: now.outPoint } });
   };
   // The waveform keeps its 28-of-68 share of the block as the lane grows, within sane bounds.
-  const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null; onTag: boolean } | null>(null);
+  const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null; onTag: boolean; wasSelected: boolean } | null>(null);
   const [dragging, setDragging] = useState(false);
   /** Project time under the pointer, measured against the lane so scrolling is accounted for. */
   const laneTime = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -281,7 +281,7 @@ function ClipBlock({
         "group absolute top-1 overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
         dragging ? "cursor-grabbing opacity-60" : cutHover ? "cursor-default" : "cursor-grab",
         // Blue means selected: what Remove and Delete act on. The clip under the playhead only gets a faint outline.
-        selected ? "border-sys-blue" : active ? "border-white/30" : "border-sys-gray4",
+        selected ? "border-sys-blue ring-2 ring-sys-blue/40" : active ? "border-white/30" : "border-sys-gray4",
       )}
       style={{ left: layout.start * pxPerSec, width, height: blockH }}
       data-clip={clip.id}
@@ -291,9 +291,11 @@ function ClipBlock({
         const r = e.currentTarget.getBoundingClientRect();
         const lx = e.clientX - r.left;
         const mode = lx < EDGE ? "l" : lx > r.width - EDGE ? "r" : "none";
+        // Whether this press only selects: the first click on a clip selects it, the next one cuts.
+        const wasSelected = selected;
         select({ kind: "clip", id: clip.id });
         // Where the press began: the block captures the pointer, so the release no longer says.
-        drag.current = { mode, startX: e.clientX, inPoint: clip.inPoint, outPoint: clip.outPoint, slot: null, onTag: (e.target as Element).closest("[data-clip-tag]") !== null };
+        drag.current = { mode, startX: e.clientX, inPoint: clip.inPoint, outPoint: clip.outPoint, slot: null, onTag: (e.target as Element).closest("[data-clip-tag]") !== null, wasSelected };
         e.currentTarget.setPointerCapture(e.pointerId);
         if (mode !== "none") beginTransaction();
       }}
@@ -336,9 +338,9 @@ function ClipBlock({
         }
         if (!d) return;
         if (d.mode === "none") {
-          // A click, not a drag: cut here. Touch has no hover to show where, so it only selects.
-          // The name tag and a Shift / Option / ⌘ click only select.
-          const selectOnly = e.shiftKey || e.altKey || e.metaKey || d.onTag;
+          // A click, not a drag: on a clip that was already selected, cut here. The first click only selects it.
+          // Touch has no hover to show where, so it only selects. The name tag and a Shift / Option / ⌘ click only select.
+          const selectOnly = !d.wasSelected || e.shiftKey || e.altKey || e.metaKey || d.onTag;
           if (!selectOnly && e.pointerType !== "touch" && e.button === 0 && Math.abs(e.clientX - d.startX) <= CLICK_SLOP) onCut(laneTime(e));
           return;
         }
@@ -377,7 +379,7 @@ function ClipBlock({
       <div
         className="absolute left-1 top-1 flex cursor-pointer items-center gap-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[12px] font-semibold text-white hover:bg-black/85 hover:ring-1 hover:ring-white/40"
         data-clip-tag={clip.id}
-        title="Click to select this clip without cutting it. A click anywhere else on the clip cuts it; Shift-click selects too."
+        title="Select this clip. Click the clip once to select it, and click it again where you want to cut."
       >
         <span className="max-w-32 truncate">{clip.name}</span>
         <span className="text-white/70">{formatTime(layout.duration)}</span>
@@ -557,6 +559,8 @@ export function TimelineDock() {
   const [dropX, setDropX] = useState<number | null>(null);
   /** clientX where a press on an audio block began, so a click (not a drag) cuts. */
   const audioPress = useRef<number | null>(null);
+  /** Whether the audio block pressed was already selected: the first click selects, the next one cuts. */
+  const audioWasSelected = useRef(false);
   /** A drag on the music block's left or right edge: how long the block was and where its trims stood. */
   const musicDrag = useRef<{ mode: "l" | "r"; startX: number; shown: number; startOffset: number } | null>(null);
   const { beginTransaction, endTransaction } = useEditor.getState();
@@ -647,7 +651,7 @@ export function TimelineDock() {
               return;
             }
             const overButton = (e.target as Element).closest?.("[data-clip-remove], [data-clip-tag]") !== null;
-            const cut = !overButton && !e.shiftKey && !e.altKey && !e.metaKey && !scrubbing.current && dropX === null && !stretch.job && e.buttons === 0 && cuttableAt(layouts, t, pxPerSec) !== null;
+            const cut = !overButton && selection?.kind === "clip" && selection.id === l.clip.id && !e.shiftKey && !e.altKey && !e.metaKey && !scrubbing.current && dropX === null && !stretch.job && e.buttons === 0 && cuttableAt(layouts, t, pxPerSec) !== null;
             setHover({ x: t * pxPerSec, time: t, layout: l, cut });
           }}
           onPointerLeave={() => setHover(null)}
@@ -732,13 +736,14 @@ export function TimelineDock() {
                     title={`${layout.clip.name} audio${layout.clip.audioAssetId ? ` (${layout.clip.audioLabel ?? "cleaned"})` : ""}`}
                     onPointerDown={(e) => {
                       e.stopPropagation();
+                      audioWasSelected.current = selection?.kind === "clip" && selection.id === layout.clip.id;
                       select({ kind: "clip", id: layout.clip.id });
                       audioPress.current = e.clientX;
                     }}
                     onPointerUp={(e) => {
                       const from = audioPress.current;
                       audioPress.current = null;
-                      if (from === null || e.pointerType === "touch" || e.button !== 0 || e.shiftKey || e.altKey || e.metaKey || Math.abs(e.clientX - from) > CLICK_SLOP) return;
+                      if (from === null || !audioWasSelected.current || e.pointerType === "touch" || e.button !== 0 || e.shiftKey || e.altKey || e.metaKey || Math.abs(e.clientX - from) > CLICK_SLOP) return;
                       const lane = e.currentTarget.parentElement!;
                       cutAt((e.clientX - lane.getBoundingClientRect().left) / pxPerSec);
                     }}
