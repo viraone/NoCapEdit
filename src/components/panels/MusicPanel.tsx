@@ -27,6 +27,7 @@ import { SongPicker } from "./SongPicker";
 import { creditLine, licenseLabel } from "@/lib/stock/openverse";
 import { projectDuration } from "@/lib/models/timeline";
 import { useIsStill, useStillLength } from "./useStillLength";
+import { looksLikeStill } from "@/lib/media/stillLength";
 import { MIN_MUSIC_SECONDS, cutMusicAfter, cutMusicBefore, musicIsCut, musicLayout, musicLoops, musicMaxSpan, musicPieces, musicSpan, musicStart, setMusicSpan, setMusicStart, splitMusicAt } from "@/lib/models/musicTrim";
 
 export function MusicPanel() {
@@ -49,9 +50,13 @@ export function MusicPanel() {
     const id = music?.assetId ?? null;
     if (id === seenSong.current) return;
     seenSong.current = id;
-    if (!music || !lastStill || stillLen.busy) return;
+    if (!music || !lastClip) return;
     const span = musicSpan(music);
-    if (span > videoLen + 0.5) void stillLen.run(lastClip.id, (lastClip.outPoint - lastClip.inPoint) / lastClip.speed + (span - videoLen));
+    if (span <= videoLen + 0.5) return;
+    const stretch = () => void stillLen.run(lastClip.id, (lastClip.outPoint - lastClip.inPoint) / lastClip.speed + (span - videoLen));
+    // A picture made before clips were flagged is told apart by its filmstrip.
+    if (lastClip.still === true) stretch();
+    else if (!lastClip.hasAudio) void looksLikeStill(lastClip.assetId).then((still) => still && stretch()).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [music?.assetId]);
   const voListRef = useRef<HTMLUListElement>(null);
