@@ -317,8 +317,8 @@ export function MusicPanel() {
               <p className="rf-read-note" data-song-longer>
                 The song runs <b>{formatTime(songLen - videoLen)}</b> past your video, and the export stops where the video ends. The last clip is a picture, so it can simply stay on screen longer.
               </p>
-              <Button variant="primary" size="md" className="w-full" disabled={stillLen.busy} onClick={() => void stillLen.run(lastClip.id, (lastClip.outPoint - lastClip.inPoint) / lastClip.speed + (songLen - videoLen))} data-stretch-picture>
-                Show the picture for the whole song
+              <Button variant="primary" size="md" className="h-auto min-h-9 w-full whitespace-normal py-2 text-center" disabled={stillLen.busy} onClick={() => void stillLen.run(lastClip.id, (lastClip.outPoint - lastClip.inPoint) / lastClip.speed + (songLen - videoLen))} data-stretch-picture>
+                {stillLen.busy ? "Stretching the picture…" : "Show the picture for the whole song"}
               </Button>
               {stillLen.busy && (
                 <div className="space-y-1.5">

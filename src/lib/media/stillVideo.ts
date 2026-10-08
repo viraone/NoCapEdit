@@ -46,7 +46,7 @@ export async function imageToStillVideo(file: File, opts: StillVideoOptions = {}
   const output = `/still_${Date.now().toString(36)}.mp4`;
   await ffmpeg.writeFile(input, png);
   try {
-    opts.onStatus?.(`Rendering ${file.name} as a ${seconds} s clip`);
+    opts.onStatus?.(`Rendering ${file.name} as a ${formatSeconds(seconds)} clip`);
     const code = await ffmpegEngine.exec([
       "-hide_banner", "-y",
       // One decoder thread is plenty for a single image.
@@ -67,4 +67,10 @@ export async function imageToStillVideo(file: File, opts: StillVideoOptions = {}
 /** Videos pass through; images become still clips. */
 export async function toClipFile(file: File, onStatus?: (message: string) => void): Promise<File> {
   return isImageFile(file) ? imageToStillVideo(file, { onStatus }) : file;
+}
+
+/** 346.0160701156006 → "5:46", 12 → "0:12": a length a person can read in a status line. */
+function formatSeconds(seconds: number): string {
+  const total = Math.round(seconds);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
