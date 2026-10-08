@@ -318,6 +318,13 @@ export interface ReelInfo {
   media?: { start: number; end: number };
 }
 
+/** The post written for the video: what to paste when it is shared. */
+export interface PostDraft {
+  title: string;
+  caption: string;
+  hashtags: string[];
+}
+
 export interface VideoProject {
   id: string;
   version: number;
@@ -333,6 +340,8 @@ export interface VideoProject {
   subtitleStyle: SubtitleStyle;
   captions: CaptionSettings;
   safeZone: SafeZoneKind;
+  /** The title, caption and hashtags for sharing the video. */
+  post?: PostDraft;
   /** Set on reels: the project this one was cut from. */
   sourceProjectId?: string;
   /** Set on reels: how it was picked. */

@@ -17,6 +17,7 @@ import { PicturePanel } from "@/components/panels/PicturePanel";
 import { MusicPanel } from "@/components/panels/MusicPanel";
 import { ExportPanel } from "@/components/panels/ExportPanel";
 import { ReelsPanel } from "@/components/panels/ReelsPanel";
+import { PostPanel } from "@/components/panels/PostPanel";
 import { CanvasBar } from "@/components/canvas/CanvasBar";
 import { VideoCanvas } from "@/components/canvas/VideoCanvas";
 import { TimelineDock } from "@/components/timeline/TimelineDock";
@@ -176,6 +177,7 @@ export function EditorShell() {
             {tool === "picture" && <PicturePanel />}
             {tool === "music" && <MusicPanel />}
             {tool === "reels" && <ReelsPanel />}
+            {tool === "post" && <PostPanel />}
             {tool === "export" && <ExportPanel />}
           </aside>
         </div>

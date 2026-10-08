@@ -24,7 +24,7 @@ export function EditorPage() {
     const tool = params.get("tool");
     loadProject(id).then((ok) => {
       // A reel opened straight into Export (or another panel) from its source project.
-      if (ok && tool && ["clips", "trim", "subtitles", "style", "text", "picture", "music", "reels", "export"].includes(tool)) useEditor.getState().setTool(tool as never);
+      if (ok && tool && ["clips", "trim", "subtitles", "style", "text", "picture", "music", "reels", "post", "export"].includes(tool)) useEditor.getState().setTool(tool as never);
     });
     const detach = attachUnloadFlush();
     return () => {

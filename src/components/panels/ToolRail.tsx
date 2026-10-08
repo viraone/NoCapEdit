@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard } from "lucide-react";
+import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, Sparkles } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
 import { cx } from "@/lib/utils/cx";
 
@@ -14,6 +14,7 @@ const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentTyp
   { id: "picture", label: "Picture", hint: "Stickers, logos and images", icon: ImageIcon, color: "#ff375f" },
   { id: "music", label: "Music", hint: "Music, sound effects and voice-over", icon: Music, color: "#64d2ff" },
   { id: "reels", label: "Reels", hint: "Cut the best moments into short reels", icon: Clapperboard, color: "#ff375f" },
+  { id: "post", label: "Post", hint: "Write the caption and hashtags for your post", icon: Sparkles, color: "#5e5ce6" },
   { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
 ];
 
