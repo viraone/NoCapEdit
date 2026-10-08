@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, Sparkles } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
+import { useIsDesktopChrome } from "@/lib/ai/browser";
 import { cx } from "@/lib/utils/cx";
 
 /** Apple system colours per tool, like the Halycol rail. */
@@ -90,7 +91,10 @@ export function ToolRail() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const lay = railLayout(height);
+  // Post uses Chrome's built-in AI, so only Chrome gets it.
+  const chrome = useIsDesktopChrome();
+  const tools = TOOLS.filter((t) => t.id !== "post" || chrome);
+  const lay = railLayout(height, tools.length);
   return (
     <nav
       ref={ref}
@@ -101,7 +105,7 @@ export function ToolRail() {
       data-labels={lay.labels || undefined}
       data-tile={lay.tile}
     >
-      {TOOLS.map(({ id, label, icon: Icon, color }) => {
+      {tools.map(({ id, label, icon: Icon, color }) => {
         const active = tool === id;
         return (
           <button
