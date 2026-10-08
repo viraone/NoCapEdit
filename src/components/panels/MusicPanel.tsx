@@ -23,6 +23,7 @@ import { Select } from "@/components/ui/Select";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { MusicSearch } from "./MusicSearch";
+import { SongPicker } from "./SongPicker";
 import { creditLine, licenseLabel } from "@/lib/stock/openverse";
 import { projectDuration } from "@/lib/models/timeline";
 import { useIsStill, useStillLength } from "./useStillLength";
@@ -338,6 +339,7 @@ export function MusicPanel() {
                 <Scissors size={13} /> End here
               </Button>
             </div>
+            {!cut && <SongPicker music={music} videoLen={videoLen} />}
             <Slider label="Start in the song" value={musicStart(music)} min={0} max={Math.max(0, musicPieces(music)[0].to - MIN_MUSIC_SECONDS)} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => setMusicStart(m, v), false)} {...tx} />
             <Slider label="Length played" value={songLen} min={Math.min(MIN_MUSIC_SECONDS, musicMaxSpan(music))} max={musicMaxSpan(music)} step={0.1} format={(v) => formatTime(v)} onChange={(v) => edit((m) => setMusicSpan(m, v), false)} {...tx} />
             <Toggle checked={musicLoops(music)} disabled={(music.endTrim ?? 0) > 0 || cut} onChange={(v) => edit((m) => void (m.loop = v))} label="Loop to fill the reel" description={(music.endTrim ?? 0) > 0 || cut ? "Off while the music is cut or its end is trimmed. Reset the trim to loop." : undefined} />
