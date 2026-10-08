@@ -43,6 +43,17 @@ export function MusicPanel() {
   const lastStill = useIsStill(lastClip);
   const stillLen = useStillLength();
   const selection = useEditor((s) => s.selection);
+  // Music added that outlasts a picture-only video: hold the picture for the whole song, no button to find.
+  const seenSong = useRef<string | null>(music?.assetId ?? null);
+  useEffect(() => {
+    const id = music?.assetId ?? null;
+    if (id === seenSong.current) return;
+    seenSong.current = id;
+    if (!music || !lastStill || stillLen.busy) return;
+    const span = musicSpan(music);
+    if (span > videoLen + 0.5) void stillLen.run(lastClip.id, (lastClip.outPoint - lastClip.inPoint) / lastClip.speed + (span - videoLen));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [music?.assetId]);
   const voListRef = useRef<HTMLUListElement>(null);
   // A voice-over picked on the timeline scrolls its row into view.
   useEffect(() => {
