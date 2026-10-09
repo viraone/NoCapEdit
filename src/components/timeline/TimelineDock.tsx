@@ -516,10 +516,13 @@ export function TimelineDock() {
     const len = duration > 0 ? duration : musicShown;
     setZoom(len > 0 ? (viewW - 80) / len : 80);
   };
-  // Music added to a project with no video yet: zoom out so the whole song is on screen, not just its first seconds.
+  // Music added to a project with no video yet, or only silent clips such as a picture (which stretches to the
+  // song): zoom out so the whole song is on screen, not just its first seconds.
   const musicAssetId = music?.assetId ?? null;
   useEffect(() => {
-    if (musicAssetId && duration === 0) fit();
+    if (!musicAssetId) return;
+    if (duration === 0) fit();
+    else if (project.clips.every((c) => c.still === true || !c.hasAudio)) setZoom(musicShown > 0 ? (viewW - 80) / musicShown : 80);
     // Only when a song is added: not when the video changes or the window resizes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [musicAssetId]);

@@ -154,6 +154,8 @@ export function StartScreen() {
         if (isImageFile(raw)) {
           clip.zoom = fitZoom({ width: clip.width, height: clip.height }, { width: format.width, height: format.height });
           clip.pan = { x: 0, y: 0 };
+          // Flagged like the Clips panel does, so a song added later stretches the picture without guessing from its filmstrip.
+          clip.still = true;
         }
         project.clips.push(clip);
         if (i === 0) await updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
