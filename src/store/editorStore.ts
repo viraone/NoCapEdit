@@ -6,7 +6,7 @@ import { getProject, listProjectAssets, saveProject } from "@/lib/storage/db";
 import { engine } from "@/lib/playback/engine";
 import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/components/timeline/dockLayout";
 
-export type ToolId = "clips" | "trim" | "subtitles" | "style" | "text" | "picture" | "music" | "reels" | "post" | "export";
+export type ToolId = "clips" | "trim" | "subtitles" | "style" | "text" | "picture" | "music" | "reels" | "post" | "reframe" | "export";
 
 export interface Selection {
   kind: "clip" | "cue" | "overlay" | "voiceover";

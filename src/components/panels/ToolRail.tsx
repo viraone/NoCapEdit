@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, Sparkles } from "lucide-react";
+import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, Sparkles, ScanFace } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
 import { useIsDesktopChrome } from "@/lib/ai/browser";
 import { cx } from "@/lib/utils/cx";
@@ -16,6 +16,7 @@ const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentTyp
   { id: "music", label: "Music", hint: "Music, sound effects and voice-over", icon: Music, color: "#64d2ff" },
   { id: "reels", label: "Reels", hint: "Cut the best moments into short reels", icon: Clapperboard, color: "#ff375f" },
   { id: "post", label: "Post", hint: "Write the caption and hashtags for your post", icon: Sparkles, color: "#5e5ce6" },
+  { id: "reframe", label: "Reframe", hint: "Keep the face centred in every clip, without moving the picture yourself", icon: ScanFace, color: "#66d4cf" },
   { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
 ];
 

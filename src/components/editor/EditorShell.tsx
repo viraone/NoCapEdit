@@ -18,6 +18,7 @@ import { MusicPanel } from "@/components/panels/MusicPanel";
 import { ExportPanel } from "@/components/panels/ExportPanel";
 import { ReelsPanel } from "@/components/panels/ReelsPanel";
 import { PostPanel } from "@/components/panels/PostPanel";
+import { ReframePanel } from "@/components/panels/ReframePanel";
 import { useIsDesktopChrome } from "@/lib/ai/browser";
 import { CanvasBar } from "@/components/canvas/CanvasBar";
 import { VideoCanvas } from "@/components/canvas/VideoCanvas";
@@ -180,6 +181,7 @@ export function EditorShell() {
             {tool === "music" && <MusicPanel />}
             {tool === "reels" && <ReelsPanel />}
             {tool === "post" && chrome && <PostPanel />}
+            {tool === "reframe" && <ReframePanel />}
             {tool === "export" && <ExportPanel />}
           </aside>
         </div>
