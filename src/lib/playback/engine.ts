@@ -55,6 +55,10 @@ export class PlaybackEngine {
 
   setProject(project: VideoProject, urls: Record<string, string>) {
     this.project = project;
+    // While playing, remember which clip is on screen and where in its file, so an edit that
+    // moves it (Earlier / Later, a clip removed before it) carries playback along with it.
+    const playingLayout = this.playing && this.primaryIndex >= 0 ? this.layouts[this.primaryIndex] : undefined;
+    const playingSource = playingLayout ? toSourceTime(playingLayout, this.time) : 0;
     this.layouts = layoutClips(project.clips);
     this.duration = this.layouts.length ? this.layouts[this.layouts.length - 1].end : 0;
 
@@ -147,9 +151,14 @@ export class PlaybackEngine {
       this.musicAssetId = music.assetId;
     }
 
+    const moved = playingLayout ? this.layouts.find((l) => l.clip.id === playingLayout.clip.id) : undefined;
+    if (moved) this.time = toProjectTime(moved, clamp(playingSource, moved.clip.inPoint, moved.clip.outPoint));
     this.time = clamp(this.time, 0, this.duration);
     if (this.audioCtx) this.syncFx();
-    if (this.playing && (this.primaryIndex < 0 || this.primaryIndex >= this.layouts.length)) this.pause();
+    if (this.playing && !this.layouts.length) this.pause();
+    // Still playing but the clip under the playhead changed place or was replaced: the media
+    // elements are still positioned for the old layout, so point them at the new one.
+    else if (this.playing && (!moved || moved.index !== this.primaryIndex || moved.start !== playingLayout?.start)) this.activate(true);
     if (!this.playing) this.activate(false);
   }
 
