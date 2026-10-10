@@ -98,7 +98,7 @@ export function ReframePanel() {
             </li>
             <li>
               <span>
-                <b>Watch</b> the picture follow the face in every clip
+                <b>Watch</b> the picture follow the comedian in every clip
               </span>
             </li>
             <li>
@@ -109,7 +109,7 @@ export function ReframePanel() {
           </ol>
         }
       />
-      <PanelSection title="Keep the face in the frame">
+      <PanelSection title="Keep the comedian in the frame">
         {!videos.length ? (
           <EmptyState icon={<ScanFace size={22} />} title="No video yet" description="Import a recording in Clips first. Pictures have no face to follow." />
         ) : (
@@ -143,8 +143,8 @@ export function ReframePanel() {
               </div>
             )}
             <p className="rf-read-note">
-              Finds the main face in each clip and moves the picture so it stays centred in the {format.ratio} frame, like a camera operator following the comedian. The face detector runs on this device at 4 frames a second;
-              nothing is sent anywhere.
+              Finds the person in each clip and moves the picture like a camera operator: it holds still while they stand still, cuts straight to the new framing when the video changes shot, and glides to keep their head
+              centred in the {format.ratio} frame when they walk. Runs on this device at 4 frames a second; nothing is sent anywhere.
             </p>
             {pictures > 0 && (
               <p className="rf-read-note">

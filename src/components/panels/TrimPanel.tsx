@@ -545,7 +545,7 @@ export function TrimPanel() {
                 </Button>
               )
             )}
-            <p className="rf-read-note">Detects the main face with MediaPipe and animates the pan so it stays centred in the {format.ratio} frame.</p>
+            <p className="rf-read-note">Finds the person with MediaPipe and moves the pan like a camera operator so their head stays centred in the {format.ratio} frame.</p>
             {job && (
               <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
                 <ProgressBar value={job.progress} />
