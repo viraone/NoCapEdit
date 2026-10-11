@@ -83,21 +83,31 @@ type DownloadEvent = { status?: string; file?: string; progress?: number; loaded
  * Turns Transformers.js download events into one progress value. Files are
  * weighted by size when known, so a 25 MB ONNX file dominates the bar instead
  * of a handful of finished JSON files freezing it at a stale percentage.
+ *
+ * Between the last file finishing and "ready" the runtime builds the model
+ * (on WebGPU, compiling it for the graphics chip), which can take minutes for
+ * a large model with no events at all. `preparing` is shown then, so the
+ * panel does not sit on a full bar looking frozen.
  */
-function downloadProgress(id: number, stage: string) {
+function downloadProgress(id: number, stage: string, preparing = "Preparing the model. The first time can take a few minutes.") {
   const seen = new Map<string, { loaded: number; total: number; pct: number }>();
+  const pending = new Set<string>();
   return (p: DownloadEvent) => {
-    if (p.status === "progress" && p.file) {
+    if (p.status === "initiate" && p.file) {
+      pending.add(p.file);
+      post({ type: "progress", id, stage, message: `Fetching ${p.file}`, progress: null });
+    } else if (p.status === "progress" && p.file) {
       seen.set(p.file, { loaded: p.loaded ?? 0, total: p.total ?? 0, pct: p.progress ?? 0 });
       const files = [...seen.values()];
       const sized = files.filter((f) => f.total > 0);
       const overall = sized.length === files.length ? sized.reduce((a, f) => a + f.loaded, 0) / Math.max(1, sized.reduce((a, f) => a + f.total, 0)) : files.reduce((a, f) => a + f.pct, 0) / files.length / 100;
       const mb = p.total ? ` (${Math.round((p.total / 1_048_576) * 10) / 10} MB)` : "";
       post({ type: "progress", id, stage, message: `Downloading ${p.file}${mb}`, progress: Math.min(0.999, overall) });
+    } else if (p.status === "done" && p.file) {
+      pending.delete(p.file);
+      if (pending.size === 0) post({ type: "progress", id, stage, message: preparing, progress: null });
     } else if (p.status === "ready") {
       post({ type: "progress", id, stage, message: "Model ready", progress: 1 });
-    } else if (p.status === "initiate" && p.file) {
-      post({ type: "progress", id, stage, message: `Fetching ${p.file}`, progress: null });
     }
   };
 }
@@ -141,12 +151,14 @@ async function getAsr(model: string, device: Device, id: number, threads?: numbe
     await asr.pipe.dispose().catch(() => undefined);
     asr = null;
   }
-  post({ type: "progress", id, stage: "load", message: `Loading ${model.split("/").pop()} on ${device}`, progress: null });
+  const name = model.split("/").pop();
+  post({ type: "progress", id, stage: "load", message: `Loading ${name} on ${device}`, progress: null });
   const dtype = device === "webgpu" ? { encoder_model: "fp32", decoder_model_merged: "q4" } : "q8";
+  const where = device === "webgpu" ? "your graphics chip" : "this device";
   const pipe = (await pipeline("automatic-speech-recognition", model, {
     device,
     dtype: dtype as never,
-    progress_callback: downloadProgress(id, "download"),
+    progress_callback: downloadProgress(id, "download", `Preparing ${name} for ${where}. The first time can take a few minutes; after that it is quick.`),
   })) as unknown as AsrPipe;
   asr = { key, pipe };
   return pipe;
