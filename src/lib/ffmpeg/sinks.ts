@@ -26,6 +26,14 @@ interface FileSystemFileHandleLike {
 }
 type SaveFilePicker = (opts: { suggestedName?: string; types?: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandleLike>;
 
+/** A NotFoundError from the file handle means the save target vanished (folder moved, drive unplugged, file deleted mid-export). */
+function diskError(e: unknown): unknown {
+  if (e instanceof DOMException && e.name === "NotFoundError") {
+    return new Error("The file you chose to save to is no longer available (the folder or drive may have been moved, renamed or disconnected). Press Export again and pick a new location.");
+  }
+  return e;
+}
+
 export function supportsDiskStreaming(): boolean {
   return typeof window !== "undefined" && "showSaveFilePicker" in window;
 }
@@ -74,7 +82,9 @@ export async function requestDiskSink(suggestedName: string): Promise<OutputSink
     if (e instanceof DOMException && e.name === "AbortError") return null;
     throw e;
   }
-  let writable = await handle.createWritable();
+  let writable = await handle.createWritable().catch((e) => {
+    throw diskError(e);
+  });
   let bytes = 0;
   return {
     kind: "disk",
@@ -86,11 +96,15 @@ export async function requestDiskSink(suggestedName: string): Promise<OutputSink
       bytes = v;
     },
     async write(chunk) {
-      await writable.write(chunk);
+      await writable.write(chunk).catch((e) => {
+        throw diskError(e);
+      });
       bytes += chunk.byteLength;
     },
     async close() {
-      await writable.close();
+      await writable.close().catch((e) => {
+        throw diskError(e);
+      });
       return null;
     },
     async abort() {
@@ -98,7 +112,9 @@ export async function requestDiskSink(suggestedName: string): Promise<OutputSink
     },
     async reset() {
       await writable.abort().catch(() => undefined);
-      writable = await handle.createWritable();
+      writable = await handle.createWritable().catch((e) => {
+        throw diskError(e);
+      });
       bytes = 0;
     },
   };

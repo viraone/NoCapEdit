@@ -265,6 +265,15 @@ async function runExport(
     if (nameOf.has(assetId)) return;
     const blob = await assets.getBlob(assetId);
     if (!blob) throw new Error("A media file used by this project is missing from local storage.");
+    // The browser can lose the file behind a stored Blob (cleared site data, disk cleanup); find out now, by name, not mid-render.
+    if (blob.size > 0) {
+      try {
+        await Promise.all([blob.slice(0, 1).arrayBuffer(), blob.slice(blob.size - 1).arrayBuffer()]);
+      } catch {
+        const label = project.clips.find((c) => c.assetId === assetId || c.audioAssetId === assetId)?.name ?? (project.music?.assetId === assetId ? "the music track" : "a media file");
+        throw new Error(`"${label}" can't be read from this browser's storage any more. Remove it from the project and add the original file again.`);
+      }
+    }
     const name = `${prefix}${inputs.length}.${extensionFor(blob, fallbackExt)}`;
     inputs.push({ name, blob });
     nameOf.set(assetId, name);
