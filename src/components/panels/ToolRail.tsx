@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, Sparkles, ScanFace } from "lucide-react";
+import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, Sparkles, ScanFace, TextSelect } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
 import { useIsDesktopChrome } from "@/lib/ai/browser";
 import { cx } from "@/lib/utils/cx";
@@ -10,14 +10,15 @@ const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentTyp
   { id: "clips", label: "Clips", hint: "Import, order and split your videos", icon: Film, color: "#0a84ff" },
   { id: "trim", label: "Trim", hint: "Cut, speed, zoom and sound for a clip", icon: Scissors, color: "#ff453a" },
   { id: "subtitles", label: "Subtitles", hint: "Generate, translate and edit captions", icon: Captions, color: "#ffd60a" },
+  { id: "transcript", label: "Transcript", hint: "Edit the video by deleting words from its transcript", icon: TextSelect, color: "#ac8e68" },
   { id: "style", label: "Style", hint: "How the captions look", icon: Palette, color: "#bf5af2" },
   { id: "text", label: "Text", hint: "Titles and banners on the video", icon: Type, color: "#ff9f0a" },
   { id: "picture", label: "Picture", hint: "Stickers, logos and images", icon: ImageIcon, color: "#ff375f" },
   { id: "music", label: "Music", hint: "Music, sound effects and voice-over", icon: Music, color: "#64d2ff" },
   { id: "reels", label: "Reels", hint: "Cut the best moments into short reels", icon: Clapperboard, color: "#ff375f" },
+  { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
   { id: "post", label: "Post", hint: "Write the caption and hashtags for your post", icon: Sparkles, color: "#5e5ce6" },
   { id: "reframe", label: "Reframe", hint: "Keep the face centred in every clip, without moving the picture yourself", icon: ScanFace, color: "#66d4cf" },
-  { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
 ];
 
 /**

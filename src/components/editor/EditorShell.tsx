@@ -11,6 +11,7 @@ import { ToolRail } from "@/components/panels/ToolRail";
 import { ClipsPanel } from "@/components/panels/ClipsPanel";
 import { TrimPanel } from "@/components/panels/TrimPanel";
 import { SubtitlesPanel } from "@/components/panels/SubtitlesPanel";
+import { TranscriptPanel } from "@/components/panels/TranscriptPanel";
 import { StylePanel } from "@/components/panels/StylePanel";
 import { TextPanel } from "@/components/panels/TextPanel";
 import { PicturePanel } from "@/components/panels/PicturePanel";
@@ -175,6 +176,7 @@ export function EditorShell() {
             {tool === "clips" && <ClipsPanel />}
             {tool === "trim" && <TrimPanel />}
             {tool === "subtitles" && <SubtitlesPanel />}
+            {tool === "transcript" && <TranscriptPanel />}
             {tool === "style" && <StylePanel />}
             {tool === "text" && <TextPanel />}
             {tool === "picture" && <PicturePanel />}
