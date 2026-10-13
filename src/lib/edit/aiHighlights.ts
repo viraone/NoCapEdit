@@ -31,7 +31,7 @@ export interface AiSettings {
   anthropicModel: string;
   /** The user's Google AI Studio key; kept in this browser only. */
   geminiKey: string;
-  /** Gemini model id, e.g. gemini-2.5-flash. */
+  /** Gemini model id, e.g. gemini-3.5-flash-lite. */
   geminiModel: string;
   /** The user's xAI key; kept in this browser only. */
   xaiKey: string;
@@ -49,7 +49,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   anthropicKey: "",
   anthropicModel: "claude-sonnet-5-5",
   geminiKey: "",
-  geminiModel: "gemini-2.5-flash",
+  geminiModel: "gemini-3.5-flash-lite",
   xaiKey: "",
   xaiModel: "grok-4",
 };

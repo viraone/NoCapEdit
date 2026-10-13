@@ -6,7 +6,7 @@
  * their own key, and is told plainly that the transcript leaves the device.
  */
 import { useState } from "react";
-import { RefreshCw, ShieldCheck } from "lucide-react";
+import { Check, RefreshCw, ShieldCheck } from "lucide-react";
 import { DEFAULT_AI_SETTINGS, listAnthropicModels, listGeminiModels, listOllamaModels, listOpenAiModels, listXaiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
 import { Field, Input } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
@@ -70,11 +70,15 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
   const gemini = settings.provider === "gemini";
   const xai = settings.provider === "xai";
   const pickProvider = (v: string): AiProvider => (v === "openai" || v === "anthropic" || v === "gemini" || v === "xai" ? v : "ollama");
-  const refreshLabel = (title: string, onClick: () => void) => (
-    <button type="button" className="text-sys-blue hover:underline" onClick={onClick} title={title} disabled={disabled}>
-      <RefreshCw size={11} className="inline" /> refresh
-    </button>
-  );
+  /** Cloud providers read "Save" once a key is typed: it checks the key and loads the models it can use. */
+  const refreshLabel = (title: string, onClick: () => void, apiKey?: string) => {
+    const save = !!apiKey?.trim();
+    return (
+      <button type="button" className="text-sys-blue hover:underline" onClick={onClick} title={title} disabled={disabled}>
+        {save ? <Check size={11} className="inline" /> : <RefreshCw size={11} className="inline" />} {save ? "Save" : "refresh"}
+      </button>
+    );
+  };
   return (
     <div className="space-y-2">
       <Field label="Provider">
@@ -88,7 +92,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
       </Field>
       {xai ? (
         <>
-          <Field label="Model" right={refreshLabel("List the Grok models this key can use", () => void cloud.refresh(() => listXaiModels(settings.xaiKey, AbortSignal.timeout(20000)), settings.xaiKey))}>
+          <Field label="Model" right={refreshLabel("List the Grok models this key can use", () => void cloud.refresh(() => listXaiModels(settings.xaiKey, AbortSignal.timeout(20000)), settings.xaiKey), settings.xaiKey)}>
             <ModelPicker value={settings.xaiModel} models={cloud.models} onChange={(m) => onChange({ xaiModel: m })} placeholder={DEFAULT_AI_SETTINGS.xaiModel} disabled={disabled} />
             {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
@@ -102,7 +106,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         </>
       ) : gemini ? (
         <>
-          <Field label="Model" right={refreshLabel("List the Gemini models this key can use", () => void cloud.refresh(() => listGeminiModels(settings.geminiKey, AbortSignal.timeout(20000)), settings.geminiKey))}>
+          <Field label="Model" right={refreshLabel("List the Gemini models this key can use", () => void cloud.refresh(() => listGeminiModels(settings.geminiKey, AbortSignal.timeout(20000)), settings.geminiKey), settings.geminiKey)}>
             <ModelPicker value={settings.geminiModel} models={cloud.models} onChange={(m) => onChange({ geminiModel: m })} placeholder={DEFAULT_AI_SETTINGS.geminiModel} disabled={disabled} />
             {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
@@ -116,7 +120,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         </>
       ) : anthropic ? (
         <>
-          <Field label="Model" right={refreshLabel("List the Claude models this key can use", () => void cloud.refresh(() => listAnthropicModels(settings.anthropicKey, AbortSignal.timeout(20000)), settings.anthropicKey))}>
+          <Field label="Model" right={refreshLabel("List the Claude models this key can use", () => void cloud.refresh(() => listAnthropicModels(settings.anthropicKey, AbortSignal.timeout(20000)), settings.anthropicKey), settings.anthropicKey)}>
             <ModelPicker value={settings.anthropicModel} models={cloud.models} onChange={(m) => onChange({ anthropicModel: m })} placeholder={DEFAULT_AI_SETTINGS.anthropicModel} disabled={disabled} />
             {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
@@ -131,7 +135,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
       ) : openai ? (
         <>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Model" right={refreshLabel("List the models this key can use", () => void cloud.refresh(() => listOpenAiModels(settings.apiBase, settings.apiKey, AbortSignal.timeout(20000)), settings.apiKey))}>
+            <Field label="Model" right={refreshLabel("List the models this key can use", () => void cloud.refresh(() => listOpenAiModels(settings.apiBase, settings.apiKey, AbortSignal.timeout(20000)), settings.apiKey), settings.apiKey)}>
               <ModelPicker value={settings.apiModel} models={cloud.models} onChange={(m) => onChange({ apiModel: m })} placeholder={DEFAULT_AI_SETTINGS.apiModel} disabled={disabled} />
               {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
               {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
