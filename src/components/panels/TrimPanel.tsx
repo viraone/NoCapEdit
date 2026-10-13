@@ -256,23 +256,9 @@ export function TrimPanel() {
           </span>
         }
         body={
-          <ol className="rf-read rf-steps" data-trim-steps>
-            <li>
-              <span>
-                <b>Play</b>, then stop at the cut
-              </span>
-            </li>
-            <li>
-              <span>
-                <b>Split</b>, or cut before/after
-              </span>
-            </li>
-            <li>
-              <span>
-                Acts on the <b>highlighted clip</b>
-              </span>
-            </li>
-          </ol>
+          <p className="rf-read" data-trim-steps>
+            Park the playhead where you want the cut. Works on the highlighted clip.
+          </p>
         }
       />
 
