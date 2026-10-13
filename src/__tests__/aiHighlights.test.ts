@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activeModel, anthropicRequestBody, buildAiPrompt, geminiRequestBody, parseGeminiClips, toGeminiSchema, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, isCloudProvider, loadAiSettings, openAiRequestBody, parseAnthropicClips, parseClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
+import { activeModel, anthropicRequestBody, buildAiPrompt, geminiRequestBody, parseGeminiClips, toGeminiSchema, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, isCloudProvider, listGeminiModels, loadAiSettings, openAiRequestBody, parseAnthropicClips, parseClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
 import type { Sentence } from "@/lib/edit/highlights";
 import type { CaptionCue } from "@/lib/models/project";
 
@@ -216,6 +216,12 @@ describe("findAiHighlights", () => {
       expect(body.generationConfig.responseSchema.properties.clips.items.properties.score.type).toBe("INTEGER");
       expect(body.generationConfig.responseSchema.required).toEqual(["clips"]);
       expect(progress[0]).toContain("gemini-3.5-flash-lite");
+    });
+
+    it("lists only the Gemini models that can read a transcript", async () => {
+      const names = ["gemini-3.5-flash-lite", "gemini-3.1-flash-image", "gemini-2.5-flash-preview-tts", "gemini-3.5-transcribe", "gemini-3.1-pro-preview-customtools", "gemini-3-pro-image-preview", "gemini-3.5-flash", "gemma-3-27b"];
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ models: names.map((n) => ({ name: `models/${n}`, supportedGenerationMethods: ["generateContent"] })) }), { status: 200 })));
+      expect(await listGeminiModels("AIza-test")).toEqual(["gemini-3.5-flash", "gemini-3.5-flash-lite"]);
     });
 
     it("converts the schema, reads blocked or truncated answers, and explains errors", async () => {

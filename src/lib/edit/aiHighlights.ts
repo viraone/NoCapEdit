@@ -488,6 +488,9 @@ async function findViaGemini(system: string, user: string, opts: FindAiOptions):
   return parseGeminiClips((await res.json()) as Parameters<typeof parseGeminiClips>[0]);
 }
 
+/** Gemini models that make pictures or speech, or take another kind of input: they can't pick clips from a transcript. */
+const NON_TEXT_GEMINI = /-(image|tts|transcribe|embedding|computer-use|customtools|live|audio)(-|$)/;
+
 /** Gemini model ids this key can use for generateContent (GET /v1beta/models). */
 export async function listGeminiModels(apiKey: string, signal?: AbortSignal): Promise<string[]> {
   const res = await fetch(`${GEMINI_API}/models?pageSize=200`, { headers: { "x-goog-api-key": apiKey }, signal });
@@ -496,7 +499,7 @@ export async function listGeminiModels(apiKey: string, signal?: AbortSignal): Pr
   return (data.models ?? [])
     .filter((m) => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes("generateContent"))
     .map((m) => m.name.replace(/^models\//, ""))
-    .filter((id) => /^gemini/.test(id))
+    .filter((id) => /^gemini/.test(id) && !NON_TEXT_GEMINI.test(id))
     .sort();
 }
 
