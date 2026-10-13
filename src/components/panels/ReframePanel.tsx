@@ -91,7 +91,7 @@ export function ReframePanel() {
         title="Auto-Reframe"
         body={
           <p className="rf-read" data-reframe-steps>
-            Press Reframe for me and the picture follows the comedian in every clip. Export as usual; the following is kept.
+            <b>Press</b> Reframe for me and the picture follows the comedian in every clip. <b>Export</b> as usual; the following is kept.
           </p>
         }
       />

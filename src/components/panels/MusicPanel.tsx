@@ -160,7 +160,7 @@ export function MusicPanel() {
         body={
           <>
             <p className="rf-read" data-music-steps>
-              Add a track or find free music, mix it under your voice, and drop in effects or a voice-over.
+              <b>Add</b> a track or find free music, <b>mix</b> it under your voice, and <b>drop in</b> effects or a voice-over.
             </p>
             <p className="rf-read-note mt-2.5">
               Music plays <b>under the clip audio</b>.

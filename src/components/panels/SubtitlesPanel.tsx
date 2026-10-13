@@ -356,7 +356,7 @@ export function SubtitlesPanel() {
         body={
           <>
             <p className="rf-read" data-subtitles-steps>
-              Generate captions from speech, translate them if you need to, and edit any line in the list below.
+              <b>Generate</b> captions from speech, <b>translate</b> them if you need to, and <b>edit</b> any line in the list below.
             </p>
             <p className="rf-read-note mt-2.5">
               Runs on this device. <b>Models download once</b>, then stay cached.

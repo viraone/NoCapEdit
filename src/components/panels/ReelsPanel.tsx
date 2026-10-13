@@ -513,7 +513,7 @@ export function ReelsPanel() {
         body={
           <>
             <p className="rf-read" data-reels-steps>
-              Reads your transcript <span className="whitespace-nowrap">with <span className="rf-mono">{activeModel(aiSettings)}</span></span>, picks the best moments and cuts each into its own {format.ratio} reel, captions included.
+              <b>Reads</b> your transcript <span className="whitespace-nowrap">with <span className="rf-mono">{activeModel(aiSettings)}</span></span>, <b>picks</b> the best moments and <b>cuts</b> each into its own {format.ratio} reel, captions included.
             </p>
             <p className="rf-read-note mt-2.5">Every reel opens and exports on its own.</p>
           </>

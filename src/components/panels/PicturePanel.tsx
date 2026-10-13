@@ -133,7 +133,7 @@ export function PicturePanel() {
         title="Picture"
         body={
           <p className="rf-read" data-picture-steps>
-            Add an image or a Lottie animation, drag it into place on the preview, and resize it with the corner handle.
+            <b>Add</b> an image or a Lottie animation, <b>drag</b> it into place on the preview, and <b>resize</b> it with the corner handle.
           </p>
         }
       />
