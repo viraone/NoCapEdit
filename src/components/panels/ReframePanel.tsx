@@ -90,23 +90,9 @@ export function ReframePanel() {
       <PanelHeader
         title="Auto-Reframe"
         body={
-          <ol className="rf-read rf-steps" data-reframe-steps>
-            <li>
-              <span>
-                <b>Press</b> Reframe for me
-              </span>
-            </li>
-            <li>
-              <span>
-                <b>Watch</b> the picture follow the comedian in every clip
-              </span>
-            </li>
-            <li>
-              <span>
-                <b>Export</b> as usual; the following is kept
-              </span>
-            </li>
-          </ol>
+          <p className="rf-read" data-reframe-steps>
+            Press Reframe for me and the picture follows the comedian in every clip. Export as usual; the following is kept.
+          </p>
         }
       />
       <PanelSection title="Keep the comedian in the frame">

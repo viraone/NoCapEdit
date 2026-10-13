@@ -48,23 +48,9 @@ export function StylePanel() {
         title="Caption style"
         body={
           <>
-            <ol className="rf-read rf-steps" data-style-steps>
-              <li>
-                <span>
-                  <b>Pick</b> one of {CAPTION_PRESETS.length} presets below
-                </span>
-              </li>
-              <li>
-                <span>
-                  <b>Adjust</b> size, position and colours
-                </span>
-              </li>
-              <li>
-                <span>
-                  Applies to <b>every caption</b>
-                </span>
-              </li>
-            </ol>
+            <p className="rf-read" data-style-steps>
+              Pick one of {CAPTION_PRESETS.length} presets below, then adjust size, position and colours. It applies to every caption.
+            </p>
             <p className="rf-read-note mt-2.5">
               The <b>accent colour</b> marks the word being spoken.
             </p>
