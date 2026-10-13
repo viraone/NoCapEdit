@@ -274,7 +274,11 @@ export function TrimPanel() {
 
       <PanelSection title="Magic Cut">
         <Toggle checked={mcFillers} onChange={setMcFillers} label="Filler words" description={project.cues.some((c) => c.words?.length) ? "um, uh, er, hmm… from the caption word timings" : "Generate captions first to detect fillers"} />
-        {mcFillers && <Toggle checked={mcExtra} onChange={setMcExtra} label="Also cut “like”, “so”, “actually”, “you know”" description="More aggressive; review the result" />}
+        {mcFillers && (
+          <div className="ml-3 border-l border-sys-gray5 pl-2">
+            <Toggle checked={mcExtra} onChange={setMcExtra} label="Also cut “like”, “so”, “actually”, “you know”" description="More aggressive; review the result" />
+          </div>
+        )}
         <Toggle checked={mcSilence} onChange={setMcSilence} label="Dead air" description="Silent stretches found in the waveform" />
         {mcSilence && (
           <Field label="Minimum gap">
