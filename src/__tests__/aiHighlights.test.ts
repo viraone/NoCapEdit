@@ -196,7 +196,7 @@ describe("findAiHighlights", () => {
   });
 
   describe("Gemini provider", () => {
-    const gem: AiSettings = { ...settings, provider: "gemini", geminiKey: "AIza-test", geminiModel: "gemini-2.5-flash" };
+    const gem: AiSettings = { ...settings, provider: "gemini", geminiKey: "AIza-test", geminiModel: "gemini-3.5-flash-lite" };
     const answer = (text: string, status = 200) => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }] }), { status });
 
     it("posts the transcript to generateContent with a JSON response schema and the user's key", async () => {
@@ -206,7 +206,7 @@ describe("findAiHighlights", () => {
       const out = await findAiHighlights(cues, { settings: gem, ...opts, onProgress: (m) => progress.push(m) });
       expect(out[0]).toMatchObject({ start: 5, end: 25, title: "Best bit", score: 7 });
       const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-      expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent");
+      expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent");
       expect((init.headers as Record<string, string>)["x-goog-api-key"]).toBe("AIza-test");
       const body = JSON.parse(String(init.body));
       expect(body.systemInstruction.parts[0].text).toContain("clips");
@@ -215,7 +215,7 @@ describe("findAiHighlights", () => {
       expect(body.generationConfig.responseSchema.type).toBe("OBJECT");
       expect(body.generationConfig.responseSchema.properties.clips.items.properties.score.type).toBe("INTEGER");
       expect(body.generationConfig.responseSchema.required).toEqual(["clips"]);
-      expect(progress[0]).toContain("gemini-2.5-flash");
+      expect(progress[0]).toContain("gemini-3.5-flash-lite");
     });
 
     it("converts the schema, reads blocked or truncated answers, and explains errors", async () => {
@@ -311,8 +311,8 @@ describe("AI settings", () => {
     expect(activeModel(a)).toBe("claude-sonnet-5-5");
     store.set("reelflow.ai", JSON.stringify({ provider: "gemini", geminiKey: "AIza-x" }));
     const g = loadAiSettings();
-    expect(g).toMatchObject({ provider: "gemini", geminiKey: "AIza-x", geminiModel: "gemini-2.5-flash", model: "qwen3.8:27b" });
-    expect(activeModel(g)).toBe("gemini-2.5-flash");
+    expect(g).toMatchObject({ provider: "gemini", geminiKey: "AIza-x", geminiModel: "gemini-3.5-flash-lite", model: "qwen3.8:27b" });
+    expect(activeModel(g)).toBe("gemini-3.5-flash-lite");
     store.set("reelflow.ai", JSON.stringify({ provider: "xai", xaiKey: "xai-x" }));
     const x = loadAiSettings();
     expect(x).toMatchObject({ provider: "xai", xaiKey: "xai-x", xaiModel: "grok-4", model: "qwen3.8:27b" });
