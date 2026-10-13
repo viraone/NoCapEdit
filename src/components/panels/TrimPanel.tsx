@@ -257,7 +257,7 @@ export function TrimPanel() {
         }
         body={
           <p className="rf-read" data-trim-steps>
-            Park the playhead where you want the cut. Works on the highlighted clip.
+            <b>Park the playhead</b> where you want the cut. Works on the <b>highlighted clip</b>.
           </p>
         }
       />

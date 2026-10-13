@@ -49,7 +49,7 @@ export function StylePanel() {
         body={
           <>
             <p className="rf-read" data-style-steps>
-              Pick one of {CAPTION_PRESETS.length} presets below, then adjust size, position and colours. It applies to every caption.
+              <b>Pick</b> one of {CAPTION_PRESETS.length} presets below, then <b>adjust</b> size, position and colours. It applies to <b>every caption</b>.
             </p>
             <p className="rf-read-note mt-2.5">
               The <b>accent colour</b> marks the word being spoken.
