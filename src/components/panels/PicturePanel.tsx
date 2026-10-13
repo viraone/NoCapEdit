@@ -132,23 +132,9 @@ export function PicturePanel() {
       <PanelHeader
         title="Picture"
         body={
-          <ol className="rf-read rf-steps" data-picture-steps>
-            <li>
-              <span>
-                <b>Add</b> an image or a Lottie animation
-              </span>
-            </li>
-            <li>
-              <span>
-                <b>Drag</b> it into place on the preview
-              </span>
-            </li>
-            <li>
-              <span>
-                <b>Resize</b> it with the corner handle
-              </span>
-            </li>
-          </ol>
+          <p className="rf-read" data-picture-steps>
+            Add an image or a Lottie animation, drag it into place on the preview, and resize it with the corner handle.
+          </p>
         }
       />
       <PanelSection>

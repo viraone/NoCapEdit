@@ -512,26 +512,9 @@ export function ReelsPanel() {
         title="Reels"
         body={
           <>
-            <ol className="rf-read rf-steps" data-reels-steps>
-              <li>
-                <span>
-                  <b>Reads</b> your transcript{" "}
-                  <span className="whitespace-nowrap">
-                    with <span className="rf-mono">{activeModel(aiSettings)}</span>
-                  </span>
-                </span>
-              </li>
-              <li>
-                <span>
-                  <b>Picks</b> the best moments
-                </span>
-              </li>
-              <li>
-                <span>
-                  <b>Cuts</b> each into its own {format.ratio} reel, captions included
-                </span>
-              </li>
-            </ol>
+            <p className="rf-read" data-reels-steps>
+              Reads your transcript <span className="whitespace-nowrap">with <span className="rf-mono">{activeModel(aiSettings)}</span></span>, picks the best moments and cuts each into its own {format.ratio} reel, captions included.
+            </p>
             <p className="rf-read-note mt-2.5">Every reel opens and exports on its own.</p>
           </>
         }
