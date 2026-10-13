@@ -270,6 +270,9 @@ export function TrimPanel() {
           <Tile icon={<ArrowRightToLine size={16} />} label="Cut before" onClick={doCutBefore} />
           <Tile icon={<ArrowLeftToLine size={16} />} label="Cut after" onClick={doCutAfter} />
         </TileGrid>
+        <p className="rf-read-note" data-trim-cut-hint>
+          <b>Cut before</b> removes everything left of the playhead, <b>Cut after</b> everything to the right.
+        </p>
       </PanelSection>
 
       <PanelSection title="Magic Cut">
