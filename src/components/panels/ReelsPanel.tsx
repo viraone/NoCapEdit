@@ -380,35 +380,24 @@ export function ReelsPanel() {
           title="Reels"
           body={
             <>
-              <p className="rf-read">
-                You&apos;re editing <b>Reel {project.reel?.index}</b> of {sourceName ? <b>&ldquo;{sourceName}&rdquo;</b> : "the source video"}.
+              <p className="rf-read" data-reel-intro>
+                <b>Reel {project.reel?.index}</b> of {reels.length || "?"}
+                {project.reel?.title ? ` · ${project.reel.title}` : ""}
               </p>
-              <p className="rf-read-note mt-1.5">Click another reel below to switch, or go back to the source video to make more.</p>
+              <button
+                type="button"
+                className="mt-1.5 flex max-w-full items-center gap-1 text-[12px] text-sys-blue hover:underline"
+                onClick={() => router.push(backHref)}
+                data-all-reels
+                title={`Back to ${sourceName ? `"${sourceName}"` : "the source video"} and the list of all its reels. The source keeps the full transcript; Make reels there adds to this list.`}
+              >
+                <ArrowLeft size={12} className="shrink-0" />
+                {/* A long source name ellipsizes instead of running past the end of the link. */}
+                <span className="min-w-0 truncate">All reels{sourceName ? ` · ${sourceName}` : ""}</span>
+              </button>
             </>
           }
         />
-        <PanelSection>
-          <Button variant="primary" size="md" className="w-full min-w-0" onClick={() => router.push(backHref)} data-all-reels title={`Back to ${sourceName ? `"${sourceName}"` : "the source video"} and the list of all its reels`}>
-            <ArrowLeft size={14} className="shrink-0" />
-            {/* A long source name ellipsizes instead of running past the end of the button. */}
-            <span className="min-w-0 truncate">All reels{sourceName ? ` · ${sourceName}` : ""}</span>
-          </Button>
-          <p className="rf-read-note">
-            The source keeps the <b>full transcript</b>. Make reels there adds to this list.
-          </p>
-        </PanelSection>
-        {canStretch && (canStretch.before > 0.05 || canStretch.after > 0.05) && (
-          <PanelSection title="Want more of the moment?">
-            <div className="space-y-1.5" data-reel-stretch-hint>
-              <p className="rf-read">
-                <b>Drag either end</b> of the clip on the timeline past where it stops. Video, sound and captions come back from the source.
-              </p>
-              <p className="rf-read-note">
-                Still there: <b className="rf-mono">{formatTime(canStretch.before)}</b> before, <b className="rf-mono">{formatTime(canStretch.after)}</b> after.
-              </p>
-            </div>
-          </PanelSection>
-        )}
         {(isEmptyReel(project) || job || error || note) && (
           <PanelSection title={isEmptyReel(project) ? "This reel is empty" : undefined}>
             {isEmptyReel(project) && !job && (
@@ -430,6 +419,13 @@ export function ReelsPanel() {
           </PanelSection>
         )}
         <PanelSection title={`All reels (${reels.length})`}>{reels.length ? reelList() : <p className="rf-read-note">Loading…</p>}</PanelSection>
+        {canStretch && (canStretch.before > 0.05 || canStretch.after > 0.05) && (
+          <PanelSection>
+            <p className="rf-read-note" data-reel-stretch-hint>
+              <b>Drag either end</b> of the clip on the timeline for more. Still there: <b className="rf-mono">{formatTime(canStretch.before)}</b> before, <b className="rf-mono">{formatTime(canStretch.after)}</b> after.
+            </p>
+          </PanelSection>
+        )}
         {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
       </>
     );
