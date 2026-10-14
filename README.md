@@ -112,8 +112,9 @@ Hugging Face Hub the first time they are used and cached by the browser.
 
 To paste YouTube links on the start screen, also run the helper in a second terminal
 (`brew install yt-dlp ffmpeg` once, then `npm run youtube`). It listens on
-`127.0.0.1:3131`, which the site uses by default; `server/youtube/README.md` explains
-how to host a copy for visitors with `NEXT_PUBLIC_YOUTUBE_SERVICE_URL`.
+`127.0.0.1:3131`, which the site uses by default. For visitors, host a copy with one
+click on Render (`render.yaml`) and set the repository variable `YOUTUBE_SERVICE_URL`;
+`server/youtube/README.md` has the steps.
 
 ## Deployment
 

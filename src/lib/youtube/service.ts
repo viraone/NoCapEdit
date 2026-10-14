@@ -51,10 +51,10 @@ export class YouTubeServiceError extends Error {
 
 /** What to tell the visitor when nothing answers at the helper's address. */
 export function unreachableText(base = youtubeServiceUrl()): string {
-  const local = base === DEFAULT_YOUTUBE_SERVICE;
-  return local
-    ? "The YouTube helper isn't running on this computer. Start it with \"npm run youtube\" in the NoCap Edit folder, then try again."
-    : `Can't reach the YouTube helper at ${base}. Try again in a minute.`;
+  if (base === DEFAULT_YOUTUBE_SERVICE) {
+    return "The YouTube helper isn't running on this computer. Start it with \"npm run youtube\" in the NoCap Edit folder, then try again.";
+  }
+  return "YouTube import isn't available right now (the helper didn't answer). Try again in a minute, or drop a video file instead.";
 }
 
 async function serviceFetch(path: string, signal?: AbortSignal): Promise<Response> {

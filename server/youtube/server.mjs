@@ -23,10 +23,13 @@
  *   MAX_JOBS      downloads running at once (2)
  *   YTDLP         yt-dlp executable (yt-dlp)
  *   YTDLP_ARGS    extra arguments, split on spaces (e.g. "--cookies /data/cookies.txt")
+ *   YTDLP_COOKIES contents of a Netscape cookies.txt exported from a signed-in YouTube
+ *                 session; written to a temp file and passed as --cookies. Gets past
+ *                 "Sign in to confirm you're not a bot" on data-centre addresses.
  */
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -39,6 +42,11 @@ const MAX_SECONDS = (Number(process.env.MAX_MINUTES) || 180) * 60;
 const MAX_JOBS = Number(process.env.MAX_JOBS) || 2;
 const YTDLP = process.env.YTDLP || "yt-dlp";
 const EXTRA_ARGS = (process.env.YTDLP_ARGS || "").split(" ").filter(Boolean);
+if (process.env.YTDLP_COOKIES) {
+  const cookieFile = path.join(tmpdir(), `nocap-yt-cookies-${process.pid}.txt`);
+  await writeFile(cookieFile, process.env.YTDLP_COOKIES.replace(/\\n/g, "\n"), { mode: 0o600 });
+  EXTRA_ARGS.push("--cookies", cookieFile);
+}
 /** yt-dlp -J on a long video can take a few seconds; a download much longer. */
 const INFO_TIMEOUT_MS = 60_000;
 const DOWNLOAD_TIMEOUT_MS = 30 * 60_000;

@@ -30,7 +30,12 @@ jobs:
       - run: npm test
       # Served from the root of the custom domain (https://nocapedit.com), so no
       # base path. Set NEXT_PUBLIC_BASE_PATH=/<repo> only for a project sub-path site.
+      # YOUTUBE_SERVICE_URL is a repository variable (Settings → Secrets and variables →
+      # Actions → Variables): the hosted YouTube helper visitors use for pasted links.
+      # Unset, the site looks for a helper on the visitor's own computer (npm run youtube).
       - run: npm run build
+        env:
+          NEXT_PUBLIC_YOUTUBE_SERVICE_URL: ${{ vars.YOUTUBE_SERVICE_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out

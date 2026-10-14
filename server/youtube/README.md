@@ -20,30 +20,46 @@ for the helper at `127.0.0.1:3131` by default, so links pasted on this computer 
 right away, including on the live site. YouTube changes often; if downloads start
 failing with an extraction or 403 error, run `brew upgrade yt-dlp`.
 
-## Host it for visitors
+## Host it for visitors (one-time setup)
 
 Visitors do not have the helper on their machines, so for the bar to work for
-everyone, run a copy somewhere public and build the site with its address:
+everyone a copy has to run on a public server. The repo's `render.yaml` makes that one
+click on Render's free tier (no card needed):
 
-```bash
-NEXT_PUBLIC_YOUTUBE_SERVICE_URL=https://yt.example.com npm run build
-```
+1. Open https://render.com/deploy?repo=https://github.com/viraone/NoCapEdit and sign in
+   with GitHub. Render reads `render.yaml`, builds `server/youtube/Dockerfile` and gives
+   the service an address like `https://nocap-youtube.onrender.com`.
+2. Tell the site about it. In the GitHub repo: Settings → Secrets and variables →
+   Actions → Variables → New repository variable, name `YOUTUBE_SERVICE_URL`, value the
+   address from step 1. Or from a terminal:
+   ```bash
+   gh variable set YOUTUBE_SERVICE_URL --body https://nocap-youtube.onrender.com
+   gh workflow run pages.yml
+   ```
+3. The Pages deploy bakes the address into the site (`NEXT_PUBLIC_YOUTUBE_SERVICE_URL`).
+   From then on every visitor's pasted link goes through the hosted helper.
 
-(For GitHub Pages, add that variable to the `npm run build` step in
-`.github/workflows/pages.yml`.) A `Dockerfile` is included:
+Free-tier notes: the service sleeps after 15 idle minutes and takes up to a minute to
+wake (the card says so while it waits); 0.1 CPU makes 1080p merges of long videos slow.
+Render's Starter plan removes both. Fly.io works too (`server/youtube/fly.toml`,
+`cd server/youtube && fly launch --copy-config --yes`), as does any host that runs a
+Docker image:
 
 ```bash
 docker build -t nocap-youtube server/youtube
 docker run -p 3131:3131 -e ALLOW_ORIGIN=https://nocapedit.com nocap-youtube
 ```
 
-Put it behind HTTPS (Caddy, a Fly.io or Railway app, a Cloudflare tunnel) because the
-site is served over HTTPS and may only call HTTPS or `127.0.0.1`.
+It must be reachable over HTTPS, because the site is served over HTTPS and may only
+call HTTPS or `127.0.0.1`.
 
-Be aware that YouTube often blocks downloads from data-centre addresses ("Sign in to
-confirm you're not a bot"). A small VPS with a residential-looking address, or
-`YTDLP_ARGS="--cookies /data/cookies.txt"` with an exported cookie file, usually gets
-around it. Only download videos you have the right to use.
+### If downloads fail with "Sign in to confirm you're not a bot"
+
+YouTube often blocks data-centre addresses. Export cookies from a browser signed in to
+a throwaway YouTube account (any "Get cookies.txt" extension, Netscape format) and put
+the file's contents in the service's `YTDLP_COOKIES` environment variable (Render:
+Environment → Add → paste; multi-line values are fine). The helper writes them to a
+temp file and passes `--cookies`. Only download videos you have the right to use.
 
 ## Settings (environment variables)
 

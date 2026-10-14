@@ -1,0 +1,32 @@
+# Fly.io config for the YouTube helper (alternative to Render).
+#   cd server/youtube && fly launch --copy-config --yes && fly deploy
+app = "nocap-youtube"
+primary_region = "sea"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "3131"
+  ALLOW_ORIGIN = "https://nocapedit.com"
+  MAX_MINUTES = "180"
+  MAX_JOBS = "2"
+
+[http_service]
+  internal_port = 3131
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "10s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

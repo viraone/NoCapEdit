@@ -1,0 +1,23 @@
+# Render Blueprint: hosts the YouTube helper (server/youtube/) so visitors to
+# nocapedit.com can paste links without running anything themselves.
+# Deploy: https://render.com/deploy?repo=https://github.com/viraone/NoCapEdit
+# Afterwards set the GitHub repository variable YOUTUBE_SERVICE_URL to the
+# service's https address and re-run the Pages deploy (see server/youtube/README.md).
+services:
+  - type: web
+    name: nocap-youtube
+    runtime: docker
+    plan: free
+    dockerfilePath: ./server/youtube/Dockerfile
+    dockerContext: ./server/youtube
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: ALLOW_ORIGIN
+        value: https://nocapedit.com
+      - key: MAX_MINUTES
+        value: "180"
+      - key: MAX_JOBS
+        value: "2"
