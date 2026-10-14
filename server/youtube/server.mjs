@@ -189,19 +189,28 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method !== "GET") return json(res, 405, { error: "GET only" });
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  // Answers at once: hosts poll this every few seconds with a short timeout, and
+  // spawning yt-dlp (a self-extracting binary) can take longer than that on a small CPU.
   if (url.pathname === "/health" || url.pathname === "/") {
-    try {
-      const v = await runYtDlp(["--version"], { timeoutMs: 10_000 });
-      return json(res, 200, { ok: true, ytdlp: v.trim(), maxMinutes: MAX_SECONDS / 60 });
-    } catch (e) {
-      return json(res, 500, { ok: false, error: e.message });
-    }
+    return json(res, 200, { ok: true, ytdlp: ytdlpVersion, maxMinutes: MAX_SECONDS / 60 });
   }
   if (url.pathname === "/info") return handleInfo(req, res, url.searchParams);
   if (url.pathname === "/download") return handleDownload(req, res, url.searchParams);
   json(res, 404, { error: "Not found" });
 });
 
+/** Looked up once after start-up, reported by /health ("checking…" until then, "missing" if yt-dlp isn't installed). */
+let ytdlpVersion = "checking";
+
 server.listen(PORT, HOST, () => {
   console.log(`NoCap Edit YouTube helper listening on http://${HOST}:${PORT} (yt-dlp: ${YTDLP}, up to ${MAX_SECONDS / 60} min per video)`);
+  runYtDlp(["--version"], { timeoutMs: 60_000 })
+    .then((v) => {
+      ytdlpVersion = v.trim();
+      console.log(`yt-dlp ${ytdlpVersion} ready`);
+    })
+    .catch((e) => {
+      ytdlpVersion = "missing";
+      console.error(`yt-dlp check failed: ${e.message}`);
+    });
 });
