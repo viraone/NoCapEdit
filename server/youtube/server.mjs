@@ -23,9 +23,10 @@
  *   MAX_JOBS      downloads running at once (2)
  *   YTDLP         yt-dlp executable (yt-dlp)
  *   YTDLP_ARGS    extra arguments, split on spaces (e.g. "--cookies /data/cookies.txt")
- *   YTDLP_COOKIES contents of a Netscape cookies.txt exported from a signed-in YouTube
- *                 session; written to a temp file and passed as --cookies. Gets past
- *                 "Sign in to confirm you're not a bot" on data-centre addresses.
+ *   YTDLP_COOKIES a Netscape cookies.txt exported from a signed-in YouTube session, as
+ *                 plain text or base64 (one line); written to a temp file and passed as
+ *                 --cookies. Gets past "Sign in to confirm you're not a bot" on data-centre
+ *                 addresses.
  */
 import http from "node:http";
 import { spawn } from "node:child_process";
@@ -44,8 +45,24 @@ const YTDLP = process.env.YTDLP || "yt-dlp";
 const EXTRA_ARGS = (process.env.YTDLP_ARGS || "").split(" ").filter(Boolean);
 if (process.env.YTDLP_COOKIES) {
   const cookieFile = path.join(tmpdir(), `nocap-yt-cookies-${process.pid}.txt`);
-  await writeFile(cookieFile, process.env.YTDLP_COOKIES.replace(/\\n/g, "\n"), { mode: 0o600 });
+  await writeFile(cookieFile, decodeCookies(process.env.YTDLP_COOKIES), { mode: 0o600 });
   EXTRA_ARGS.push("--cookies", cookieFile);
+  console.log("yt-dlp will use the cookies from YTDLP_COOKIES");
+}
+
+/**
+ * YTDLP_COOKIES may be the cookies.txt text itself (real newlines or literal "\n"),
+ * or that text base64-encoded, which pastes into any single-line settings box
+ * without losing the tabs the Netscape format needs.
+ */
+function decodeCookies(value) {
+  const raw = value.trim();
+  if (raw.startsWith("#") || raw.includes("\t")) return raw.replace(/\\n/g, "\n");
+  if (/^[A-Za-z0-9+/=\s]+$/.test(raw)) {
+    const text = Buffer.from(raw.replace(/\s+/g, ""), "base64").toString("utf8");
+    if (text.includes("\t")) return text;
+  }
+  return raw.replace(/\\n/g, "\n");
 }
 /** yt-dlp -J on a long video can take a few seconds; a download much longer. */
 const INFO_TIMEOUT_MS = 60_000;
@@ -70,6 +87,17 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+/** Turns yt-dlp's wording into something a visitor can act on. */
+function friendlyError(message) {
+  if (/not a bot|cookies/i.test(message)) {
+    return "YouTube is blocking the helper's server right now (its bot check). The site owner can fix this by giving the helper cookies (see server/youtube/README.md). Meanwhile, drop a video file instead.";
+  }
+  if (/private video|members-only|sign in to confirm your age|age-restricted/i.test(message)) return "This video is private, members-only or age-restricted, so it can't be fetched.";
+  if (/video unavailable|has been removed|does not exist/i.test(message)) return "That video isn't available on YouTube (removed, or the link is wrong).";
+  if (/premieres|is live|live event/i.test(message)) return "Live streams and premieres can't be fetched until they've finished.";
+  return message;
+}
+
 /** Runs yt-dlp, resolving with stdout; rejects with the last useful stderr line. */
 function runYtDlp(args, { timeoutMs, signal }) {
   return new Promise((resolve, reject) => {
@@ -92,7 +120,7 @@ function runYtDlp(args, { timeoutMs, signal }) {
       if (code === 0) return resolve(out);
       const lines = err.split("\n").map((l) => l.trim()).filter(Boolean);
       const last = lines.filter((l) => l.startsWith("ERROR")).pop() ?? lines.pop() ?? `yt-dlp exited with ${code}`;
-      reject(new Error(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]{11}:\s*)?/, "")));
+      reject(new Error(friendlyError(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]{11}:\s*)?/, ""))));
     });
   });
 }

@@ -56,10 +56,17 @@ call HTTPS or `127.0.0.1`.
 ### If downloads fail with "Sign in to confirm you're not a bot"
 
 YouTube often blocks data-centre addresses. Export cookies from a browser signed in to
-a throwaway YouTube account (any "Get cookies.txt" extension, Netscape format) and put
-the file's contents in the service's `YTDLP_COOKIES` environment variable (Render:
-Environment → Add → paste; multi-line values are fine). The helper writes them to a
-temp file and passes `--cookies`. Only download videos you have the right to use.
+a throwaway YouTube account (the "Get cookies.txt LOCALLY" extension, Netscape format)
+and put the file in the service's `YTDLP_COOKIES` environment variable. Base64 keeps it
+on one line, which any settings box accepts:
+
+```bash
+base64 -i ~/Downloads/www.youtube.com_cookies.txt | tr -d '\n' | pbcopy   # then paste as the value
+```
+
+The helper decodes it, writes a temp file and passes `--cookies`. Cookies expire after
+some weeks; export again if the bot check comes back. Only download videos you have the
+right to use.
 
 ## Settings (environment variables)
 
