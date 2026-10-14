@@ -6,12 +6,14 @@ It runs yt-dlp and streams back a browser-playable MP4 (H.264 + AAC, up to the
 height the visitor picked). The site then stores the file in the visitor's browser
 like any dropped recording. The helper never sees the visitor's projects.
 
-Zero npm dependencies. Needs Node 20+, `yt-dlp` and `ffmpeg` on the PATH.
+Zero npm dependencies. Needs Node 20+, `yt-dlp`, `ffmpeg` and `deno` on the PATH
+(yt-dlp uses Deno to solve YouTube's player challenges; without it YouTube answers
+"The page needs to be reloaded" from server addresses).
 
 ## Run it on your own computer
 
 ```bash
-brew install yt-dlp ffmpeg      # once
+brew install yt-dlp ffmpeg deno # once
 npm run youtube                 # listens on http://127.0.0.1:3131
 ```
 
