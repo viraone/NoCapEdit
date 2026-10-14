@@ -70,6 +70,17 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+/** Turns yt-dlp's wording into something a visitor can act on. */
+function friendlyError(message) {
+  if (/not a bot|cookies/i.test(message)) {
+    return "YouTube is blocking the helper's server right now (its bot check). The site owner can fix this by giving the helper cookies (see server/youtube/README.md). Meanwhile, drop a video file instead.";
+  }
+  if (/private video|members-only|sign in to confirm your age|age-restricted/i.test(message)) return "This video is private, members-only or age-restricted, so it can't be fetched.";
+  if (/video unavailable|has been removed|does not exist/i.test(message)) return "That video isn't available on YouTube (removed, or the link is wrong).";
+  if (/premieres|is live|live event/i.test(message)) return "Live streams and premieres can't be fetched until they've finished.";
+  return message;
+}
+
 /** Runs yt-dlp, resolving with stdout; rejects with the last useful stderr line. */
 function runYtDlp(args, { timeoutMs, signal }) {
   return new Promise((resolve, reject) => {
@@ -92,7 +103,7 @@ function runYtDlp(args, { timeoutMs, signal }) {
       if (code === 0) return resolve(out);
       const lines = err.split("\n").map((l) => l.trim()).filter(Boolean);
       const last = lines.filter((l) => l.startsWith("ERROR")).pop() ?? lines.pop() ?? `yt-dlp exited with ${code}`;
-      reject(new Error(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]{11}:\s*)?/, "")));
+      reject(new Error(friendlyError(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]{11}:\s*)?/, ""))));
     });
   });
 }
