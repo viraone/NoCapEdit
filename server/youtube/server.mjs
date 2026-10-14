@@ -89,6 +89,9 @@ function json(res, status, body) {
 
 /** Turns yt-dlp's wording into something a visitor can act on. */
 function friendlyError(message) {
+  if (/cookies are no longer valid|rotated/i.test(message)) {
+    return "The helper's YouTube cookies have expired or been rotated. The site owner needs to export fresh ones (see server/youtube/README.md). Meanwhile, drop a video file instead.";
+  }
   if (/not a bot|cookies/i.test(message)) {
     return "YouTube is blocking the helper's server right now (its bot check). The site owner can fix this by giving the helper cookies (see server/youtube/README.md). Meanwhile, drop a video file instead.";
   }
@@ -120,6 +123,8 @@ function runYtDlp(args, { timeoutMs, signal }) {
       if (code === 0) return resolve(out);
       const lines = err.split("\n").map((l) => l.trim()).filter(Boolean);
       const last = lines.filter((l) => l.startsWith("ERROR")).pop() ?? lines.pop() ?? `yt-dlp exited with ${code}`;
+      // The raw wording goes to the server log; the browser gets the friendly version.
+      console.log(`[yt-dlp] ${last.slice(0, 400)}`);
       reject(new Error(friendlyError(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]{11}:\s*)?/, ""))));
     });
   });
