@@ -38,6 +38,16 @@ all of which are CORS-enabled:
 Everything else (fonts, ffmpeg cores, RNNoise model, workers) is served from the
 site itself.
 
+## YouTube helper (optional)
+
+The start screen's "Paste a YouTube link" bar talks to a small yt-dlp service in
+`server/youtube/` (`npm run youtube`). The static site expects it at
+`http://127.0.0.1:3131` unless `NEXT_PUBLIC_YOUTUBE_SERVICE_URL` is set when the site is
+built, so visitors only get the feature once a copy is hosted and the site is rebuilt
+with its HTTPS address (`server/youtube/README.md` has the Docker image and settings).
+The helper sends CORS and `Cross-Origin-Resource-Policy: cross-origin` headers, so it
+works under the COEP policy above without any change here.
+
 ## Vercel
 
 `vercel.json` (already in the repo):
