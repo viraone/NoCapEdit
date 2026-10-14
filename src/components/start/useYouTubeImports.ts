@@ -27,7 +27,7 @@ export interface YouTubeImport {
 export function youtubeStageText(item: YouTubeImport): string {
   switch (item.stage) {
     case "info":
-      return "Looking up the video…";
+      return "Looking up the video… the helper can take a minute to wake up";
     case "fetching":
       return "Fetching from YouTube… this can take a minute for long videos";
     case "saving":

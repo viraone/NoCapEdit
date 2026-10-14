@@ -43,8 +43,9 @@ site itself.
 The start screen's "Paste a YouTube link" bar talks to a small yt-dlp service in
 `server/youtube/` (`npm run youtube`). The static site expects it at
 `http://127.0.0.1:3131` unless `NEXT_PUBLIC_YOUTUBE_SERVICE_URL` is set when the site is
-built, so visitors only get the feature once a copy is hosted and the site is rebuilt
-with its HTTPS address (`server/youtube/README.md` has the Docker image and settings).
+built. The Pages workflow fills it from the repository variable `YOUTUBE_SERVICE_URL`, so
+visitors get the feature once a copy is hosted (one click via `render.yaml` on Render)
+and that variable points at its HTTPS address (`server/youtube/README.md` has the steps).
 The helper sends CORS and `Cross-Origin-Resource-Policy: cross-origin` headers, so it
 works under the COEP policy above without any change here.
 
