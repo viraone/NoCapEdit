@@ -1,8 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck, Video, Archive, PackageOpen } from "lucide-react";
+import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck, Video, Archive, PackageOpen, MonitorPlay, X } from "lucide-react";
 import { Recorder, useRecordingSupported } from "@/components/record/Recorder";
+import { YouTubeBar } from "@/components/start/YouTubeBar";
+import { useYouTubeImports, youtubeStageText } from "@/components/start/useYouTubeImports";
 import { exportBackup, importBackup } from "@/lib/storage/backup";
 import { requestDiskSink, createBlobSink } from "@/lib/ffmpeg/sinks";
 import { downloadBlob, safeFilename } from "@/lib/utils/download";
@@ -109,6 +111,9 @@ export function StartScreen() {
     });
     setStorage(await storageEstimate());
   }, []);
+
+  // A pasted YouTube link becomes a card under Your projects while it downloads, then a real project.
+  const youtube = useYouTubeImports(refresh);
 
   useEffect(() => {
     ensureCrossOriginIsolation();
@@ -239,7 +244,9 @@ export function StartScreen() {
         </div>
       </header>
 
-      <section className="mt-12 grid gap-6 md:grid-cols-[1.5fr_1fr]">
+      <YouTubeBar onSubmit={youtube.start} />
+
+      <section className="mt-6 grid gap-6 md:grid-cols-[1.5fr_1fr]">
         <FileDrop
           accept="video/*,image/*"
           multiple
@@ -304,10 +311,53 @@ export function StartScreen() {
             </div>
           )}
         </div>
-        {projects.length === 0 ? (
-          <p className="card rounded-3xl border-dashed p-14 text-center text-lg text-label-3">No projects yet. Drop a video above or create a new project.</p>
+        {projects.length === 0 && youtube.items.length === 0 ? (
+          <p className="card rounded-3xl border-dashed p-14 text-center text-lg text-label-3">No projects yet. Paste a YouTube link or drop a video above, or create a new project.</p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {youtube.items.map((it) => (
+              <div key={it.key} className="card overflow-hidden rounded-3xl" data-youtube-import={it.stage}>
+                <div className="relative aspect-[16/10] w-full overflow-hidden bg-sys-gray6">
+                  {it.thumbnail ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={it.thumbnail} alt="" className="h-full w-full object-cover opacity-70" onError={(e) => (e.currentTarget.style.display = "none")} />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sys-gray3">
+                      <MonitorPlay size={44} />
+                    </div>
+                  )}
+                  <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
+                  <span className="absolute left-2 top-2 rounded bg-sys-red/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">YouTube · {it.quality}p</span>
+                </div>
+                <div className="px-5 pb-4 pt-4 text-left">
+                  <p className="truncate text-lg font-semibold text-white">{it.title}</p>
+                  {it.stage === "error" ? (
+                    <p className="mt-1 text-sm text-sys-red">{youtubeStageText(it)}</p>
+                  ) : (
+                    <>
+                      <ProgressBar className="mt-3 h-2" value={it.stage === "saving" && it.total ? it.loaded / it.total : null} />
+                      <p className="mt-2 text-sm text-label-3">{youtubeStageText(it)}</p>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 border-t border-sys-gray5 px-3 py-2">
+                  {it.stage === "error" ? (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={() => youtube.retry(it.key)}>
+                        Try again
+                      </Button>
+                      <Button variant="ghost" size="sm" className="ml-auto" onClick={() => youtube.dismiss(it.key)}>
+                        Dismiss
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="ml-auto text-sys-red hover:text-red-200" onClick={() => youtube.cancel(it.key)}>
+                      <X size={14} /> Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
             {projects.map((p) => {
               const fmt = getFormat(p.formatId);
               return (

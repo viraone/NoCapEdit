@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "node e2e/smoke.mjs",
-    "test:e2e:mobile": "node e2e/mobile.mjs"
+    "test:e2e:mobile": "node e2e/mobile.mjs",
+    "youtube": "node server/youtube/server.mjs"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",

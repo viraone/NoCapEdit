@@ -36,6 +36,10 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
   air (from the waveform), re-timing captions, overlays and voice-overs.
 - **Highlight finder**: TF-IDF salience plus delivery cues suggests the best 15/30/60 s
   window; "Keep only this" trims the reel to it.
+- **YouTube link import**: paste a link on the start screen, pick 1080p/720p/480p/360p,
+  and the video lands under Your projects. The fetch itself runs through a tiny
+  yt-dlp helper (`server/youtube/`, `npm run youtube`), the one step a browser cannot
+  do; the MP4 is then stored on the device like any dropped file.
 - Screen / camera / screen+mic **recorder** (MediaRecorder) straight into the timeline;
   hover **filmstrip preview** on the timeline; **.nocap backups** (streamed zip of
   project + media, restorable on any device).
@@ -105,6 +109,11 @@ ffmpeg core can run; append `?nocoi` to skip it.
 
 Models (Whisper, Marian, pyannote, WeSpeaker, MMS-TTS) are downloaded from the
 Hugging Face Hub the first time they are used and cached by the browser.
+
+To paste YouTube links on the start screen, also run the helper in a second terminal
+(`brew install yt-dlp ffmpeg` once, then `npm run youtube`). It listens on
+`127.0.0.1:3131`, which the site uses by default; `server/youtube/README.md` explains
+how to host a copy for visitors with `NEXT_PUBLIC_YOUTUBE_SERVICE_URL`.
 
 ## Deployment
 
