@@ -6,6 +6,7 @@
  * their own key, and is told plainly that the transcript leaves the device.
  */
 import { useState } from "react";
+import { withBase } from "@/lib/basePath";
 import { Check, RefreshCw, ShieldCheck } from "lucide-react";
 import { DEFAULT_AI_SETTINGS, listAnthropicModels, listGeminiModels, listOllamaModels, listOpenAiModels, listXaiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
 import { Field, Input } from "@/components/ui/Field";
@@ -115,7 +116,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
             <Input type="password" value={settings.geminiKey} onChange={(e) => onChange({ geminiKey: e.target.value })} placeholder="AIza…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
           </Field>
           <p className="rf-read-note" data-ai-disclaimer>
-            Sends the transcript (not the video) to Google under its terms and is billed to your key, which stays in this browser and is only sent to generativelanguage.googleapis.com. Get a key at aistudio.google.com. The Ollama option keeps everything on this computer.
+            Sends the transcript (not the video) to Google under its terms and is billed to your key, which stays in this browser and is only sent to generativelanguage.googleapis.com. Get a free key at aistudio.google.com (<a href={withBase("/docs/#api-key")} target="_blank" rel="noreferrer" className="text-sys-blue hover:underline">step-by-step guide</a>). The Ollama option keeps everything on this computer.
           </p>
         </>
       ) : anthropic ? (
