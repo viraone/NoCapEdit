@@ -22,14 +22,14 @@ import { uid } from "@/lib/utils/id";
 
 /** Count and length the user last chose, shared by the Reels and Subtitles panels. */
 export interface ReelSettings {
-  count: 3 | 5 | 8 | 12;
+  count: 3 | 5 | 8 | 12 | 15;
   targetSeconds: 15 | 30 | 60;
 }
-export const REEL_COUNTS: ReelSettings["count"][] = [3, 5, 8, 12];
+export const REEL_COUNTS: ReelSettings["count"][] = [3, 5, 8, 12, 15];
 const REEL_SETTINGS_KEY = "reelflow.reels";
 /** Bumped when the default count changes, so a count saved under the old default is reset once. */
-const REEL_SETTINGS_VERSION = 2;
-export const DEFAULT_REEL_SETTINGS: ReelSettings = { count: 12, targetSeconds: 30 };
+const REEL_SETTINGS_VERSION = 3;
+export const DEFAULT_REEL_SETTINGS: ReelSettings = { count: 15, targetSeconds: 30 };
 
 export function loadReelSettings(): ReelSettings {
   try {

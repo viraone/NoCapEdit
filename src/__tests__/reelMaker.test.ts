@@ -59,19 +59,19 @@ describe("reel maker helpers", () => {
     });
     const stub = () => vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
 
-    it("defaults to 12 reels of about 30 s", () => {
+    it("defaults to 15 reels of about 30 s", () => {
       stub();
-      expect(DEFAULT_REEL_SETTINGS).toEqual({ count: 12, targetSeconds: 30 });
+      expect(DEFAULT_REEL_SETTINGS).toEqual({ count: 15, targetSeconds: 30 });
       expect(loadReelSettings()).toEqual(DEFAULT_REEL_SETTINGS);
     });
 
-    it("keeps a count the user chose, and resets one saved before 12 became the default", () => {
+    it("keeps a count the user chose, and resets one saved before 15 became the default", () => {
       stub();
       saveReelSettings({ count: 5, targetSeconds: 60 });
       expect(loadReelSettings()).toEqual({ count: 5, targetSeconds: 60 });
-      store.set("reelflow.reels", JSON.stringify({ count: 8, targetSeconds: 15 }));
-      expect(loadReelSettings()).toEqual({ count: 12, targetSeconds: 15 });
-      store.set("reelflow.reels", JSON.stringify({ count: 7, targetSeconds: 99, v: 2 }));
+      store.set("reelflow.reels", JSON.stringify({ count: 12, targetSeconds: 15, v: 2 }));
+      expect(loadReelSettings()).toEqual({ count: 15, targetSeconds: 15 });
+      store.set("reelflow.reels", JSON.stringify({ count: 7, targetSeconds: 99, v: 3 }));
       expect(loadReelSettings()).toEqual(DEFAULT_REEL_SETTINGS);
     });
   });

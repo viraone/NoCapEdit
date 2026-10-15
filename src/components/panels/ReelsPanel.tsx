@@ -538,6 +538,7 @@ export function ReelsPanel() {
               <option value="5">5 reels</option>
               <option value="8">8 reels</option>
               <option value="12">12 reels</option>
+              <option value="15">15 reels</option>
             </Select>
           </Field>
           <Field label="Length">
