@@ -42,12 +42,13 @@ export default function DocsPage() {
         <p className="mt-3 text-lg text-label-2">From a YouTube link or a recording to captioned vertical reels, in your browser. Nothing is installed and your videos never leave your device.</p>
         <nav aria-label="On this page" className="mt-6 flex flex-wrap gap-2 text-sm">
           {[
-            ["#start", "1. Start a project"],
-            ["#edit", "2. Open and edit"],
-            ["#reels", "3. Reels"],
-            ["#api-key", "4. Free Google key"],
-            ["#cost", "5. What it costs"],
-            ["#export", "6. Export"],
+            ["#your-video", "1. Your own video"],
+            ["#start", "2. A YouTube link"],
+            ["#edit", "3. Open and edit"],
+            ["#reels", "4. Reels"],
+            ["#api-key", "5. Free Google key"],
+            ["#cost", "6. What it costs"],
+            ["#export", "7. Export"],
           ].map(([href, label]) => (
             <a key={href} href={href} className="rounded-full border border-sys-gray4 bg-sys-gray5 px-3 py-1 text-label-2 hover:border-sys-gray2 hover:text-white">
               {label}
@@ -57,21 +58,41 @@ export default function DocsPage() {
       </header>
 
       <main className="mt-10 space-y-6">
-        <Section id="start" title="1. Start a project">
-          <p>There are two ways in, both on the start page.</p>
+        <Section id="your-video" title="1. Start with a video from your computer">
+          <p>Most reels start with something you already have: a phone recording, a Zoom call, a screen capture, a clip from a show. On the start page:</p>
           <ol className={steps}>
             <li>
-              <b className="text-white">Paste a YouTube link.</b> Copy the video&apos;s address from YouTube, paste it into the bar at the top, pick a quality (1080p is the default), and click <b className="text-white">Convert</b>. A card appears under <b className="text-white">Your projects</b> while the video downloads, then becomes a project with the video&apos;s title. The first paste after a quiet spell can take about a minute while the helper wakes up.
+              <b className="text-white">Drag the file onto the big box</b> that says &ldquo;Drop a recording or a flyer&rdquo;, or click the box and pick the file. MP4, MOV and WebM all work, so videos straight off an iPhone or Android phone are fine. You can drop several at once and they line up one after another.
             </li>
             <li>
-              <b className="text-white">Drop a file.</b> Drag an MP4, MOV or WebM onto the big box, or click it to choose one. An image works too and becomes a 12-second Instagram post.
+              The box shows &ldquo;Reading&rdquo; and then &ldquo;Analysing audio and frames&rdquo; for a few seconds (longer for a big file). The editor then opens on its own. The file is copied into your browser&apos;s storage, not uploaded anywhere.
+            </li>
+            <li>
+              <b className="text-white">A flyer or poster instead of a video?</b> Drop the image. It becomes a 12-second Instagram post (4:5 frame) that you can put music and text on.
             </li>
           </ol>
+          <Shot src="drop-zone.png" alt="The drop box on the start page: Drop a recording or a flyer to start a new reel, MP4, MOV, WebM or an image" width={1200} height={520} />
+          <p>
+            <b className="text-white">No file yet? Record one.</b> Click <b className="text-white">Record</b> next to New project and choose <b className="text-white">Screen</b>, <b className="text-white">Camera</b> or <b className="text-white">Screen + mic</b>. Allow the browser&apos;s permission prompt, press the red button, press Stop, and the recording lands in the editor as a new project.
+          </p>
+          <Shot src="record-modal.png" alt="The Record dialog with Screen, Camera and Screen + mic choices and the record button" width={900} height={600} className="max-w-md" />
+          <p>
+            <b className="text-white">Adding more clips later.</b> Inside the editor, click <b className="text-white">Import clips</b> at the top right, or open the <b className="text-white">Clips</b> tool and use &ldquo;Add video or image files&rdquo;. New clips go on the end of the timeline; drag them to reorder.
+          </p>
+          <p className="text-sm text-label-3">
+            Storage: the start page&apos;s &ldquo;Local storage&rdquo; line shows how much room your browser has. A 20-minute 1080p phone video is roughly 1 to 3 GB. Clearing the browser&apos;s site data deletes projects, so use <b>Backup</b> on a project card (a .nocap file) before you do that or when you move to another computer.
+          </p>
+        </Section>
+
+        <Section id="start" title="2. Or start from a YouTube link">
+          <p>
+            Copy the video&apos;s address from YouTube, paste it into the bar at the top of the start page, pick a quality (1080p is the default), and click <b className="text-white">Convert</b>. A card appears under <b className="text-white">Your projects</b> while the video downloads, then becomes a project with the video&apos;s title. The first paste after a quiet spell can take about a minute while the helper wakes up.
+          </p>
           <Shot src="start-paste-link.png" alt="The paste bar on the start page: a YouTube link, the 1080p quality picker and the Convert button" width={1200} height={300} />
           <p className="text-sm text-label-3">Only download videos you have the right to use: your own, or for private editing practice.</p>
         </Section>
 
-        <Section id="edit" title="2. Open and edit">
+        <Section id="edit" title="3. Open and edit">
           <p>Click the project&apos;s card (the picture or the title) to open the editor. The tools run down the left side: Clips, Trim, Subtitles, Style, Text, Picture, Music, Reels, Export. Everything autosaves to this browser, so you can close the tab and come back later.</p>
           <Shot src="project-card.png" alt="A project card under Your projects, showing the thumbnail, length, name and clip count" width={1200} height={700} />
           <p>
@@ -79,7 +100,7 @@ export default function DocsPage() {
           </p>
         </Section>
 
-        <Section id="reels" title="3. Reels: let the AI pick the best moments">
+        <Section id="reels" title="4. Reels: let the AI pick the best moments">
           <p>
             The Reels panel reads the transcript of your video, picks the moments that stand on their own, and cuts each one into its own 9:16 reel with captions. Each reel becomes a separate project under Your projects.
           </p>
@@ -115,7 +136,7 @@ export default function DocsPage() {
           <p>Your key stays in this browser. Only the transcript, not the video, is sent to Google. If the picks look off, run Make reels again; each run can differ a little.</p>
         </Section>
 
-        <Section id="api-key" title="4. Get a free Google AI Studio key">
+        <Section id="api-key" title="5. Get a free Google AI Studio key">
           <p>Google AI Studio hands out API keys for Gemini with a free tier that is enough for this. It takes about a minute.</p>
           <ol className={steps}>
             <li>
@@ -141,7 +162,7 @@ export default function DocsPage() {
           <p className="text-sm text-label-3">The model names in AI Studio match what the Reels panel lists after you click Save, so pick the newest Flash you see there.</p>
         </Section>
 
-        <Section id="cost" title="5. What it costs">
+        <Section id="cost" title="6. What it costs">
           <ul className="list-disc space-y-2 pl-6 marker:text-label-3">
             <li>
               <b className="text-white">NoCap Edit: free.</b> No account, no plan. Captions, editing and export run on your own computer.
@@ -158,7 +179,7 @@ export default function DocsPage() {
           </ul>
         </Section>
 
-        <Section id="export" title="6. Export">
+        <Section id="export" title="7. Export">
           <p>
             Open the <b className="text-white">Export</b> tool, keep the defaults (1080p, 30 fps, H.264) unless the platform asks for something else, and click <b className="text-white">Export video</b>. The MP4 lands in your Downloads folder, ready to post to Reels, TikTok or Shorts. Long videos render in segments, so memory stays flat even for a 20-minute source.
           </p>
