@@ -5,7 +5,7 @@
  * everything local; an OpenAI-compatible API is opt-in for people who bring
  * their own key, and is told plainly that the transcript leaves the device.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { withBase } from "@/lib/basePath";
 import { Check, RefreshCw, ShieldCheck } from "lucide-react";
 import { DEFAULT_AI_SETTINGS, listAnthropicModels, listGeminiModels, listOllamaModels, listOpenAiModels, listXaiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
@@ -30,8 +30,13 @@ export function useCloudModels() {
   const [models, setModels] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** True for a moment after the key checked out and the models loaded: the Save link turns into an animated "Saved". */
+  const [justSaved, setJustSaved] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (savedTimer.current && clearTimeout(savedTimer.current)), []);
   const refresh = async (load: () => Promise<string[]>, apiKey: string) => {
     setError(null);
+    setJustSaved(false);
     if (!apiKey) {
       setModels(null);
       setError("Add your API key first.");
@@ -40,6 +45,9 @@ export function useCloudModels() {
     setPending(true);
     try {
       setModels(await load());
+      setJustSaved(true);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setJustSaved(false), SAVED_MS);
     } catch (e) {
       setModels(null);
       setError(e instanceof Error ? e.message : "Couldn't list models.");
@@ -47,7 +55,32 @@ export function useCloudModels() {
       setPending(false);
     }
   };
-  return { models, error, pending, refresh };
+  return { models, error, pending, justSaved, refresh };
+}
+
+/** How long the "Saved" state shows before the link reads "refresh" again. */
+export const SAVED_MS = 2600;
+
+/**
+ * The link to the right of the Model label. Reads "Save" once a key is typed
+ * (checking the key and loading its models), "Checking…" with a spinner while
+ * that runs, then an animated green "Saved · N models" for a moment.
+ */
+function SaveLink({ title, onClick, apiKey, pending, justSaved, count, disabled }: { title: string; onClick: () => void; apiKey?: string; pending?: boolean; justSaved?: boolean; count?: number; disabled?: boolean }) {
+  const save = !!apiKey?.trim();
+  if (justSaved) {
+    return (
+      <span className="rf-saved inline-flex items-center gap-1 font-semibold text-sys-green" role="status" aria-live="polite" data-ai-saved>
+        <Check size={12} className="rf-saved-check" strokeWidth={3} /> Saved{count ? ` · ${count} model${count === 1 ? "" : "s"}` : ""}
+      </span>
+    );
+  }
+  return (
+    <button type="button" className="inline-flex items-center gap-1 text-sys-blue hover:underline disabled:opacity-60" onClick={onClick} title={title} disabled={disabled || pending} aria-busy={pending || undefined}>
+      {pending ? <RefreshCw size={11} className="animate-spin" /> : save ? <Check size={11} /> : <RefreshCw size={11} />}
+      {pending ? "Checking…" : save ? "Save" : "refresh"}
+    </button>
+  );
 }
 
 function ModelPicker({ value, models, onChange, placeholder, disabled }: { value: string; models: string[] | null | undefined; onChange: (m: string) => void; placeholder: string; disabled?: boolean }) {
@@ -72,14 +105,11 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
   const xai = settings.provider === "xai";
   const pickProvider = (v: string): AiProvider => (v === "openai" || v === "anthropic" || v === "gemini" || v === "xai" ? v : "ollama");
   /** Cloud providers read "Save" once a key is typed: it checks the key and loads the models it can use. */
-  const refreshLabel = (title: string, onClick: () => void, apiKey?: string) => {
-    const save = !!apiKey?.trim();
-    return (
-      <button type="button" className="text-sys-blue hover:underline" onClick={onClick} title={title} disabled={disabled}>
-        {save ? <Check size={11} className="inline" /> : <RefreshCw size={11} className="inline" />} {save ? "Save" : "refresh"}
-      </button>
-    );
-  };
+  const refreshLabel = (title: string, onClick: () => void, apiKey?: string) => (
+    <SaveLink title={title} onClick={onClick} apiKey={apiKey} pending={cloud.pending} justSaved={cloud.justSaved} count={cloud.models?.length} disabled={disabled} />
+  );
+  /** The model box glows green once when the list has just loaded. */
+  const glow = cloud.justSaved ? "rf-saved-glow rounded-lg" : undefined;
   return (
     <div className="space-y-2">
       <Field label="Provider">
@@ -94,7 +124,9 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
       {xai ? (
         <>
           <Field label="Model" right={refreshLabel("List the Grok models this key can use", () => void cloud.refresh(() => listXaiModels(settings.xaiKey, AbortSignal.timeout(20000)), settings.xaiKey), settings.xaiKey)}>
-            <ModelPicker value={settings.xaiModel} models={cloud.models} onChange={(m) => onChange({ xaiModel: m })} placeholder={DEFAULT_AI_SETTINGS.xaiModel} disabled={disabled} />
+            <div className={glow}>
+              <ModelPicker value={settings.xaiModel} models={cloud.models} onChange={(m) => onChange({ xaiModel: m })} placeholder={DEFAULT_AI_SETTINGS.xaiModel} disabled={disabled} />
+            </div>
             {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
@@ -108,7 +140,9 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
       ) : gemini ? (
         <>
           <Field label="Model" right={refreshLabel("List the Gemini models this key can use", () => void cloud.refresh(() => listGeminiModels(settings.geminiKey, AbortSignal.timeout(20000)), settings.geminiKey), settings.geminiKey)}>
-            <ModelPicker value={settings.geminiModel} models={cloud.models} onChange={(m) => onChange({ geminiModel: m })} placeholder={DEFAULT_AI_SETTINGS.geminiModel} disabled={disabled} />
+            <div className={glow}>
+              <ModelPicker value={settings.geminiModel} models={cloud.models} onChange={(m) => onChange({ geminiModel: m })} placeholder={DEFAULT_AI_SETTINGS.geminiModel} disabled={disabled} />
+            </div>
             {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
@@ -122,7 +156,9 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
       ) : anthropic ? (
         <>
           <Field label="Model" right={refreshLabel("List the Claude models this key can use", () => void cloud.refresh(() => listAnthropicModels(settings.anthropicKey, AbortSignal.timeout(20000)), settings.anthropicKey), settings.anthropicKey)}>
-            <ModelPicker value={settings.anthropicModel} models={cloud.models} onChange={(m) => onChange({ anthropicModel: m })} placeholder={DEFAULT_AI_SETTINGS.anthropicModel} disabled={disabled} />
+            <div className={glow}>
+              <ModelPicker value={settings.anthropicModel} models={cloud.models} onChange={(m) => onChange({ anthropicModel: m })} placeholder={DEFAULT_AI_SETTINGS.anthropicModel} disabled={disabled} />
+            </div>
             {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
             {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
@@ -137,7 +173,9 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         <>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Model" right={refreshLabel("List the models this key can use", () => void cloud.refresh(() => listOpenAiModels(settings.apiBase, settings.apiKey, AbortSignal.timeout(20000)), settings.apiKey), settings.apiKey)}>
+              <div className={glow}>
               <ModelPicker value={settings.apiModel} models={cloud.models} onChange={(m) => onChange({ apiModel: m })} placeholder={DEFAULT_AI_SETTINGS.apiModel} disabled={disabled} />
+            </div>
               {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
               {cloud.error && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
             </Field>
@@ -155,7 +193,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Model" right={onRefresh ? refreshLabel("Refresh local models", onRefresh) : undefined}>
+            <Field label="Model" right={onRefresh ? <SaveLink title="Refresh local models" onClick={onRefresh} pending={modelsPending} disabled={disabled} /> : undefined}>
               <ModelPicker value={settings.model} models={models} onChange={(m) => onChange({ model: m })} placeholder={DEFAULT_AI_SETTINGS.model} disabled={disabled} />
               {modelsPending && !models && <p className="rf-read-note mt-1">Listing the models on this computer…{permissionHint}</p>}
               {modelsError && <p className="mt-1 text-[11px] text-sys-orange">{modelsError}</p>}
