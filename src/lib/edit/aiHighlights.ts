@@ -256,6 +256,27 @@ export interface FindAiOptions extends AiRequestOptions {
   settings: AiSettings;
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
+  /** Pauses before each retry when Gemini is overloaded; tests pass short ones. */
+  retryDelaysMs?: number[];
+}
+
+/** Statuses that mean "the service is busy or hiccuped", worth asking again for. */
+const BUSY_STATUSES = new Set([500, 502, 503, 504]);
+
+/** Waits for `ms`, or rejects as cancelled the moment the user cancels. */
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new DOMException("Cancelled", "AbortError"));
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Cancelled", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /** Parses the model's JSON answer into clips; throws a readable error when it is not JSON. */
@@ -549,17 +570,31 @@ async function findViaGemini(system: string, user: string, opts: FindAiOptions):
       return text.slice(0, 200);
     }
   };
-  let res = await send(false);
+  const delays = opts.retryDelaysMs ?? [2000, 5000, 10000];
+  let plain = false;
+  let retries = 0;
+  let res = await send(plain);
   let detail = "";
-  if (!res.ok) {
+  while (!res.ok) {
     detail = await errorDetail(res);
     // A model that doesn't take the thinking setting or the larger cap: ask again the old plain way.
-    if (res.status === 400 && /thinking|maxOutputTokens|max_output|output token/i.test(detail)) {
-      res = await send(true);
-      detail = res.ok ? "" : await errorDetail(res);
+    if (!plain && res.status === 400 && /thinking|maxOutputTokens|max_output|output token/i.test(detail)) {
+      plain = true;
+      res = await send(plain);
+      continue;
     }
+    // Google is busy (a 503 on a new model is common): wait a little and ask again, a few times.
+    if (BUSY_STATUSES.has(res.status) && retries < delays.length) {
+      retries++;
+      opts.onProgress?.(`Gemini is busy (${res.status}), trying again in ${Math.round(delays[retries - 1] / 1000)} s (${retries} of ${delays.length})…`);
+      await pause(delays[retries - 1], opts.signal);
+      res = await send(plain);
+      continue;
+    }
+    break;
   }
   if (!res.ok) {
+    if (BUSY_STATUSES.has(res.status)) throw new Error(`Gemini is overloaded right now (${res.status}) and didn't recover after ${retries} ${retries === 1 ? "try" : "tries"}. Wait a minute and press Make reels again, or pick gemini-3.5-flash-lite, which is rarely busy.`);
     if (res.status === 400 && /api key/i.test(detail)) throw new Error("Google rejected the API key. Check it in the Model section.");
     if (res.status === 401 || res.status === 403) throw new Error(`Google refused the request (${res.status})${detail ? `: ${detail}` : ""}`);
     if (res.status === 404) throw new Error(`The model "${geminiModel}" wasn't found (404). Pick one from the list.`);

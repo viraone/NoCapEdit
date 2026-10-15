@@ -258,6 +258,37 @@ describe("findAiHighlights", () => {
       expect(second.maxOutputTokens).toBe(8192);
     });
 
+    it("tries again when Gemini is busy, says so while it waits, and gives a plain message when it never recovers", async () => {
+      const busy = () => new Response('{"error":{"code":503,"message":"This model is currently experiencing high demand."}}', { status: 503 });
+      const fetchMock = vi.fn().mockResolvedValueOnce(busy()).mockResolvedValueOnce(busy()).mockResolvedValueOnce(answer(JSON.stringify({ clips: [clip(1, 4, 7, { title: "Third time" })] })));
+      vi.stubGlobal("fetch", fetchMock);
+      const progress: string[] = [];
+      const out = await findAiHighlights(cues, { settings: gem, ...opts, retryDelaysMs: [1, 1, 1], onProgress: (m) => progress.push(m) });
+      expect(out[0]).toMatchObject({ title: "Third time" });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(progress.filter((m) => /busy \(503\)/.test(m))).toHaveLength(2);
+      expect(progress.some((m) => /\(2 of 3\)/.test(m))).toBe(true);
+
+      const never = vi.fn(async () => busy());
+      vi.stubGlobal("fetch", never);
+      await expect(findAiHighlights(cues, { settings: gem, ...opts, retryDelaysMs: [1, 1, 1] })).rejects.toThrow(/overloaded right now \(503\).*3 tries.*gemini-3\.5-flash-lite/);
+      expect(never).toHaveBeenCalledTimes(4);
+
+      // A rejected key or a missing model is not retried.
+      const nope = vi.fn(async () => new Response('{"error":{"code":404,"message":"x"}}', { status: 404 }));
+      vi.stubGlobal("fetch", nope);
+      await expect(findAiHighlights(cues, { settings: gem, ...opts, retryDelaysMs: [1, 1, 1] })).rejects.toThrow(/wasn't found/);
+      expect(nope).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops waiting between retries when the user cancels", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 503 })));
+      const ctl = new AbortController();
+      const run = findAiHighlights(cues, { settings: gem, ...opts, retryDelaysMs: [60000], signal: ctl.signal });
+      setTimeout(() => ctl.abort(), 20);
+      await expect(run).rejects.toMatchObject({ name: "AbortError" });
+    });
+
     it("converts the schema, reads blocked or truncated answers, and explains errors", async () => {
       expect(toGeminiSchema({ type: "object", additionalProperties: false, properties: { a: { type: "array", items: { type: "string" } } } })).toEqual({ type: "OBJECT", properties: { a: { type: "ARRAY", items: { type: "STRING" } } } });
       expect(() => parseGeminiClips({ promptFeedback: { blockReason: "SAFETY" } })).toThrow(/declined/);
