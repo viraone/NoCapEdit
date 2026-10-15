@@ -435,21 +435,91 @@ export function toGeminiSchema(schema: unknown): unknown {
   return out;
 }
 
-/** Request body for Gemini generateContent, asking for JSON that matches the clips schema. */
-export function geminiRequestBody(system: string, user: string): Record<string, unknown> {
+/**
+ * Gemini 3 and later models think before they answer, and Google counts that
+ * thinking against the reply's token cap. Picking clips needs little thinking,
+ * so these models are asked for a low level; with the default (medium on 3.8
+ * Flash) a long transcript could use up the whole cap and cut the JSON off.
+ */
+const THINKING_MODELS = /^gemini-(?:[3-9]|\d\d)/;
+
+/** Room for the reply, thinking included. A dozen clips is about 2k tokens of JSON; the rest is headroom for thinking. */
+const GEMINI_MAX_OUTPUT_TOKENS = 32768;
+
+/**
+ * Request body for Gemini generateContent, asking for JSON that matches the clips schema.
+ * `plain` drops the thinking setting and uses the old small cap: the retry after Google rejects either.
+ */
+export function geminiRequestBody(system: string, user: string, model = "", plain = false): Record<string, unknown> {
+  const generationConfig: Record<string, unknown> = {
+    temperature: 0.2,
+    maxOutputTokens: plain ? 8192 : GEMINI_MAX_OUTPUT_TOKENS,
+    responseMimeType: "application/json",
+    responseSchema: toGeminiSchema(AI_CLIPS_SCHEMA),
+  };
+  if (!plain && THINKING_MODELS.test(model)) generationConfig.thinkingConfig = { thinkingLevel: "low" };
   return {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts: [{ text: user }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json", responseSchema: toGeminiSchema(AI_CLIPS_SCHEMA) },
+    generationConfig,
   };
 }
 
-/** Pulls the clips out of a generateContent reply. */
+/**
+ * Reads the complete clip objects out of a JSON answer that was cut off mid-way
+ * ({"clips":[{...},{...},{"startLine":14,"endLi). Walks the array, honouring
+ * strings and escapes, and keeps every object that closed properly.
+ */
+export function salvageClips(text: string): AiClip[] {
+  const key = text.indexOf('"clips"');
+  const open = key < 0 ? -1 : text.indexOf("[", key);
+  if (open < 0) return [];
+  const out: AiClip[] = [];
+  let depth = 0;
+  let from = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = open + 1; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === "{") {
+      if (depth === 0) from = i;
+      depth++;
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0 && from >= 0) {
+        try {
+          const clip = JSON.parse(text.slice(from, i + 1)) as AiClip;
+          if (Number.isInteger(clip.startLine) && Number.isInteger(clip.endLine)) out.push(clip);
+        } catch {
+          /* a malformed object is skipped */
+        }
+        from = -1;
+      } else if (depth < 0) break;
+    } else if (c === "]" && depth === 0) break;
+  }
+  return out;
+}
+
+/** Pulls the clips out of a generateContent reply. A reply cut off at the token cap keeps the clips that were finished. */
 export function parseGeminiClips(data: { candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[]; promptFeedback?: { blockReason?: string } }): AiClip[] {
   if (data.promptFeedback?.blockReason) throw new Error(`Gemini declined the transcript (${data.promptFeedback.blockReason}).`);
   const cand = data.candidates?.[0];
   const text = cand?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-  if (!text && cand?.finishReason && cand.finishReason !== "STOP") throw new Error(`Gemini stopped early (${cand.finishReason}). Try again or pick another model.`);
+  const reason = cand?.finishReason;
+  const cutOff = reason === "MAX_TOKENS";
+  if (cutOff) {
+    const kept = salvageClips(text);
+    if (kept.length) return kept;
+    throw new Error("Gemini stopped early (MAX_TOKENS): the model used up its reply space, thinking included, before finishing any clip. Try again, or pick a smaller Flash model such as gemini-3.5-flash-lite.");
+  }
+  if (!text && reason && reason !== "STOP") throw new Error(`Gemini stopped early (${reason}). Try again or pick another model.`);
   return parseClips(text);
 }
 
@@ -458,26 +528,38 @@ async function findViaGemini(system: string, user: string, opts: FindAiOptions):
   const { geminiKey, geminiModel } = opts.settings;
   if (!geminiKey) throw new Error("Add your Google AI Studio API key in the Model section first.");
   opts.onProgress?.(`Sending the transcript to ${geminiModel} at generativelanguage.googleapis.com`);
-  let res: Response;
-  try {
-    res = await fetch(`${GEMINI_API}/models/${encodeURIComponent(geminiModel)}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-      signal: opts.signal,
-      body: JSON.stringify(geminiRequestBody(system, user)),
-    });
-  } catch (e) {
-    if (opts.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-    throw new Error("Couldn't reach generativelanguage.googleapis.com. Check your connection.", { cause: e });
+  const send = async (plain: boolean): Promise<Response> => {
+    try {
+      return await fetch(`${GEMINI_API}/models/${encodeURIComponent(geminiModel)}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+        signal: opts.signal,
+        body: JSON.stringify(geminiRequestBody(system, user, geminiModel, plain)),
+      });
+    } catch (e) {
+      if (opts.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+      throw new Error("Couldn't reach generativelanguage.googleapis.com. Check your connection.", { cause: e });
+    }
+  };
+  const errorDetail = async (r: Response): Promise<string> => {
+    const text = await r.text().catch(() => "");
+    try {
+      return (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? "";
+    } catch {
+      return text.slice(0, 200);
+    }
+  };
+  let res = await send(false);
+  let detail = "";
+  if (!res.ok) {
+    detail = await errorDetail(res);
+    // A model that doesn't take the thinking setting or the larger cap: ask again the old plain way.
+    if (res.status === 400 && /thinking|maxOutputTokens|max_output|output token/i.test(detail)) {
+      res = await send(true);
+      detail = res.ok ? "" : await errorDetail(res);
+    }
   }
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let detail = "";
-    try {
-      detail = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? "";
-    } catch {
-      detail = text.slice(0, 200);
-    }
     if (res.status === 400 && /api key/i.test(detail)) throw new Error("Google rejected the API key. Check it in the Model section.");
     if (res.status === 401 || res.status === 403) throw new Error(`Google refused the request (${res.status})${detail ? `: ${detail}` : ""}`);
     if (res.status === 404) throw new Error(`The model "${geminiModel}" wasn't found (404). Pick one from the list.`);

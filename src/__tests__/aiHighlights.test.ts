@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activeModel, anthropicRequestBody, buildAiPrompt, geminiRequestBody, parseGeminiClips, toGeminiSchema, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, isCloudProvider, listGeminiModels, loadAiSettings, openAiRequestBody, parseAnthropicClips, parseClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
+import { activeModel, anthropicRequestBody, buildAiPrompt, geminiRequestBody, parseGeminiClips, toGeminiSchema, clipsToHighlights, contextFor, DEFAULT_AI_SETTINGS, findAiHighlights, isCloudProvider, listGeminiModels, loadAiSettings, openAiRequestBody, parseAnthropicClips, parseClips, salvageClips, transcriptLines, type AiClip, type AiSettings } from "@/lib/edit/aiHighlights";
 import type { Sentence } from "@/lib/edit/highlights";
 import type { CaptionCue } from "@/lib/models/project";
 
@@ -222,6 +222,40 @@ describe("findAiHighlights", () => {
       const names = ["gemini-3.5-flash-lite", "gemini-3.1-flash-image", "gemini-2.5-flash-preview-tts", "gemini-3.5-transcribe", "gemini-3.1-pro-preview-customtools", "gemini-3-pro-image-preview", "gemini-3.5-flash", "gemma-3-27b"];
       vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ models: names.map((n) => ({ name: `models/${n}`, supportedGenerationMethods: ["generateContent"] })) }), { status: 200 })));
       expect(await listGeminiModels("AIza-test")).toEqual(["gemini-3.5-flash", "gemini-3.5-flash-lite"]);
+    });
+
+    it("asks Gemini 3 models for low thinking and a roomy reply cap, and leaves older models alone", () => {
+      const cfg = (model: string, plain = false) => geminiRequestBody("sys", "usr", model, plain).generationConfig as Record<string, unknown>;
+      expect(cfg("gemini-3.8-flash")).toMatchObject({ maxOutputTokens: 32768, thinkingConfig: { thinkingLevel: "low" } });
+      expect(cfg("gemini-3.5-flash-lite").thinkingConfig).toEqual({ thinkingLevel: "low" });
+      expect(cfg("gemini-2.5-flash").thinkingConfig).toBeUndefined();
+      expect(cfg("gemini-3.8-flash", true)).toMatchObject({ maxOutputTokens: 8192 });
+      expect(cfg("gemini-3.8-flash", true).thinkingConfig).toBeUndefined();
+    });
+
+    it("keeps the clips that were finished when the reply is cut off at the token cap", () => {
+      const cut = '{"clips":[{"startLine":1,"endLine":4,"title":"A \\"quoted\\" } bit","hook":"h","reason":"r","score":8},{"startLine":6,"endLine":9,"title":"B","hook":"h","reason":"r","score":7},{"startLine":14,"endLine":2';
+      const kept = parseGeminiClips({ candidates: [{ content: { parts: [{ text: cut }] }, finishReason: "MAX_TOKENS" }] });
+      expect(kept.map((c) => c.title)).toEqual(['A "quoted" } bit', "B"]);
+      // Nothing finished: a plain explanation instead of "not valid JSON".
+      expect(() => parseGeminiClips({ candidates: [{ content: { parts: [{ text: '{"clips":[{"startLine":1,"endLi' }] }, finishReason: "MAX_TOKENS" }] })).toThrow(/used up its reply space/);
+      expect(salvageClips('{"clips":[]}')).toEqual([]);
+      expect(salvageClips("not json at all")).toEqual([]);
+    });
+
+    it("asks again without the thinking setting when Google rejects it", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('{"error":{"code":400,"message":"Unknown name \\"thinkingConfig\\": Cannot find field."}}', { status: 400 }))
+        .mockResolvedValueOnce(answer(JSON.stringify({ clips: [clip(1, 4, 7, { title: "Retry worked" })] })));
+      vi.stubGlobal("fetch", fetchMock);
+      const out = await findAiHighlights(cues, { settings: { ...gem, geminiModel: "gemini-3.8-flash" }, ...opts });
+      expect(out[0]).toMatchObject({ title: "Retry worked" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const [first, second] = fetchMock.mock.calls.map((c) => JSON.parse(String((c[1] as RequestInit).body)).generationConfig);
+      expect(first.thinkingConfig).toEqual({ thinkingLevel: "low" });
+      expect(second.thinkingConfig).toBeUndefined();
+      expect(second.maxOutputTokens).toBe(8192);
     });
 
     it("converts the schema, reads blocked or truncated answers, and explains errors", async () => {
