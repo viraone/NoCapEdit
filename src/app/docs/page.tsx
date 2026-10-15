@@ -119,7 +119,7 @@ export default function DocsPage() {
               In <b className="text-white">Model</b> pick the newest Flash model, for example <code className="rounded bg-sys-gray5 px-1.5 py-0.5 text-[13px] text-white">gemini-3.8-flash</code>. Flash is fast, cheap and good at judging which bits work alone. The Pro models are slower and not better at this.
             </li>
             <li>
-              Click <b className="text-white">Make reels</b>. If the video has no captions yet, the panel offers to generate them first (Whisper runs on your device; the first run downloads the model and takes a few minutes).
+              Click <b className="text-white">Make reels</b>. If the video has no subtitles yet, the panel makes them first and then cuts the reels, all from that one click (Whisper runs on your device; the first run downloads the model and takes a few minutes).
             </li>
             <li>Each reel shows up in the list with a score out of 10 and a title. Open one, tweak it, export it.</li>
           </ol>

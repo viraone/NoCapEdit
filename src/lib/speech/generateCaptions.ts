@@ -3,7 +3,7 @@
  * is decoded, transcribed (and optionally diarized) inside the ML worker,
  * and the words are placed in project time and grouped into cues. Shared by
  * the Subtitles panel (with the settings the user picked there) and the
- * Reels panel's "Do this for me" (with the defaults).
+ * Reels panel's Make reels, which makes them first when the video has none (with the defaults).
  */
 import type { CaptionCue, Clip, VideoProject, WordTiming } from "@/lib/models/project";
 import { layoutClips, toProjectTime } from "@/lib/models/timeline";
