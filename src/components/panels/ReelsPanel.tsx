@@ -9,7 +9,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Clapperboard, Copy, FolderOpen, KeyRound, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle } from "lucide-react";
+import { cx } from "@/lib/utils/cx";
+import { ArrowLeft, Clapperboard, Copy, FolderOpen, KeyRound, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle, Loader2, Check } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useReelSlack } from "./shared";
@@ -65,6 +66,8 @@ export function ReelsPanel() {
   const hasCues = project.cues.length > 0;
   /** Make reels pressed without captions: subtitles being generated right here, before the reels are cut. */
   const [captionJob, setCaptionJob] = useState<CaptionJobProgress | null>(null);
+  /** True while a Make reels press is doing both steps (subtitles, then reels), so the reel card shows step 2 of 2. */
+  const [twoStep, setTwoStep] = useState(false);
   const [captionError, setCaptionError] = useState<string | null>(null);
   const captionAbortRef = useRef<AbortController | null>(null);
   const [preview, setPreview] = useState<VideoProject | null>(null);
@@ -144,6 +147,7 @@ export function ReelsPanel() {
     captionAbortRef.current = null;
     resetMlWorker();
     setCaptionJob(null);
+    setTwoStep(false);
   };
   useEffect(() => cancelCaptions, []);
 
@@ -178,6 +182,7 @@ export function ReelsPanel() {
     } finally {
       abortRef.current = null;
       setJob(null);
+      setTwoStep(false);
     }
   };
   /**
@@ -200,7 +205,8 @@ export function ReelsPanel() {
     const cuesAtStart = current.cues;
     const language = current.captions.sourceLanguage || "auto";
     setCaptionJob({ message: "Getting ready", progress: null });
-    useEditor.getState().setNotice("Making the subtitles first. The reels come right after.");
+    setTwoStep(true);
+    useEditor.getState().setNotice("Step 1 of 2: making the subtitles. The reels come right after.");
     let ready = false;
     try {
       const g = await generateCaptions({
@@ -221,7 +227,7 @@ export function ReelsPanel() {
         return;
       }
       useEditor.getState().update((p) => void applyGeneratedCaptions(p, cuesAtStart, g, language, false));
-      useEditor.getState().setNotice(`Subtitles done: ${g.cues.length} captions from ${g.wordCount} words. Cutting the reels now.`);
+      useEditor.getState().setNotice(`Step 2 of 2: subtitles done (${g.cues.length} captions). Finding the best moments and cutting the reels now.`);
       ready = true;
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) setCaptionError(e instanceof Error ? e.message : String(e));
@@ -230,6 +236,7 @@ export function ReelsPanel() {
       setCaptionJob(null);
     }
     if (ready) void run();
+    else setTwoStep(false);
   };
   // "Make reels" from the project menu lands here: with captions it runs, without them it asks
   // for subtitles. The request is cleared from the store as it is taken, so a later visit does
@@ -273,9 +280,11 @@ export function ReelsPanel() {
   };
   // The progress card reads top-down: which reel, what step, any detail, the bar, then time and Cancel.
   const jobBlock = job && (
-    <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-3" data-reel-job>
-      <p className="text-[13px] font-semibold leading-snug text-white" data-job-headline>
-        {job.reel ? `Cutting reel ${job.reel.n} of ${job.reel.of}${job.reel.title ? ` · ${job.reel.title}` : ""}` : job.stage}
+    <div className={cx("space-y-2 rounded-lg border p-3", twoStep ? "border-sys-blue/60 bg-sys-blue/10" : "border-sys-gray4 bg-sys-gray5")} role="status" aria-live="polite" data-reel-job>
+      {twoStep && <StepStrip step={2} />}
+      <p className="flex items-center gap-2 text-[13px] font-semibold leading-snug text-white" data-job-headline>
+        <Loader2 size={14} className="shrink-0 animate-spin text-sys-blue" aria-hidden />
+        <span>{job.reel ? `Cutting reel ${job.reel.n} of ${job.reel.of}${job.reel.title ? ` · ${job.reel.title}` : ""}` : job.stage}</span>
       </p>
       {job.reel && <p className="text-[13px] text-white">{job.stage}</p>}
       {job.detail && <p className="text-[12px] leading-snug text-label-2">{job.detail}</p>}
@@ -541,11 +550,19 @@ export function ReelsPanel() {
         </div>
         {captionJob ? (
           // Step 1 of 2: the subtitles, made right here. The reel card takes over when they are done.
-          <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-3" role="status" data-caption-job>
-            <p className="text-[13px] font-semibold leading-snug text-white" data-job-headline>
-              Making the subtitles first
+          <div className="space-y-2.5 rounded-lg border border-sys-blue/60 bg-sys-blue/10 p-3" role="status" aria-live="polite" data-caption-job>
+            <StepStrip step={1} />
+            <p className="flex items-center gap-2 text-[15px] font-bold leading-snug text-white" data-job-headline>
+              <Loader2 size={16} className="shrink-0 animate-spin text-sys-blue" aria-hidden />
+              <span>Making the subtitles first</span>
             </p>
-            <p className="text-[12px] leading-snug text-label-2">The reels come right after. {captionJob.message}</p>
+            <p className="text-[12px] leading-snug text-white/85">
+              The video has no subtitles yet, so they are being made now. <b className="text-white">The reels are cut right after, on their own.</b>
+            </p>
+            <div className="flex items-start justify-between gap-2 text-[12px]">
+              <span className="min-w-0 text-white [overflow-wrap:anywhere]">{captionJob.message}</span>
+              {captionJob.progress !== null && <span className="shrink-0 tabular-nums text-label-2">{Math.round(captionJob.progress * 100)}%</span>}
+            </div>
             <ProgressBar value={captionJob.progress} />
             {captionJob.partial && <p className="rf-read-note line-clamp-2 italic">{captionJob.partial}</p>}
             <Button variant="outline" size="sm" onClick={cancelCaptions}>
@@ -586,5 +603,40 @@ export function ReelsPanel() {
       </PanelSection>
       {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
     </>
+  );
+}
+
+/**
+ * The two-step strip on the Make reels cards: which step is under way (blue,
+ * spinning), which is done (green tick) and which is still to come (grey).
+ */
+function StepStrip({ step }: { step: 1 | 2 }) {
+  const steps: { n: 1 | 2; label: string }[] = [
+    { n: 1, label: "Subtitles" },
+    { n: 2, label: "Reels" },
+  ];
+  return (
+    <ol className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" aria-label={`Step ${step} of 2`} data-step-strip={step}>
+      {steps.map((st, i) => {
+        const state = st.n < step ? "done" : st.n === step ? "now" : "next";
+        return (
+          <li key={st.n} className="contents">
+            {i > 0 && <span className="h-px w-3 bg-sys-gray3" aria-hidden />}
+            <span
+              className={cx(
+                "flex items-center gap-1 rounded-full px-2 py-0.5",
+                state === "now" && "bg-sys-blue text-white",
+                state === "done" && "bg-sys-green/20 text-sys-green",
+                state === "next" && "bg-sys-gray4 text-label-2",
+              )}
+              data-step-state={state}
+            >
+              {state === "done" ? <Check size={11} aria-hidden /> : state === "now" ? <Loader2 size={11} className="animate-spin" aria-hidden /> : null}
+              {st.n}. {st.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
