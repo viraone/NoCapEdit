@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck, Video, Archive, PackageOpen, MonitorPlay, X } from "lucide-react";
+import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck, Video, Archive, PackageOpen, MonitorPlay, X, BookOpen } from "lucide-react";
+import Link from "next/link";
 import { Recorder, useRecordingSupported } from "@/components/record/Recorder";
 import { YouTubeBar } from "@/components/start/YouTubeBar";
 import { useYouTubeImports, youtubeStageText } from "@/components/start/useYouTubeImports";
@@ -225,6 +226,9 @@ export function StartScreen() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <Link href="/docs/" className="inline-flex h-12 items-center gap-2 rounded-xl px-4 text-[15px] text-label-2 hover:bg-sys-gray4 hover:text-white" title="Step-by-step guide: links, reels, the free Google key">
+            <BookOpen size={18} /> How to
+          </Link>
           <input ref={backupInputRef} type="file" accept=".nocap,.zip,application/zip" className="hidden" onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = "";

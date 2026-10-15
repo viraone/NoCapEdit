@@ -68,7 +68,7 @@ lucide-react, vitest, Playwright.
 ## 5. Code map
 
 ```
-src/app/                      routes: / (start screen), /editor?id= (editor)
+src/app/                      routes: / (start screen), /editor?id= (editor), /docs (how-to guide), /m (phone)
 src/components/
   start/StartScreen.tsx       project manager, quick import, Record, Import backup / Backup
   start/YouTubeBar.tsx        paste-a-link bar (link, quality, Convert) → useYouTubeImports.ts, which
