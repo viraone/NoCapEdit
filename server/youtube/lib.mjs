@@ -6,6 +6,14 @@
 /** Video heights the site can ask for, best first. */
 export const QUALITIES = [1080, 720, 480, 360];
 
+/** What the site can ask for: the video as MP4, or just its sound as MP3. */
+export const FORMATS = ["mp4", "mp3"];
+
+/** "mp3" when asked for, otherwise "mp4". */
+export function outputFormat(format) {
+  return String(format ?? "").toLowerCase() === "mp3" ? "mp3" : "mp4";
+}
+
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
 /**
@@ -47,6 +55,20 @@ export function canonicalUrl(id) {
 export function formatSelector(height) {
   const h = QUALITIES.includes(Number(height)) ? Number(height) : 1080;
   return `bv*[vcodec^=avc1][height<=${h}]+ba[ext=m4a]/b[ext=mp4][height<=${h}]/bv*[height<=${h}]+ba/b`;
+}
+
+/** yt-dlp format selector for sound only: the AAC track, else the best audio there is. ffmpeg turns it into MP3. */
+export function audioSelector() {
+  return "ba[ext=m4a]/ba";
+}
+
+/**
+ * The yt-dlp arguments that decide what comes out: a merged MP4 up to `height`,
+ * or an MP3 (highest VBR quality) extracted from the best audio track.
+ */
+export function outputArgs(format, height) {
+  if (outputFormat(format) === "mp3") return ["-f", audioSelector(), "-x", "--audio-format", "mp3", "--audio-quality", "0"];
+  return ["-f", formatSelector(height), "--merge-output-format", "mp4"];
 }
 
 /** A file name browsers and the site's importer are happy with. */

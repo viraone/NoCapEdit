@@ -9,7 +9,7 @@
  *   2. NEXT_PUBLIC_YOUTUBE_SERVICE_URL at build time (the hosted helper for visitors)
  *   3. http://127.0.0.1:3131, the helper started with `npm run youtube` on this computer
  */
-import { youtubeWatchUrl } from "./url";
+import { youtubeWatchUrl, type YouTubeFormat } from "./url";
 
 export const DEFAULT_YOUTUBE_SERVICE = "http://127.0.0.1:3131";
 export const YOUTUBE_SERVICE_KEY = "nocap.youtubeService";
@@ -100,12 +100,17 @@ export interface YouTubeDownload {
 }
 
 /**
- * Streams the MP4 from the helper into a File so it can go through the normal
- * import path. `onProgress` starts once the helper has the video and begins
+ * Streams the MP4 (or, with `format: "mp3"`, the sound as MP3) from the helper
+ * into a File. `onProgress` starts once the helper has the video and begins
  * sending it; before that the helper is still talking to YouTube.
  */
-export async function downloadYouTube(id: string, height: number, onProgress?: (loaded: number, total: number | null) => void, signal?: AbortSignal): Promise<YouTubeDownload> {
-  const res = await serviceFetch(`/download?url=${encodeURIComponent(youtubeWatchUrl(id))}&height=${height}`, signal);
+export async function downloadYouTube(
+  id: string,
+  { format, height }: { format: YouTubeFormat; height: number },
+  onProgress?: (loaded: number, total: number | null) => void,
+  signal?: AbortSignal,
+): Promise<YouTubeDownload> {
+  const res = await serviceFetch(`/download?url=${encodeURIComponent(youtubeWatchUrl(id))}&height=${height}&format=${format}`, signal);
   const title = decodeURIComponent(res.headers.get("X-Video-Title") || "") || "YouTube video";
   const duration = Number(res.headers.get("X-Video-Duration")) || 0;
   const total = Number(res.headers.get("Content-Length")) || null;
@@ -128,5 +133,6 @@ export async function downloadYouTube(id: string, height: number, onProgress?: (
     throw new YouTubeServiceError(e instanceof Error ? `The download stopped early: ${e.message}` : "The download stopped early.", "rejected");
   }
   if (total && loaded < total) throw new YouTubeServiceError("The download stopped before the whole video arrived. Try again.", "rejected");
-  return { file: new File(chunks as BlobPart[], `${title}.mp4`, { type: "video/mp4" }), title, duration };
+  const type = format === "mp3" ? "audio/mpeg" : "video/mp4";
+  return { file: new File(chunks as BlobPart[], `${title}.${format}`, { type }), title, duration };
 }

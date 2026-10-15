@@ -331,7 +331,7 @@ export function StartScreen() {
                     </div>
                   )}
                   <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
-                  <span className="absolute left-2 top-2 rounded bg-sys-red/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">YouTube · {it.quality}p</span>
+                  <span className="absolute left-2 top-2 rounded bg-sys-red/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">YouTube · {it.format === "mp3" ? "MP3" : `${it.quality}p`}</span>
                 </div>
                 <div className="px-5 pb-4 pt-4 text-left">
                   <p className="truncate text-lg font-semibold text-white">{it.title}</p>

@@ -2,18 +2,19 @@
 import { useState, type FormEvent } from "react";
 import { RefreshCw, MonitorPlay } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { YOUTUBE_QUALITIES, type YouTubeQuality } from "@/lib/youtube/url";
+import { YOUTUBE_FORMATS, YOUTUBE_QUALITIES, type YouTubeChoice, type YouTubeFormat, type YouTubeQuality } from "@/lib/youtube/url";
 import { cx } from "@/lib/utils/cx";
 
 const control =
   "h-12 rounded-xl border border-sys-gray4 bg-sys-gray5 text-[15px] text-white placeholder:text-label-3 focus:border-sys-blue focus:outline-none focus:ring-1 focus:ring-sys-blue/50 disabled:opacity-50";
 
 /**
- * Paste-a-link bar (the EzMP4 pattern: link, quality, Convert). `onSubmit`
- * throws when the text is not a YouTube link; the message shows under the bar.
+ * Paste-a-link bar (the EzMP4 pattern: link, MP4 or MP3, quality, Convert).
+ * `onSubmit` throws when the text is not a YouTube link; the message shows under the bar.
  */
-export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, quality: YouTubeQuality) => void; disabled?: boolean }) {
+export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, choice: YouTubeChoice) => void; disabled?: boolean }) {
   const [link, setLink] = useState("");
+  const [format, setFormat] = useState<YouTubeFormat>("mp4");
   const [quality, setQuality] = useState<YouTubeQuality>(1080);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,7 +22,7 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, qu
     e.preventDefault();
     setError(null);
     try {
-      onSubmit(link, quality);
+      onSubmit(link, { format, quality });
       setLink("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -50,19 +51,30 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, qu
           className={cx(control, "min-w-64 flex-1 px-4")}
           data-youtube-link
         />
-        <select aria-label="Video quality" value={quality} onChange={(e) => setQuality(Number(e.target.value) as YouTubeQuality)} disabled={disabled} className={cx(control, "w-28 px-3")} data-youtube-quality>
-          {YOUTUBE_QUALITIES.map((q) => (
-            <option key={q} value={q}>
-              {q}p
+        <select aria-label="Video or sound only" value={format} onChange={(e) => setFormat(e.target.value as YouTubeFormat)} disabled={disabled} className={cx(control, "w-24 px-3")} data-youtube-format>
+          {YOUTUBE_FORMATS.map((f) => (
+            <option key={f} value={f}>
+              {f.toUpperCase()}
             </option>
           ))}
         </select>
+        {format === "mp4" && (
+          <select aria-label="Video quality" value={quality} onChange={(e) => setQuality(Number(e.target.value) as YouTubeQuality)} disabled={disabled} className={cx(control, "w-28 px-3")} data-youtube-quality>
+            {YOUTUBE_QUALITIES.map((q) => (
+              <option key={q} value={q}>
+                {q}p
+              </option>
+            ))}
+          </select>
+        )}
         <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} data-youtube-convert>
           <RefreshCw size={18} /> Convert
         </Button>
       </form>
       <p className="mt-3 text-sm text-label-3">
-        The link goes to the YouTube helper, which sends the MP4 back. The video is saved in this browser as a new project under Your projects; it is never uploaded anywhere.
+        {format === "mp3"
+          ? "The link goes to the YouTube helper, which sends the sound back as an MP3. The file is saved to your computer (your Downloads folder); it is never uploaded anywhere."
+          : "The link goes to the YouTube helper, which sends the MP4 back. The video is saved in this browser as a new project under Your projects; it is never uploaded anywhere."}
       </p>
       {error && (
         <p className="mt-2 text-sm text-sys-red" role="alert">

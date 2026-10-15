@@ -86,7 +86,7 @@ export default function DocsPage() {
 
         <Section id="start" title="2. Or start from a YouTube link">
           <p>
-            Copy the video&apos;s address from YouTube, paste it into the bar at the top of the start page, pick a quality (1080p is the default), and click <b className="text-white">Convert</b>. A card appears under <b className="text-white">Your projects</b> while the video downloads, then becomes a project with the video&apos;s title. The first paste after a quiet spell can take about a minute while the helper wakes up.
+            Copy the video&apos;s address from YouTube, paste it into the bar at the top of the start page, pick a quality (1080p is the default), and click <b className="text-white">Convert</b>. A card appears under <b className="text-white">Your projects</b> while the video downloads, then becomes a project with the video&apos;s title. The first paste after a quiet spell can take about a minute while the helper wakes up. Only want the sound? Switch <b className="text-white">MP4</b> to <b className="text-white">MP3</b> before clicking Convert: the audio is saved to your Downloads folder as an MP3 instead of becoming a project.
           </p>
           <Shot src="start-paste-link.png" alt="The paste bar on the start page: a YouTube link, the 1080p quality picker and the Convert button" width={1200} height={300} />
           <p className="text-sm text-label-3">Only download videos you have the right to use: your own, or for private editing practice.</p>

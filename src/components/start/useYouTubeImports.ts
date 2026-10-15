@@ -3,17 +3,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createProject } from "@/lib/models/project";
 import { saveProject, requestPersistentStorage } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
-import { youtubeVideoId } from "@/lib/youtube/url";
+import { youtubeVideoId, type YouTubeChoice, type YouTubeFormat } from "@/lib/youtube/url";
 import { downloadYouTube, fetchYouTubeInfo, YouTubeServiceError } from "@/lib/youtube/service";
+import { downloadBlob } from "@/lib/utils/download";
 import { uid } from "@/lib/utils/id";
 
 export type YouTubeStage = "info" | "fetching" | "saving" | "importing" | "error";
 
-/** One pasted link on its way to becoming a project; shown as a card under Your projects. */
+/** One pasted link on its way to becoming a project (MP4) or a file on the visitor's computer (MP3); shown as a card under Your projects. */
 export interface YouTubeImport {
   key: string;
   link: string;
   videoId: string;
+  format: YouTubeFormat;
   quality: number;
   title: string;
   thumbnail: string | null;
@@ -29,11 +31,11 @@ export function youtubeStageText(item: YouTubeImport): string {
     case "info":
       return "Looking up the video… the helper can take a minute to wake up";
     case "fetching":
-      return "Fetching from YouTube… this can take a minute for long videos";
+      return item.format === "mp3" ? "Fetching from YouTube and converting to MP3… this can take a minute for long videos" : "Fetching from YouTube… this can take a minute for long videos";
     case "saving":
       return item.total ? `Receiving ${Math.round((item.loaded / item.total) * 100)}%` : "Receiving…";
     case "importing":
-      return "Adding to your projects…";
+      return item.format === "mp3" ? "Saving the MP3 to your computer…" : "Adding to your projects…";
     case "error":
       return item.error ?? "Something went wrong";
   }
@@ -43,6 +45,8 @@ export function youtubeStageText(item: YouTubeImport): string {
  * Runs YouTube imports: look the link up, fetch the MP4 through the helper,
  * store it on this device as a new project. The project is only written once
  * the file has fully arrived, so a failed or cancelled fetch leaves nothing behind.
+ * An MP3 can't be edited here, so it skips the project and goes straight to the
+ * visitor's Downloads folder as a normal browser download.
  */
 export function useYouTubeImports(onImported: (projectId: string) => void) {
   const [items, setItems] = useState<YouTubeImport[]>([]);
@@ -65,15 +69,20 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
     async (item: YouTubeImport) => {
       const abort = new AbortController();
       controllers.current.set(item.key, abort);
-      const { key, videoId, quality } = item;
+      const { key, videoId, format, quality } = item;
       try {
         const info = await fetchYouTubeInfo(videoId, abort.signal);
         patch(key, { title: info.title, thumbnail: info.thumbnail, stage: "fetching" });
         if (info.maxSeconds && info.duration > info.maxSeconds) {
           throw new YouTubeServiceError(`This video is ${Math.round(info.duration / 60)} minutes long; the helper takes up to ${Math.round(info.maxSeconds / 60)}.`, "rejected");
         }
-        const { file, title } = await downloadYouTube(videoId, quality, (loaded, total) => patch(key, { stage: "saving", loaded, total }), abort.signal);
+        const { file, title } = await downloadYouTube(videoId, { format, height: quality }, (loaded, total) => patch(key, { stage: "saving", loaded, total }), abort.signal);
         patch(key, { stage: "importing", title });
+        if (format === "mp3") {
+          downloadBlob(file, file.name);
+          drop(key);
+          return;
+        }
         const project = createProject({ name: title });
         await saveProject(project);
         try {
@@ -104,13 +113,14 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
 
   /** Starts an import. Throws when the text is not a YouTube link, so the bar can say so inline. */
   const start = useCallback(
-    (link: string, quality: number) => {
+    (link: string, { format, quality }: YouTubeChoice) => {
       const videoId = youtubeVideoId(link);
       if (!videoId) throw new Error("That doesn't look like a YouTube link. Paste the address of a video, e.g. https://youtu.be/…");
       const item: YouTubeImport = {
         key: uid("yt"),
         link: link.trim(),
         videoId,
+        format,
         quality,
         title: "YouTube video",
         thumbnail: null,

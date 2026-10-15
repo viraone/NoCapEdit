@@ -36,10 +36,11 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
   air (from the waveform), re-timing captions, overlays and voice-overs.
 - **Highlight finder**: TF-IDF salience plus delivery cues suggests the best 15/30/60 s
   window; "Keep only this" trims the reel to it.
-- **YouTube link import**: paste a link on the start screen, pick 1080p/720p/480p/360p,
-  and the video lands under Your projects. The fetch itself runs through a tiny
-  yt-dlp helper (`server/youtube/`, `npm run youtube`), the one step a browser cannot
-  do; the MP4 is then stored on the device like any dropped file.
+- **YouTube link import**: paste a link on the start screen, pick MP4 (1080p/720p/480p/360p)
+  or MP3, and the video lands under Your projects (an MP3 goes to the Downloads folder
+  instead). The fetch itself runs through a tiny yt-dlp helper (`server/youtube/`,
+  `npm run youtube`), the one step a browser cannot do; the MP4 is then stored on the
+  device like any dropped file.
 - Screen / camera / screen+mic **recorder** (MediaRecorder) straight into the timeline;
   hover **filmstrip preview** on the timeline; **.nocap backups** (streamed zip of
   project + media, restorable on any device).

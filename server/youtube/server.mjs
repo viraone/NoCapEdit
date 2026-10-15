@@ -12,6 +12,7 @@
  *   /health                      -> { ok, ytdlp }
  *   /info?url=<link>             -> { id, title, duration, thumbnail, uploader, heights }
  *   /download?url=<link>&height= -> video/mp4 body, X-Video-Title / X-Video-Id headers
+ *   /download?url=<link>&format=mp3 -> audio/mpeg body (sound only), same headers
  *
  * Needs yt-dlp and ffmpeg on PATH. Zero npm dependencies.
  *
@@ -34,7 +35,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { availableHeights, canonicalUrl, formatSelector, safeTitle, youtubeVideoId } from "./lib.mjs";
+import { availableHeights, canonicalUrl, outputArgs, outputFormat, safeTitle, youtubeVideoId } from "./lib.mjs";
 
 const PORT = Number(process.env.PORT) || 3131;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -167,15 +168,16 @@ async function handleDownload(req, res, params) {
   const abort = new AbortController();
   req.on("close", () => abort.abort());
   const dir = await mkdtemp(path.join(tmpdir(), "nocap-yt-"));
+  const format = outputFormat(params.get("format"));
   const started = Date.now();
   try {
     const out = await runYtDlp(
       [
-        "-f", formatSelector(params.get("height")),
-        "--merge-output-format", "mp4",
+        ...outputArgs(format, params.get("height")),
         "--no-playlist", "--no-warnings", "--no-progress",
         "--match-filters", `!is_live & duration<=${MAX_SECONDS}`,
-        "-o", path.join(dir, "video.%(ext)s"),
+        "-o", path.join(dir, "media.%(ext)s"),
+        // after_move runs once every post-processor is done, so for MP3 the path is the converted file.
         "--print", "after_move:%(.{filepath,title,id,duration})j",
         canonicalUrl(id),
       ],
@@ -186,11 +188,11 @@ async function handleDownload(req, res, params) {
     const meta = JSON.parse(line);
     const size = (await stat(meta.filepath)).size;
     const title = safeTitle(meta.title);
-    console.log(`[download] ${id} "${title}" ${(size / 1e6).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(0)} s`);
+    console.log(`[download] ${id} "${title}" ${format} ${(size / 1e6).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(0)} s`);
     res.writeHead(200, {
-      "Content-Type": "video/mp4",
+      "Content-Type": format === "mp3" ? "audio/mpeg" : "video/mp4",
       "Content-Length": size,
-      "Content-Disposition": `attachment; filename="${title.replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "'")}.mp4"; filename*=UTF-8''${encodeURIComponent(title)}.mp4`,
+      "Content-Disposition": `attachment; filename="${title.replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "'")}.${format}"; filename*=UTF-8''${encodeURIComponent(title)}.${format}`,
       "X-Video-Title": encodeURIComponent(title),
       "X-Video-Id": id,
       "X-Video-Duration": String(meta.duration ?? 0),

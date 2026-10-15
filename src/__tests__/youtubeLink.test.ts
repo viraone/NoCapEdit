@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { youtubeVideoId, youtubeWatchUrl } from "@/lib/youtube/url";
 // The helper is plain JavaScript; these tests pin its link rules to the site's.
-import { availableHeights, formatSelector, safeTitle, youtubeVideoId as helperVideoId } from "../../server/youtube/lib.mjs";
+import { availableHeights, formatSelector, outputArgs, outputFormat, safeTitle, youtubeVideoId as helperVideoId } from "../../server/youtube/lib.mjs";
 
 const links: [string, string | null][] = [
   ["https://www.youtube.com/watch?v=jNQXAC9IVRw", "jNQXAC9IVRw"],
@@ -42,6 +42,18 @@ describe("youtube helper", () => {
     expect(formatSelector(720)).toMatch(/^bv\*\[vcodec\^=avc1\]\[height<=720\]\+ba\[ext=m4a\]/);
     expect(formatSelector("999")).toContain("[height<=1080]");
     expect(formatSelector(undefined)).toContain("[height<=1080]");
+  });
+
+  it("delivers an MP4 unless MP3 is asked for, then extracts the sound", () => {
+    expect(outputFormat("mp3")).toBe("mp3");
+    expect(outputFormat("MP3")).toBe("mp3");
+    for (const f of ["mp4", "wav", "", null, undefined]) expect(outputFormat(f), String(f)).toBe("mp4");
+    expect(outputArgs("mp4", 720)).toEqual(["-f", formatSelector(720), "--merge-output-format", "mp4"]);
+    const mp3 = outputArgs("mp3", 720);
+    expect(mp3).toContain("-x");
+    expect(mp3.slice(mp3.indexOf("--audio-format"), mp3.indexOf("--audio-format") + 2)).toEqual(["--audio-format", "mp3"]);
+    expect(mp3[1]).toMatch(/^ba\[ext=m4a\]/);
+    expect(mp3).not.toContain("--merge-output-format");
   });
 
   it("lists the heights that have an H.264 rendition, best first", () => {

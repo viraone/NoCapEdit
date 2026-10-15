@@ -4,6 +4,17 @@
 export const YOUTUBE_QUALITIES = [1080, 720, 480, 360] as const;
 export type YouTubeQuality = (typeof YOUTUBE_QUALITIES)[number];
 
+/** What the bar can ask the helper for: the video (becomes a project) or just its sound (saved as a file). */
+export const YOUTUBE_FORMATS = ["mp4", "mp3"] as const;
+export type YouTubeFormat = (typeof YOUTUBE_FORMATS)[number];
+
+/** What the visitor asked for with one pasted link. */
+export interface YouTubeChoice {
+  format: YouTubeFormat;
+  /** Video height; ignored for MP3. */
+  quality: YouTubeQuality;
+}
+
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
 /**

@@ -71,8 +71,9 @@ lucide-react, vitest, Playwright.
 src/app/                      routes: / (start screen), /editor?id= (editor), /docs (how-to guide), /m (phone)
 src/components/
   start/StartScreen.tsx       project manager, quick import, Record, Import backup / Backup
-  start/YouTubeBar.tsx        paste-a-link bar (link, quality, Convert) → useYouTubeImports.ts, which
-                              fetches the MP4 through server/youtube/ and saves it as a project
+  start/YouTubeBar.tsx        paste-a-link bar (link, MP4/MP3, quality, Convert) → useYouTubeImports.ts, which
+                              fetches the MP4 through server/youtube/ and saves it as a project (an MP3 is
+                              handed to the browser as a download instead)
   record/Recorder.tsx         screen / camera / screen+mic MediaRecorder modal
   editor/EditorShell.tsx      floating-card layout, keyboard shortcuts, engine wiring, notice strip
   editor/TopBar.tsx           name, Home|Edit control, Import clips, Export video
