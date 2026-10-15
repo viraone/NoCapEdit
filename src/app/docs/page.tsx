@@ -113,7 +113,7 @@ export default function DocsPage() {
               Under <b className="text-white">Provider</b> choose <b className="text-white">Google (Gemini)</b>.
             </li>
             <li>
-              Paste your Google AI Studio key into the key box (how to get one is the next section) and click <b className="text-white">Save</b>. Saving checks the key and lists the models it can use.
+              Paste your Google AI Studio key into the key box (how to get one is the next section) (it is stored in your browser as you type) and click <b className="text-white">Check key</b>. That tests the key with Google and lists the models it can use; a green <b className="text-white">Key verified</b> appears when it works.
             </li>
             <li>
               In <b className="text-white">Model</b> pick the newest Flash model, for example <code className="rounded bg-sys-gray5 px-1.5 py-0.5 text-[13px] text-white">gemini-3.8-flash</code>. Flash is fast, cheap and good at judging which bits work alone. The Pro models are slower and not better at this.
@@ -151,7 +151,7 @@ export default function DocsPage() {
             </li>
             <li>Copy the key it shows (a long string of letters and numbers). You can come back to this page any time to copy it again.</li>
             <li>
-              Back in NoCap Edit, paste it into the Reels panel&apos;s key box and click <b className="text-white">Save</b>.
+              Back in NoCap Edit, paste it into the Reels panel&apos;s key box and click <b className="text-white">Check key</b>.
             </li>
           </ol>
           <Shot src="aistudio-create-key.png" alt="The API Keys page in Google AI Studio with the Create API key button at the top right" width={1200} height={61} />
@@ -159,7 +159,7 @@ export default function DocsPage() {
             The key&apos;s row on that page says <b className="text-white">Free tier</b>. Leave it like that. You don&apos;t need to click &ldquo;Set up billing&rdquo; for this.
           </p>
           <Shot src="aistudio-model.png" alt="Google AI Studio describing Gemini 3.8 Flash, its most capable Flash model" width={700} height={360} className="max-w-sm" />
-          <p className="text-sm text-label-3">The model names in AI Studio match what the Reels panel lists after you click Save, so pick the newest Flash you see there.</p>
+          <p className="text-sm text-label-3">The model names in AI Studio match what the Reels panel lists after you click Check key, so pick the newest Flash you see there.</p>
         </Section>
 
         <Section id="cost" title="6. What it costs">
