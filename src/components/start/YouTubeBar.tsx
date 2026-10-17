@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState, type FormEvent } from "react";
-import { ClipboardPaste, CircleCheck, Download } from "lucide-react";
+import { ClipboardPaste, CircleCheck, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { parseMediaLink, SITE_NAME, YOUTUBE_FORMATS, YOUTUBE_QUALITIES, type YouTubeChoice, type YouTubeFormat, type YouTubeQuality } from "@/lib/youtube/url";
 import { cx } from "@/lib/utils/cx";
@@ -64,7 +64,7 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
         Turn an Instagram Reel into an MP4, or a YouTube link into an MP4 or MP3
       </h2>
       <p className="mt-2 text-[15px] leading-snug text-label-2">
-        Paste the link below. <b className="font-semibold text-white">Instagram Reels are MP4 only.</b> <b className="font-semibold text-white">YouTube links</b> can be an MP4 (the video, saved to Your projects, ready to caption and edit) or an MP3 (just the sound, saved to your Downloads).
+        Paste the link below, then press Convert. <b className="font-semibold text-white">Instagram Reels are MP4 only.</b> <b className="font-semibold text-white">YouTube links</b> can be an MP4 (the video, saved to Your projects, ready to caption and edit) or an MP3 (just the sound, saved to your Downloads).
       </p>
 
       <form onSubmit={submit} className="mt-5">
@@ -83,15 +83,31 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
             className={cx(control, "h-14 w-full pl-4 pr-28 text-base")}
             data-youtube-link
           />
-          <button
-            type="button"
-            onClick={paste}
-            disabled={disabled}
-            className="absolute right-2 top-1/2 inline-flex h-10 -translate-y-1/2 items-center gap-1.5 rounded-lg bg-sys-gray4 px-3 text-sm font-semibold text-white transition-colors hover:bg-sys-gray3 focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50"
-            data-youtube-paste
-          >
-            <ClipboardPaste size={16} /> Paste
-          </button>
+          {link.trim() ? (
+            <button
+              type="button"
+              onClick={() => {
+                change("");
+                inputRef.current?.focus();
+              }}
+              disabled={disabled}
+              aria-label="Clear the link"
+              className="absolute right-2 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-sys-gray4 text-white transition-colors hover:bg-sys-gray3 focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50"
+              data-youtube-clear
+            >
+              <X size={18} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={paste}
+              disabled={disabled}
+              className="absolute right-2 top-1/2 inline-flex h-10 -translate-y-1/2 items-center gap-1.5 rounded-lg bg-sys-gray4 px-3 text-sm font-semibold text-white transition-colors hover:bg-sys-gray3 focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50"
+              data-youtube-paste
+            >
+              <ClipboardPaste size={16} /> Paste
+            </button>
+          )}
         </div>
 
         <p className="mt-2 min-h-5 text-sm" aria-live="polite" data-youtube-recognised={media ? media.source : ""}>
@@ -135,7 +151,7 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
         </div>
 
         <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} className="mt-3 h-14 w-full text-base" data-youtube-convert>
-          <Download size={20} /> {chosen === "mp3" ? "Convert to MP3" : "Convert to MP4"}
+          <Download size={20} /> Convert
         </Button>
 
         {chosen === "mp4" && !isInstagram && (

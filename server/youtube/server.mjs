@@ -188,7 +188,8 @@ async function handleDownload(req, res, params) {
       [
         ...outputArgs(format, params.get("height"), source),
         "--no-playlist", "--no-warnings", "--no-progress",
-        "--match-filters", `!is_live & duration<=${MAX_SECONDS}`,
+        // "<=?" lets a video with no reported length through: Instagram reels have none.
+        "--match-filters", `!is_live & duration<=?${MAX_SECONDS}`,
         "-o", path.join(dir, "media.%(ext)s"),
         // after_move runs once every post-processor is done, so for MP3 the path is the converted file.
         "--print", "after_move:%(.{filepath,title,id,duration})j",
