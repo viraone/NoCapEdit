@@ -39,7 +39,15 @@ export async function importVideo(
     await putPeaks({ assetId, peaks: peaks.peaks, perSecond: peaks.perSecond, duration: peaks.duration });
     emitAssetReady("peaks", assetId);
   })();
-  const thumbTask = generateFilmstrip(assetId, file, info.duration, undefined, undefined, (done, total) => onStatus?.(`Making thumbnails, ${done} of ${total}`))
+  const thumbTask = generateFilmstrip(
+    assetId,
+    file,
+    info.duration,
+    undefined,
+    undefined,
+    (done, total) => onStatus?.(`Making thumbnails, ${done} of ${total}`),
+    (hidden) => onStatus?.(hidden ? "Paused while this tab is in the background. Come back to this tab and it carries on" : "Making thumbnails"),
+  )
     .then(async (rec) => {
       await putThumbs(rec);
       emitAssetReady("thumbs", assetId);

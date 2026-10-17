@@ -1,4 +1,5 @@
 import type { ThumbsRecord } from "@/lib/storage/db";
+import { whenVisible } from "@/lib/media/visibility";
 
 /** Canvas width budget for one sprite (well under Chrome's 32767 limit). */
 const MAX_SPRITE_WIDTH = 16000;
@@ -60,9 +61,12 @@ export async function generateFilmstrip(
   maxFrames = 160,
   /** Called after each frame, so a long video's import can show how far along it is. */
   onProgress?: (done: number, total: number) => void,
+  /** Called when the job pauses because the tab went to the background, and again when it resumes. */
+  onHidden?: (hidden: boolean) => void,
 ): Promise<ThumbsRecord> {
   const url = URL.createObjectURL(blob);
   try {
+    await whenVisible(onHidden);
     const video = await loadVideo(url);
     const aspect = video.videoWidth / Math.max(1, video.videoHeight) || 9 / 16;
     const frameWidth = Math.max(16, Math.round(frameHeight * aspect));
@@ -79,6 +83,7 @@ export async function generateFilmstrip(
     const interval = duration / count;
     for (let i = 0; i < count; i++) {
       const t = Math.min(Math.max(0, duration - 0.05), (i + 0.5) * interval);
+      await whenVisible(onHidden);
       await seek(video, t);
       try {
         ctx.drawImage(video, i * frameWidth, 0, frameWidth, frameHeight);
@@ -102,6 +107,7 @@ export async function generateFilmstrip(
 export async function captureFrame(blob: Blob, time: number, maxWidth = 360): Promise<Blob> {
   const url = URL.createObjectURL(blob);
   try {
+    await whenVisible();
     const video = await loadVideo(url);
     await seek(video, time);
     const scale = Math.min(1, maxWidth / Math.max(1, video.videoWidth));

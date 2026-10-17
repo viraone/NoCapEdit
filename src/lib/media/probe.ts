@@ -1,3 +1,5 @@
+import { whenVisible } from "@/lib/media/visibility";
+
 export interface VideoInfo {
   duration: number;
   width: number;
@@ -26,6 +28,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 
 /** Reads duration and dimensions of a video Blob using a hidden <video>. */
 export async function probeVideo(blob: Blob): Promise<VideoInfo> {
+  await whenVisible();
   const url = URL.createObjectURL(blob);
   const video = document.createElement("video");
   video.preload = "metadata";
