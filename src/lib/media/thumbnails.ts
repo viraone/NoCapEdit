@@ -20,14 +20,30 @@ function seek(video: HTMLVideoElement, time: number): Promise<void> {
   });
 }
 
+/** How long the browser gets to decode the first frame before thumbnails are skipped; without a limit a stalled decoder hangs the import forever. */
+const LOAD_TIMEOUT_MS = 20_000;
+
 function loadVideo(url: string): Promise<HTMLVideoElement> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     video.muted = true;
     video.playsInline = true;
     video.preload = "auto";
-    video.onloadeddata = () => resolve(video);
-    video.onerror = () => reject(new Error("Could not load video for thumbnails"));
+    const timer = setTimeout(() => {
+      video.onloadeddata = null;
+      video.onerror = null;
+      video.removeAttribute("src");
+      video.load();
+      reject(new Error("The browser took too long to open the video for thumbnails"));
+    }, LOAD_TIMEOUT_MS);
+    video.onloadeddata = () => {
+      clearTimeout(timer);
+      resolve(video);
+    };
+    video.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error("Could not load video for thumbnails"));
+    };
     video.src = url;
   });
 }
@@ -42,6 +58,8 @@ export async function generateFilmstrip(
   duration: number,
   frameHeight = FILMSTRIP_FRAME_HEIGHT,
   maxFrames = 160,
+  /** Called after each frame, so a long video's import can show how far along it is. */
+  onProgress?: (done: number, total: number) => void,
 ): Promise<ThumbsRecord> {
   const url = URL.createObjectURL(blob);
   try {
@@ -67,6 +85,7 @@ export async function generateFilmstrip(
       } catch {
         // Ignore frames the browser refuses to paint.
       }
+      onProgress?.(i + 1, count);
     }
     video.removeAttribute("src");
     video.load();

@@ -25,6 +25,8 @@ export interface YouTubeImport {
   /** Bytes received so far and the whole file, once the helper starts sending it. */
   loaded: number;
   total: number | null;
+  /** What the saving step is doing right now (reading, analysing, making thumbnails), so a long video never looks stuck. */
+  detail: string | null;
   error: string | null;
 }
 
@@ -37,7 +39,8 @@ export function youtubeStageText(item: YouTubeImport): string {
     case "saving":
       return item.total ? `Receiving ${Math.round((item.loaded / item.total) * 100)}%` : "Receiving…";
     case "importing":
-      return item.format === "mp3" ? "Saving the MP3 to your computer…" : "Adding to your projects…";
+      if (item.format === "mp3") return "Saving the MP3 to your computer…";
+      return item.detail ? `Adding to your projects: ${item.detail}…` : "Adding to your projects…";
     case "error":
       return item.error ?? "Something went wrong";
   }
@@ -89,7 +92,7 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
         const project = createProject({ name: title });
         await saveProject(project);
         try {
-          const { clip, blob } = await importVideo(file, project.id);
+          const { clip, blob } = await importVideo(file, project.id, (detail) => patch(key, { detail }));
           project.clips.push(clip);
           await updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
           await saveProject(project);
@@ -133,6 +136,7 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
         stage: "info",
         loaded: 0,
         total: null,
+        detail: null,
         error: null,
       };
       setItems((list) => [item, ...list]);
@@ -154,7 +158,7 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
       setItems((list) => {
         const old = list.find((it) => it.key === key);
         if (!old) return list;
-        const fresh: YouTubeImport = { ...old, stage: "info", error: null, loaded: 0, total: null };
+        const fresh: YouTubeImport = { ...old, stage: "info", error: null, loaded: 0, total: null, detail: null };
         void run(fresh);
         return list.map((it) => (it.key === key ? fresh : it));
       });

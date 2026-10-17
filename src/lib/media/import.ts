@@ -39,7 +39,7 @@ export async function importVideo(
     await putPeaks({ assetId, peaks: peaks.peaks, perSecond: peaks.perSecond, duration: peaks.duration });
     emitAssetReady("peaks", assetId);
   })();
-  const thumbTask = generateFilmstrip(assetId, file, info.duration)
+  const thumbTask = generateFilmstrip(assetId, file, info.duration, undefined, undefined, (done, total) => onStatus?.(`Making thumbnails, ${done} of ${total}`))
     .then(async (rec) => {
       await putThumbs(rec);
       emitAssetReady("thumbs", assetId);
