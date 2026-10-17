@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { instagramShortcode, mediaUrl, parseMediaLink, youtubeVideoId, youtubeWatchUrl } from "@/lib/youtube/url";
+import { formatFor, instagramShortcode, mediaUrl, parseMediaLink, youtubeVideoId, youtubeWatchUrl } from "@/lib/youtube/url";
 // The helper is plain JavaScript; these tests pin its link rules to the site's.
 import {
   availableHeights,
   canonicalMediaUrl,
+  formatFor as helperFormatFor,
   formatSelector,
   instagramSelector,
   instagramShortcode as helperShortcode,
@@ -105,7 +106,16 @@ describe("youtube helper", () => {
     expect(instagramSelector()).toMatch(/^bv\*\[vcodec\^=avc1\]\+ba\[ext=m4a\]/);
     expect(instagramSelector()).not.toContain("height");
     expect(outputArgs("mp4", 720, "instagram")).toEqual(["-f", instagramSelector(), "--merge-output-format", "mp4"]);
-    expect(outputArgs("mp3", 720, "instagram")).toEqual(outputArgs("mp3", 720, "youtube"));
+  });
+
+  it("converts an Instagram reel to MP4 only, whatever is asked, and leaves YouTube's choice alone", () => {
+    for (const asked of ["mp3", "MP3", "mp4", "", null, undefined]) expect(helperFormatFor("instagram", asked), String(asked)).toBe("mp4");
+    expect(helperFormatFor("youtube", "mp3")).toBe("mp3");
+    expect(helperFormatFor("youtube", "mp4")).toBe("mp4");
+    expect(helperFormatFor("youtube", undefined)).toBe("mp4");
+    expect(formatFor("instagram", "mp3")).toBe("mp4");
+    expect(formatFor("youtube", "mp3")).toBe("mp3");
+    expect(formatFor("youtube", "mp4")).toBe("mp4");
   });
 
   it("delivers an MP4 unless MP3 is asked for, then extracts the sound", () => {

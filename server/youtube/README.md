@@ -3,8 +3,8 @@
 The start screen's "Paste a YouTube or Instagram Reel link" bar needs one thing the
 static site cannot do in a browser: fetch the video from YouTube or Instagram. This
 folder is that helper. It runs yt-dlp and streams back a browser-playable MP4 (H.264 +
-AAC; up to the height the visitor picked for YouTube, full size for a Reel), or just
-the sound as an MP3. The site then stores the MP4 in the visitor's browser like any
+AAC; up to the height the visitor picked for YouTube, full size for a Reel), or, for
+YouTube only, just the sound as an MP3. The site then stores the MP4 in the visitor's browser like any
 dropped recording, or saves the MP3 to their computer. The helper never sees the
 visitor's projects.
 
@@ -108,7 +108,7 @@ All `GET`, CORS enabled, JSON errors as `{ "error": "..." }`.
 | `/health` | `{ ok, ytdlp, maxMinutes }` |
 | `/info?url=<link>` | `{ id, source, title, duration, thumbnail, uploader, heights, maxSeconds }` (`source` is `youtube` or `instagram`) |
 | `/download?url=<link>&height=1080` | `video/mp4` body with `Content-Length`, `X-Video-Title` (URL-encoded), `X-Video-Id`, `X-Video-Duration`; `height` applies to YouTube only |
-| `/download?url=<link>&format=mp3` | `audio/mpeg` body (best audio track converted by ffmpeg, highest VBR quality), same headers |
+| `/download?url=<link>&format=mp3` | `audio/mpeg` body (best audio track converted by ffmpeg, highest VBR quality), same headers. YouTube only: an Instagram reel is always returned as an MP4, whatever `format` says |
 
 `<link>` is a YouTube video link or an Instagram reel/post link (`/reel/`, `/reels/`,
 `/p/`, `/tv/`). Links are reduced to `https://www.youtube.com/watch?v=<id>` or

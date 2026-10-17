@@ -27,6 +27,11 @@ export interface MediaLink {
 
 export const SITE_NAME: Record<MediaSource, string> = { youtube: "YouTube", instagram: "Instagram" };
 
+/** An Instagram Reel is only ever converted to an MP4; MP3 is for YouTube links. */
+export function formatFor(source: MediaSource, requested: YouTubeFormat): YouTubeFormat {
+  return source === "instagram" ? "mp4" : requested;
+}
+
 /** What a download is called before its real title is known. */
 export function defaultTitle(source: MediaSource): string {
   return source === "instagram" ? "Instagram reel" : "YouTube video";

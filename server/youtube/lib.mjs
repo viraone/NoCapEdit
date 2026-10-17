@@ -14,6 +14,11 @@ export function outputFormat(format) {
   return String(format ?? "").toLowerCase() === "mp3" ? "mp3" : "mp4";
 }
 
+/** What is actually delivered for `source`: an Instagram reel is only ever an MP4, whatever was asked; MP3 is for YouTube. */
+export function formatFor(source, requested) {
+  return source === "instagram" ? "mp4" : outputFormat(requested);
+}
+
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 /** Instagram shortcodes are 11 characters for ordinary posts and reels; some older or private-account posts run longer. */
 const SHORTCODE = /^[A-Za-z0-9_-]{5,40}$/;

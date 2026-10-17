@@ -24,6 +24,8 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
   const inputRef = useRef<HTMLInputElement>(null);
   const media = parseMediaLink(link);
   const isInstagram = media?.source === "instagram";
+  // An Instagram Reel is only ever converted to an MP4; the visitor's MP3 pick is kept for the next YouTube link.
+  const chosen: YouTubeFormat = isInstagram ? "mp4" : format;
 
   const change = (value: string) => {
     setLink(value);
@@ -34,7 +36,7 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
     e.preventDefault();
     setError(null);
     try {
-      onSubmit(link, { format, quality });
+      onSubmit(link, { format: chosen, quality });
       setLink("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -59,9 +61,11 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
   return (
     <section className="card mt-10 rounded-3xl p-5 sm:p-7" aria-labelledby="link-import-title">
       <h2 id="link-import-title" className="text-2xl font-bold leading-tight tracking-tight text-white sm:text-3xl">
-        Turn an Instagram Reel or YouTube link into an MP4
+        Turn an Instagram Reel into an MP4, or a YouTube link into an MP4 or MP3
       </h2>
-      <p className="mt-2 text-[15px] leading-snug text-label-2">Paste the link below. The video is saved to Your projects, ready to caption and edit.</p>
+      <p className="mt-2 text-[15px] leading-snug text-label-2">
+        Paste the link below. <b className="font-semibold text-white">Instagram Reels are MP4 only.</b> <b className="font-semibold text-white">YouTube links</b> can be an MP4 (the video, saved to Your projects, ready to caption and edit) or an MP3 (just the sound, saved to your Downloads).
+      </p>
 
       <form onSubmit={submit} className="mt-5">
         <div className="relative">
@@ -93,41 +97,59 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
         <p className="mt-2 min-h-5 text-sm" aria-live="polite" data-youtube-recognised={media ? media.source : ""}>
           {media ? (
             <span className="inline-flex items-center gap-1.5 font-medium text-sys-green">
-              <CircleCheck size={16} /> {isInstagram ? "Instagram Reel link. Ready to convert." : `${SITE_NAME[media.source]} link. Ready to convert.`}
+              <CircleCheck size={16} /> {isInstagram ? "Instagram Reel link. It will be converted to an MP4." : `${SITE_NAME[media.source]} link. Ready to convert.`}
             </span>
           ) : link.trim() ? (
             <span className="text-label-3">That doesn&apos;t look like an Instagram Reel or YouTube link yet.</span>
           ) : null}
         </p>
 
-        <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} className="mt-2 h-14 w-full text-base" data-youtube-convert>
-          <Download size={20} /> {format === "mp3" ? "Convert to MP3" : "Convert to MP4"}
+        <div role="radiogroup" aria-label="Save as" className="mt-1 grid grid-cols-2 gap-2" data-youtube-format={chosen}>
+          {YOUTUBE_FORMATS.map((f) => {
+            const unavailable = f === "mp3" && isInstagram;
+            return (
+              <button
+                key={f}
+                type="button"
+                role="radio"
+                aria-checked={chosen === f}
+                aria-disabled={unavailable || undefined}
+                onClick={() => {
+                  if (!unavailable) setFormat(f);
+                }}
+                disabled={disabled}
+                className={cx(
+                  "rounded-xl border px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50",
+                  chosen === f ? "border-sys-blue bg-sys-blue/15 text-white" : "border-sys-gray4 bg-sys-gray5 text-label-2 hover:bg-sys-gray4",
+                  unavailable && "cursor-not-allowed opacity-50 hover:bg-sys-gray5",
+                )}
+                data-youtube-format-option={f}
+              >
+                <span className="block text-[15px] font-bold">{f.toUpperCase()}</span>
+                <span className="block text-xs text-label-3">
+                  {unavailable ? "Not for Instagram Reels" : f === "mp4" ? "Video, to edit here" : "YouTube sound only, to Downloads"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} className="mt-3 h-14 w-full text-base" data-youtube-convert>
+          <Download size={20} /> {chosen === "mp3" ? "Convert to MP3" : "Convert to MP4"}
         </Button>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3 text-sm text-label-2">
-          <label className="flex items-center gap-2">
-            Save as
-            <select aria-label="Video or sound only" value={format} onChange={(e) => setFormat(e.target.value as YouTubeFormat)} disabled={disabled} className={cx(control, "h-10 px-3")} data-youtube-format>
-              {YOUTUBE_FORMATS.map((f) => (
-                <option key={f} value={f}>
-                  {f === "mp4" ? "MP4 video" : "MP3 sound only"}
+        {chosen === "mp4" && !isInstagram && (
+          <label className="mt-4 flex items-center gap-2 text-sm text-label-2">
+            Quality
+            <select aria-label="Video quality" value={quality} onChange={(e) => setQuality(Number(e.target.value) as YouTubeQuality)} disabled={disabled} className={cx(control, "h-10 px-3")} data-youtube-quality>
+              {YOUTUBE_QUALITIES.map((q) => (
+                <option key={q} value={q}>
+                  {q}p
                 </option>
               ))}
             </select>
           </label>
-          {format === "mp4" && !isInstagram && (
-            <label className="flex items-center gap-2">
-              Quality
-              <select aria-label="Video quality" value={quality} onChange={(e) => setQuality(Number(e.target.value) as YouTubeQuality)} disabled={disabled} className={cx(control, "h-10 px-3")} data-youtube-quality>
-                {YOUTUBE_QUALITIES.map((q) => (
-                  <option key={q} value={q}>
-                    {q}p
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
+        )}
       </form>
 
       {error && (
@@ -144,9 +166,11 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
           <b className="font-semibold text-label-2">YouTube:</b> tap Share under the video, then Copy.
         </p>
         <p className="mt-2">
-          {format === "mp3"
-            ? "The sound is saved to your Downloads folder as an MP3. Nothing is uploaded anywhere."
-            : "A Reel comes at its full size. The video stays in this browser; nothing is uploaded anywhere."}
+          {isInstagram
+            ? "Instagram Reels are converted to MP4 only, at their full size. The video stays in this browser; nothing is uploaded anywhere."
+            : chosen === "mp3"
+              ? "The sound is saved to your Downloads folder as an MP3. MP3 is for YouTube links only. Nothing is uploaded anywhere."
+              : "The video stays in this browser; nothing is uploaded anywhere. An Instagram Reel always comes out as an MP4."}
         </p>
       </div>
     </section>

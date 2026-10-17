@@ -13,7 +13,8 @@
  *   /info?url=<link>             -> { id, source, title, duration, thumbnail, uploader, heights }
  *   /download?url=<link>&height= -> video/mp4 body, X-Video-Title / X-Video-Id headers
  *                                   (height applies to YouTube; a reel comes at its full size)
- *   /download?url=<link>&format=mp3 -> audio/mpeg body (sound only), same headers
+ *   /download?url=<link>&format=mp3 -> audio/mpeg body (sound only), same headers; YouTube
+ *                                   only, an Instagram reel always comes back as an MP4
  *
  * Needs yt-dlp and ffmpeg on PATH. Zero npm dependencies.
  *
@@ -37,7 +38,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { availableHeights, canonicalMediaUrl, defaultTitle, outputArgs, outputFormat, parseMediaLink, safeTitle } from "./lib.mjs";
+import { availableHeights, canonicalMediaUrl, defaultTitle, formatFor, outputArgs, parseMediaLink, safeTitle } from "./lib.mjs";
 
 const PORT = Number(process.env.PORT) || 3131;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -180,7 +181,7 @@ async function handleDownload(req, res, params) {
   const abort = new AbortController();
   req.on("close", () => abort.abort());
   const dir = await mkdtemp(path.join(tmpdir(), "nocap-yt-"));
-  const format = outputFormat(params.get("format"));
+  const format = formatFor(source, params.get("format"));
   const started = Date.now();
   try {
     const out = await runYtDlp(

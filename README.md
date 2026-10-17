@@ -37,9 +37,9 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
 - **Highlight finder**: TF-IDF salience plus delivery cues suggests the best 15/30/60 s
   window; "Keep only this" trims the reel to it.
 - **YouTube and Instagram link import**: paste a YouTube link or an Instagram Reel link
-  on the start screen, pick MP4 (1080p/720p/480p/360p for YouTube; a Reel comes at its
-  full size) or MP3, and the video lands under Your projects (an MP3 goes to the
-  Downloads folder instead). The fetch itself runs through a tiny yt-dlp helper
+  on the start screen. A YouTube link can be an MP4 (1080p/720p/480p/360p) or an MP3; an
+  Instagram Reel is MP4 only, at its full size. The MP4 lands under Your projects (a
+  YouTube MP3 goes to the Downloads folder instead). The fetch itself runs through a tiny yt-dlp helper
   (`server/youtube/`, `npm run youtube`), the one step a browser cannot do; the MP4 is
   then stored on the device like any dropped file.
 - Screen / camera / screen+mic **recorder** (MediaRecorder) straight into the timeline;

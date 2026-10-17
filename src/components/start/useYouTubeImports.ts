@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createProject } from "@/lib/models/project";
 import { saveProject, requestPersistentStorage } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
-import { defaultTitle, parseMediaLink, SITE_NAME, type MediaSource, type YouTubeChoice, type YouTubeFormat } from "@/lib/youtube/url";
+import { defaultTitle, formatFor, parseMediaLink, SITE_NAME, type MediaSource, type YouTubeChoice, type YouTubeFormat } from "@/lib/youtube/url";
 import { downloadYouTube, fetchYouTubeInfo, YouTubeServiceError } from "@/lib/youtube/service";
 import { downloadBlob } from "@/lib/utils/download";
 import { uid } from "@/lib/utils/id";
@@ -126,7 +126,7 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
         link: link.trim(),
         source: media.source,
         videoId: media.id,
-        format,
+        format: formatFor(media.source, format),
         quality,
         title: defaultTitle(media.source),
         thumbnail: null,
