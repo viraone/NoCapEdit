@@ -10,14 +10,17 @@ import { cx } from "@/lib/utils/cx";
 const control =
   "rounded-xl border border-sys-gray4 bg-sys-gray5 text-[15px] text-white placeholder:text-label-3 focus:border-sys-blue focus:outline-none focus:ring-1 focus:ring-sys-blue/50 disabled:opacity-50";
 
+const smallButton =
+  "inline-flex h-8 items-center gap-1.5 rounded-lg bg-sys-gray4 px-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-sys-gray3 focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50";
+
 /**
- * Paste-a-link card for Instagram Reels and YouTube videos. It says in plain words
- * what it does and what to do (copy the link, paste it, press the button), and
- * confirms what it recognised as soon as a link is in the box. MP3 and quality are
- * secondary choices under the button; a Reel comes at its full size, so the quality
- * picker hides when the pasted link is Instagram's.
+ * Paste-a-link card for Instagram Reels and YouTube videos, kept to one row: the
+ * link box (with Paste inside it) and the Download button, with the small choices
+ * (MP4 or MP3, quality) on a single line underneath. It confirms what it recognised
+ * as soon as a link is in the box. A Reel comes at its full size and only as MP4,
+ * so for an Instagram link the MP3 pill is greyed out and the quality picker hides.
  * `onSubmit` throws when the text is not a link the helper takes; the message shows under the box.
- * While `active` is a download under way, a big blue status block takes the button's place
+ * While `active` is a download under way, a blue status block takes the row's place
  * (spinner, what is happening, percentage, Cancel), so nobody has to hunt for the card
  * further down the page to see that something is happening.
  */
@@ -87,109 +90,29 @@ export function YouTubeBar({
   };
 
   return (
-    <section className="card mt-10 rounded-3xl p-5 sm:p-7" aria-labelledby="link-import-title">
-      <h2 id="link-import-title" className="text-2xl font-bold leading-tight tracking-tight text-white sm:text-3xl">
-        Turn an Instagram Reel into an MP4, or a YouTube link into an MP4 or MP3
-      </h2>
-      <p className="mt-2 text-[15px] leading-snug text-label-2">
-        Paste the link below, then press Download. <b className="font-semibold text-white">Instagram Reels are MP4 only.</b> <b className="font-semibold text-white">YouTube links</b> can be an MP4 (the video, saved to Your projects, ready to caption and edit) or an MP3 (just the sound, saved to your Downloads).
-      </p>
+    <section className="card mt-8 rounded-2xl p-4 sm:p-5" aria-labelledby="link-import-title">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 id="link-import-title" className="text-lg font-semibold leading-tight tracking-tight text-white">
+          Paste an Instagram Reel or YouTube link
+        </h2>
+        <p className="text-sm text-label-3">It becomes a project you can caption and edit. Nothing is uploaded anywhere.</p>
+      </div>
 
-      <form onSubmit={submit} className="mt-5">
-        <div className="relative">
-          <input
-            ref={inputRef}
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            spellCheck={false}
-            aria-label="Instagram Reel or YouTube link"
-            placeholder="Paste the link here"
-            value={link}
-            onChange={(e) => change(e.target.value)}
-            disabled={disabled}
-            className={cx(control, "h-14 w-full pl-4 pr-28 text-base")}
-            data-youtube-link
-          />
-          {link.trim() ? (
-            <button
-              type="button"
-              onClick={() => {
-                change("");
-                inputRef.current?.focus();
-              }}
-              disabled={disabled}
-              aria-label="Clear the link"
-              className="absolute right-2 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-sys-gray4 text-white transition-colors hover:bg-sys-gray3 focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50"
-              data-youtube-clear
-            >
-              <X size={18} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={paste}
-              disabled={disabled}
-              className="absolute right-2 top-1/2 inline-flex h-10 -translate-y-1/2 items-center gap-1.5 rounded-lg bg-sys-gray4 px-3 text-sm font-semibold text-white transition-colors hover:bg-sys-gray3 focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50"
-              data-youtube-paste
-            >
-              <ClipboardPaste size={16} /> Paste
-            </button>
-          )}
-        </div>
-
-        <p className="mt-2 min-h-5 text-sm" aria-live="polite" data-youtube-recognised={media ? media.source : ""}>
-          {media ? (
-            <span className="inline-flex items-center gap-1.5 font-medium text-sys-green">
-              <CircleCheck size={16} /> {isInstagram ? "Instagram Reel link. It will be converted to an MP4." : `${SITE_NAME[media.source]} link. Ready to download.`}
-            </span>
-          ) : link.trim() ? (
-            <span className="text-label-3">That doesn&apos;t look like an Instagram Reel or YouTube link yet.</span>
-          ) : null}
-        </p>
-
-        <div role="radiogroup" aria-label="Save as" className="mt-1 grid grid-cols-2 gap-2" data-youtube-format={chosen}>
-          {YOUTUBE_FORMATS.map((f) => {
-            const unavailable = f === "mp3" && isInstagram;
-            return (
-              <button
-                key={f}
-                type="button"
-                role="radio"
-                aria-checked={chosen === f}
-                aria-disabled={unavailable || undefined}
-                onClick={() => {
-                  if (!unavailable) setFormat(f);
-                }}
-                disabled={disabled}
-                className={cx(
-                  "rounded-xl border px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50",
-                  chosen === f ? "border-sys-blue bg-sys-blue/15 text-white" : "border-sys-gray4 bg-sys-gray5 text-label-2 hover:bg-sys-gray4",
-                  unavailable && "cursor-not-allowed opacity-50 hover:bg-sys-gray5",
-                )}
-                data-youtube-format-option={f}
-              >
-                <span className="block text-[15px] font-bold">{f.toUpperCase()}</span>
-                <span className="block text-xs text-label-3">
-                  {unavailable ? "Not for Instagram Reels" : f === "mp4" ? "Video, to edit here" : "YouTube sound only, to Downloads"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
+      <form onSubmit={submit} className="mt-3">
         {active ? (
-          <div className="mt-3 space-y-2.5 rounded-xl border-2 border-sys-blue bg-sys-blue/15 p-4 shadow-[0_0_0_4px_rgba(10,132,255,0.18)] motion-safe:animate-pulse" role="status" aria-live="polite" data-youtube-active={active.stage}>
-            <p className="flex items-center gap-2.5 text-lg font-bold leading-snug text-white">
-              <Loader2 size={22} className="shrink-0 animate-spin text-sys-blue" aria-hidden />
-              <span>{active.stage === "saving" ? "Downloading" : active.stage === "importing" ? "Almost done" : `Getting the ${active.source === "instagram" ? "Reel" : "video"} from ${SITE_NAME[active.source]}`}…</span>
+          // A download under way: the row becomes the status block so the progress is where the visitor is looking.
+          <div className="space-y-2 rounded-xl border-2 border-sys-blue bg-sys-blue/15 p-3 shadow-[0_0_0_4px_rgba(10,132,255,0.18)] motion-safe:animate-pulse" role="status" aria-live="polite" data-youtube-active={active.stage}>
+            <p className="flex items-center gap-2 text-base font-bold leading-snug text-white">
+              <Loader2 size={18} className="shrink-0 animate-spin text-sys-blue" aria-hidden />
+              <span className="truncate">
+                {active.stage === "saving" ? "Downloading" : active.stage === "importing" ? "Almost done" : `Getting the ${active.source === "instagram" ? "Reel" : "video"} from ${SITE_NAME[active.source]}`}… {active.title}
+              </span>
             </p>
-            <p className="truncate text-[15px] text-white/90">{active.title}</p>
-            <div className="flex items-start justify-between gap-2 text-sm">
+            <div className="flex items-start justify-between gap-2 text-[13px]">
               <span className="min-w-0 text-white/80 [overflow-wrap:anywhere]">{youtubeStageText(active)}</span>
               {active.stage === "saving" && active.total ? <span className="shrink-0 tabular-nums font-semibold text-white">{Math.round((active.loaded / active.total) * 100)}%</span> : null}
             </div>
-            <ProgressBar className="h-2.5" value={active.stage === "saving" && active.total ? active.loaded / active.total : null} />
+            <ProgressBar className="h-2" value={active.stage === "saving" && active.total ? active.loaded / active.total : null} />
             <div className="flex items-center justify-between gap-2 text-xs text-white/70">
               <span>Keep this page open. It lands under Your projects when it is done.</span>
               {onCancel && (
@@ -200,54 +123,120 @@ export function YouTubeBar({
             </div>
           </div>
         ) : (
-          <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} className="mt-3 h-14 w-full text-base" data-youtube-convert>
-            <Download size={20} /> Download
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="Instagram Reel or YouTube link"
+                placeholder="Paste the link here"
+                value={link}
+                onChange={(e) => change(e.target.value)}
+                disabled={disabled}
+                className={cx(control, "h-12 w-full pl-4 pr-24")}
+                data-youtube-link
+              />
+              {link.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    change("");
+                    inputRef.current?.focus();
+                  }}
+                  disabled={disabled}
+                  aria-label="Clear the link"
+                  className={cx(smallButton, "absolute right-2 top-1/2 w-8 -translate-y-1/2 justify-center px-0")}
+                  data-youtube-clear
+                >
+                  <X size={16} />
+                </button>
+              ) : (
+                <button type="button" onClick={paste} disabled={disabled} className={cx(smallButton, "absolute right-2 top-1/2 -translate-y-1/2")} data-youtube-paste>
+                  <ClipboardPaste size={15} /> Paste
+                </button>
+              )}
+            </div>
+            <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} className="h-12 text-[15px] sm:w-44" data-youtube-convert>
+              <Download size={18} /> Download
+            </Button>
+          </div>
         )}
+
         {done && !active && (
-          <p className="mt-3 flex items-center gap-2 rounded-xl border border-sys-green/50 bg-sys-green/10 px-4 py-3 text-[15px] font-semibold text-sys-green" role="status" data-youtube-done>
-            <CircleCheck size={18} className="shrink-0" />
+          <p className="mt-2 flex items-center gap-2 rounded-xl border border-sys-green/50 bg-sys-green/10 px-3 py-2 text-sm font-semibold text-sys-green" role="status" data-youtube-done>
+            <CircleCheck size={16} className="shrink-0" />
             <span>
               Done. {done.format === "mp3" ? "The MP3 is in your Downloads folder." : <>&ldquo;{done.title}&rdquo; is ready under <a href="#projects" className="underline">Your projects</a>.</>}
             </span>
           </p>
         )}
 
-        {chosen === "mp4" && !isInstagram && (
-          <label className="mt-4 flex items-center gap-2 text-sm text-label-2">
-            Quality
-            <select aria-label="Video quality" value={quality} onChange={(e) => setQuality(Number(e.target.value) as YouTubeQuality)} disabled={disabled} className={cx(control, "h-10 px-3")} data-youtube-quality>
-              {YOUTUBE_QUALITIES.map((q) => (
-                <option key={q} value={q}>
-                  {q}p
-                </option>
-              ))}
-            </select>
-          </label>
+        {!active && (
+          <div className="mt-2 flex min-h-6 flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px]">
+            <p className="min-w-0 flex-1" aria-live="polite" data-youtube-recognised={media ? media.source : ""}>
+              {media ? (
+                <span className="inline-flex items-center gap-1.5 font-medium text-sys-green">
+                  <CircleCheck size={14} /> {isInstagram ? "Instagram Reel. Comes out as an MP4." : `${SITE_NAME[media.source]} link. Ready to download.`}
+                </span>
+              ) : link.trim() ? (
+                <span className="text-label-3">That doesn&apos;t look like an Instagram Reel or YouTube link yet.</span>
+              ) : (
+                <span className="text-label-3">
+                  <b className="font-semibold text-label-2">Instagram:</b> Share, then Copy link. <b className="font-semibold text-label-2">YouTube:</b> Share, then Copy.
+                </span>
+              )}
+            </p>
+            <div className="flex items-center gap-2">
+              <div role="radiogroup" aria-label="Save as" className="inline-flex rounded-lg bg-sys-gray5 p-0.5" data-youtube-format={chosen}>
+                {YOUTUBE_FORMATS.map((f) => {
+                  const unavailable = f === "mp3" && isInstagram;
+                  return (
+                    <button
+                      key={f}
+                      type="button"
+                      role="radio"
+                      aria-checked={chosen === f}
+                      aria-disabled={unavailable || undefined}
+                      title={unavailable ? "Instagram Reels come out as MP4 only" : f === "mp4" ? "The video, as a project you can edit here" : "YouTube sound only, saved to your Downloads"}
+                      onClick={() => {
+                        if (!unavailable) setFormat(f);
+                      }}
+                      disabled={disabled}
+                      className={cx(
+                        "rounded-md px-2.5 py-1 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-blue/60 disabled:opacity-50",
+                        chosen === f ? "bg-sys-blue text-white" : "text-label-2 hover:text-white",
+                        unavailable && "cursor-not-allowed opacity-40 hover:text-label-2",
+                      )}
+                      data-youtube-format-option={f}
+                    >
+                      {f.toUpperCase()}
+                    </button>
+                  );
+                })}
+              </div>
+              {chosen === "mp4" && !isInstagram && (
+                <select aria-label="Video quality" value={quality} onChange={(e) => setQuality(Number(e.target.value) as YouTubeQuality)} disabled={disabled} className={cx(control, "h-8 rounded-lg px-2 text-xs")} data-youtube-quality>
+                  {YOUTUBE_QUALITIES.map((q) => (
+                    <option key={q} value={q}>
+                      {q}p
+                    </option>
+                  ))}
+                </select>
+              )}
+              {chosen === "mp3" && <span className="text-xs text-label-3">Sound only, to Downloads</span>}
+            </div>
+          </div>
         )}
       </form>
 
       {error && (
-        <p className="mt-3 text-sm text-sys-red" role="alert">
+        <p className="mt-2 text-sm text-sys-red" role="alert">
           {error}
         </p>
       )}
-
-      <div className="mt-5 border-t border-sys-gray5 pt-4 text-sm leading-relaxed text-label-3">
-        <p>
-          <b className="font-semibold text-label-2">Instagram:</b> open the Reel, tap the paper-plane Share button, then Copy link.
-        </p>
-        <p className="mt-1">
-          <b className="font-semibold text-label-2">YouTube:</b> tap Share under the video, then Copy.
-        </p>
-        <p className="mt-2">
-          {isInstagram
-            ? "Instagram Reels are converted to MP4 only, at their full size. The video stays in this browser; nothing is uploaded anywhere."
-            : chosen === "mp3"
-              ? "The sound is saved to your Downloads folder as an MP3. MP3 is for YouTube links only. Nothing is uploaded anywhere."
-              : "The video stays in this browser; nothing is uploaded anywhere. An Instagram Reel always comes out as an MP4."}
-        </p>
-      </div>
     </section>
   );
 }
