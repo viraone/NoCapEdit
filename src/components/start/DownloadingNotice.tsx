@@ -12,7 +12,7 @@ export function DownloadingNotice({ format, className }: { format: "mp4" | "mp3"
       <Hourglass size={18} className="mt-0.5 shrink-0 text-sys-orange" aria-hidden />
       <p className="text-sm leading-snug text-white">
         <b className="font-bold">Please wait. Don&apos;t close this page or open anything else until it&apos;s done.</b> Let it finish downloading;{" "}
-        {format === "mp3" ? "the MP3 will land in your Downloads folder by itself." : "it will show up under Your projects by itself."}
+        {format === "mp3" ? "the MP3 will land in your Downloads folder by itself." : "it will land in your Downloads folder and show up under Your projects by itself."}
       </p>
     </div>
   );

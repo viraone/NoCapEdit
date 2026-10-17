@@ -97,7 +97,7 @@ export function YouTubeBar({
         <h2 id="link-import-title" className="text-lg font-semibold leading-tight tracking-tight text-white">
           Paste an <InstagramLogo size={20} className="mx-0.5" />Instagram Reel or <YouTubeLogo size={20} className="mx-0.5" />YouTube link
         </h2>
-        <p className="text-sm text-label-3">It becomes a project you can caption and edit. Nothing is uploaded anywhere.</p>
+        <p className="text-sm text-label-3">The video lands in your Downloads and becomes a project you can caption and edit. Nothing is uploaded anywhere.</p>
       </div>
 
       <form onSubmit={submit} className="mt-3">
@@ -173,7 +173,7 @@ export function YouTubeBar({
           <p className="mt-2 flex items-center gap-2 rounded-xl border border-sys-green/50 bg-sys-green/10 px-3 py-2 text-sm font-semibold text-sys-green" role="status" data-youtube-done>
             <CircleCheck size={16} className="shrink-0" />
             <span>
-              Done. {done.format === "mp3" ? "The MP3 is in your Downloads folder." : <>&ldquo;{done.title}&rdquo; is ready under <a href="#projects" className="underline">Your projects</a>.</>}
+              Done. {done.format === "mp3" ? "The MP3 is in your Downloads folder." : <>&ldquo;{done.title}&rdquo; is in your Downloads folder and ready under <a href="#projects" className="underline">Your projects</a>.</>}
             </span>
           </p>
         )}
@@ -205,7 +205,7 @@ export function YouTubeBar({
                       role="radio"
                       aria-checked={chosen === f}
                       aria-disabled={unavailable || undefined}
-                      title={unavailable ? "Instagram Reels come out as MP4 only" : f === "mp4" ? "The video, as a project you can edit here" : "YouTube sound only, saved to your Downloads"}
+                      title={unavailable ? "Instagram Reels come out as MP4 only" : f === "mp4" ? "The video: saved to your Downloads and opened as a project you can edit here" : "YouTube sound only, saved to your Downloads"}
                       onClick={() => {
                         if (!unavailable) setFormat(f);
                       }}

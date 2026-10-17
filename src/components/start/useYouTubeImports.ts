@@ -48,10 +48,10 @@ export function youtubeStageText(item: YouTubeImport): string {
 
 /**
  * Runs YouTube and Instagram imports: look the link up, fetch the MP4 through the
- * helper, store it on this device as a new project. The project is only written once
- * the file has fully arrived, so a failed or cancelled fetch leaves nothing behind.
- * An MP3 can't be edited here, so it skips the project and goes straight to the
- * visitor's Downloads folder as a normal browser download.
+ * helper, save a copy to the visitor's Downloads folder as a normal browser download,
+ * and store it on this device as a new project. The project is only written once the
+ * file has fully arrived, so a failed or cancelled fetch leaves nothing behind.
+ * An MP3 can't be edited here, so it stops at the Downloads copy.
  */
 export function useYouTubeImports(onImported: (projectId: string) => void) {
   const [items, setItems] = useState<YouTubeImport[]>([]);
@@ -84,8 +84,10 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
         }
         const { file, title } = await downloadYouTube(media, { format, height: quality }, (loaded, total) => patch(key, { stage: "saving", loaded, total }), abort.signal);
         patch(key, { stage: "importing", title });
+        // The file is complete here, so it goes to the visitor's Downloads folder straight away:
+        // an MP3 is done at that point; an MP4 carries on to become a project as well.
+        downloadBlob(file, file.name);
         if (format === "mp3") {
-          downloadBlob(file, file.name);
           drop(key);
           return;
         }
