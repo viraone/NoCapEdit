@@ -4,9 +4,16 @@ export interface VideoInfo {
   height: number;
 }
 
+/**
+ * A busy computer can take a long while to decode a video's header (a 20 s limit
+ * failed a good 3.6 MB reel on a Mac under heavy load), so the limit is generous and
+ * the message says what to do.
+ */
+const PROBE_TIMEOUT_MS = 60_000;
+
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+    const t = setTimeout(() => reject(new Error(`${label} took too long. Your computer may be busy; try again in a moment.`)), ms);
     p.then((v) => {
       clearTimeout(t);
       resolve(v);
@@ -45,8 +52,8 @@ export async function probeVideo(blob: Blob): Promise<VideoInfo> {
         };
         video.src = url;
       }),
-      20000,
-      "Reading video metadata",
+      PROBE_TIMEOUT_MS,
+      "Reading the video",
     );
     if (!info.width || !info.height) throw new Error("No video track found in this file.");
     return info;
@@ -68,8 +75,8 @@ export async function probeAudio(blob: Blob): Promise<{ duration: number }> {
         audio.onloadedmetadata = () => resolve({ duration: audio.duration });
         audio.src = url;
       }),
-      20000,
-      "Reading audio metadata",
+      PROBE_TIMEOUT_MS,
+      "Reading the audio",
     );
   } finally {
     audio.removeAttribute("src");
