@@ -7,6 +7,7 @@ import { Recorder, useRecordingSupported } from "@/components/record/Recorder";
 import { YouTubeBar } from "@/components/start/YouTubeBar";
 import { DownloadingNotice } from "@/components/start/DownloadingNotice";
 import { useYouTubeImports, youtubeStageText } from "@/components/start/useYouTubeImports";
+import { useSaveFolder } from "@/components/start/useSaveFolder";
 import { SITE_NAME } from "@/lib/youtube/url";
 import { exportBackup, importBackup } from "@/lib/storage/backup";
 import { requestDiskSink, createBlobSink } from "@/lib/ffmpeg/sinks";
@@ -117,6 +118,7 @@ export function StartScreen() {
 
   // A pasted YouTube or Instagram link becomes a card under Your projects while it downloads, then a real project.
   const youtube = useYouTubeImports(refresh);
+  const saveFolder = useSaveFolder();
 
   useEffect(() => {
     ensureCrossOriginIsolation();
@@ -250,7 +252,7 @@ export function StartScreen() {
         </div>
       </header>
 
-      <YouTubeBar onSubmit={youtube.start} active={youtube.items.find((it) => it.stage !== "error") ?? null} onCancel={youtube.cancel} />
+      <YouTubeBar onSubmit={youtube.start} active={youtube.items.find((it) => it.stage !== "error") ?? null} onCancel={youtube.cancel} saveFolder={saveFolder} savedTo={youtube.savedTo} />
 
       <section className="mt-6">
         <div className="mb-5 flex items-center justify-between gap-3">

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ClipboardPaste, CircleCheck, Download, Loader2, X } from "lucide-react";
+import { ClipboardPaste, CircleCheck, Download, FolderOpen, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { youtubeStageText, type YouTubeImport } from "@/components/start/useYouTubeImports";
@@ -8,6 +8,7 @@ import { parseMediaLink, SITE_NAME, YOUTUBE_FORMATS, YOUTUBE_QUALITIES, type You
 import { cx } from "@/lib/utils/cx";
 import { InstagramLogo, YouTubeLogo } from "@/components/start/BrandLogos";
 import { DownloadingNotice } from "@/components/start/DownloadingNotice";
+import type { SaveFolderControl } from "@/components/start/useSaveFolder";
 
 const control =
   "rounded-xl border border-sys-gray4 bg-sys-gray5 text-[15px] text-white placeholder:text-label-3 focus:border-sys-blue focus:outline-none focus:ring-1 focus:ring-sys-blue/50 disabled:opacity-50";
@@ -24,18 +25,25 @@ const smallButton =
  * `onSubmit` throws when the text is not a link the helper takes; the message shows under the box.
  * While `active` is a download under way, a blue status block takes the row's place
  * (spinner, what is happening, percentage, Cancel), so nobody has to hunt for the card
- * further down the page to see that something is happening.
+ * further down the page to see that something is happening. Where the browser has a folder
+ * picker, a line under the choices lets the visitor pick a folder once so finished files are
+ * saved into it without the browser asking where each one goes.
  */
 export function YouTubeBar({
   onSubmit,
   disabled,
   active = null,
   onCancel,
+  saveFolder,
+  savedTo = null,
 }: {
   onSubmit: (link: string, choice: YouTubeChoice) => void;
   disabled?: boolean;
   active?: YouTubeImport | null;
   onCancel?: (key: string) => void;
+  saveFolder?: SaveFolderControl;
+  /** Where the last finished file went: the chosen folder's name, or null for the browser's Downloads. */
+  savedTo?: string | null;
 }) {
   const [link, setLink] = useState("");
   const [format, setFormat] = useState<YouTubeFormat>("mp4");
@@ -117,7 +125,7 @@ export function YouTubeBar({
               {active.stage === "saving" && active.total ? <span className="shrink-0 tabular-nums font-semibold text-white">{Math.round((active.loaded / active.total) * 100)}%</span> : null}
             </div>
             <ProgressBar className="h-2" value={active.stage === "saving" && active.total ? active.loaded / active.total : null} />
-            <DownloadingNotice format={active.format} />
+            <DownloadingNotice format={active.format} folder={saveFolder?.name ?? null} />
             {onCancel && (
               <div className="flex justify-end">
                 <Button variant="outline" size="sm" onClick={() => onCancel(active.key)}>
@@ -173,7 +181,7 @@ export function YouTubeBar({
           <p className="mt-2 flex items-center gap-2 rounded-xl border border-sys-green/50 bg-sys-green/10 px-3 py-2 text-sm font-semibold text-sys-green" role="status" data-youtube-done>
             <CircleCheck size={16} className="shrink-0" />
             <span>
-              Done. {done.format === "mp3" ? "The MP3 is in your Downloads folder." : <>&ldquo;{done.title}&rdquo; is in your Downloads folder and ready under <a href="#projects" className="underline">Your projects</a>.</>}
+              Done. {done.format === "mp3" ? `The MP3 is in your ${savedTo ? `${savedTo} folder` : "Downloads folder"}.` : <>&ldquo;{done.title}&rdquo; is in your {savedTo ? `${savedTo} folder` : "Downloads folder"} and ready under <a href="#projects" className="underline">Your projects</a>.</>}
             </span>
           </p>
         )}
@@ -235,11 +243,38 @@ export function YouTubeBar({
             </div>
           </div>
         )}
+
+        {!active && saveFolder?.supported && (
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-label-3" data-save-folder={saveFolder.name ?? ""}>
+            <FolderOpen size={14} className="shrink-0" aria-hidden />
+            {saveFolder.name ? (
+              <>
+                <span>
+                  Saving to <b className="font-semibold text-label-2">{saveFolder.name}</b>, no questions asked.
+                </span>
+                <button type="button" onClick={() => void saveFolder.choose()} className="font-semibold text-sys-blue underline-offset-2 hover:underline" data-save-folder-change>
+                  Change folder
+                </button>
+                <button type="button" onClick={() => void saveFolder.forget()} className="font-semibold text-sys-blue underline-offset-2 hover:underline" data-save-folder-forget>
+                  Use Downloads
+                </button>
+              </>
+            ) : (
+              <>
+                <span>Does your browser ask where to save each file?</span>
+                <button type="button" onClick={() => void saveFolder.choose()} className="font-semibold text-sys-blue underline-offset-2 hover:underline" data-save-folder-choose>
+                  Choose a folder once
+                </button>
+                <span>and it stops.</span>
+              </>
+            )}
+          </p>
+        )}
       </form>
 
-      {error && (
+      {(error ?? saveFolder?.error) && (
         <p className="mt-2 text-sm text-sys-red" role="alert">
-          {error}
+          {error ?? saveFolder?.error}
         </p>
       )}
     </section>

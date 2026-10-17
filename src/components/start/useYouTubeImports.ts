@@ -5,7 +5,7 @@ import { saveProject, requestPersistentStorage } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { defaultTitle, formatFor, parseMediaLink, SITE_NAME, type MediaSource, type YouTubeChoice, type YouTubeFormat } from "@/lib/youtube/url";
 import { downloadYouTube, fetchYouTubeInfo, YouTubeServiceError } from "@/lib/youtube/service";
-import { downloadBlob } from "@/lib/utils/download";
+import { openSaveFolder, saveDownload, type SaveFolder } from "@/lib/utils/saveFolder";
 import { uid } from "@/lib/utils/id";
 
 export type YouTubeStage = "info" | "fetching" | "saving" | "importing" | "error";
@@ -48,13 +48,15 @@ export function youtubeStageText(item: YouTubeImport): string {
 
 /**
  * Runs YouTube and Instagram imports: look the link up, fetch the MP4 through the
- * helper, save a copy to the visitor's Downloads folder as a normal browser download,
- * and store it on this device as a new project. The project is only written once the
+ * helper, save a copy to the folder the visitor chose (or, with none, to Downloads as a
+ * normal browser download), and store it on this device as a new project. The project is only written once the
  * file has fully arrived, so a failed or cancelled fetch leaves nothing behind.
  * An MP3 can't be edited here, so it stops at the Downloads copy.
  */
 export function useYouTubeImports(onImported: (projectId: string) => void) {
   const [items, setItems] = useState<YouTubeImport[]>([]);
+  /** Where the last finished file went: the chosen folder's name, or null for the browser's own Downloads. */
+  const [savedTo, setSavedTo] = useState<string | null>(null);
   const controllers = useRef(new Map<string, AbortController>());
   const importedRef = useRef(onImported);
   useEffect(() => {
@@ -71,7 +73,7 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
   }, []);
 
   const run = useCallback(
-    async (item: YouTubeImport) => {
+    async (item: YouTubeImport, folder: Promise<SaveFolder | null>) => {
       const abort = new AbortController();
       controllers.current.set(item.key, abort);
       const { key, source, videoId, format, quality } = item;
@@ -84,9 +86,10 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
         }
         const { file, title } = await downloadYouTube(media, { format, height: quality }, (loaded, total) => patch(key, { stage: "saving", loaded, total }), abort.signal);
         patch(key, { stage: "importing", title });
-        // The file is complete here, so it goes to the visitor's Downloads folder straight away:
-        // an MP3 is done at that point; an MP4 carries on to become a project as well.
-        downloadBlob(file, file.name);
+        // The file is complete here, so it is saved straight away (into the chosen folder, with
+        // no dialog, or as a normal download): an MP3 is done at that point; an MP4 carries on
+        // to become a project as well.
+        setSavedTo(await saveDownload(file, await folder));
         if (format === "mp3") {
           drop(key);
           return;
@@ -142,7 +145,9 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
         error: null,
       };
       setItems((list) => [item, ...list]);
-      void run(item);
+      // Asked now, while the click that pressed Download is still fresh, so the browser can show
+      // its one-line "allow editing files in this folder?" question if the permission has lapsed.
+      void run(item, openSaveFolder(true));
     },
     [run],
   );
@@ -161,7 +166,7 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
         const old = list.find((it) => it.key === key);
         if (!old) return list;
         const fresh: YouTubeImport = { ...old, stage: "info", error: null, loaded: 0, total: null, detail: null };
-        void run(fresh);
+        void run(fresh, openSaveFolder(true));
         return list.map((it) => (it.key === key ? fresh : it));
       });
     },
@@ -177,5 +182,5 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
     };
   }, []);
 
-  return { items, start, cancel, retry, dismiss: drop };
+  return { items, savedTo, start, cancel, retry, dismiss: drop };
 }
