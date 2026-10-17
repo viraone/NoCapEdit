@@ -6,6 +6,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { youtubeStageText, type YouTubeImport } from "@/components/start/useYouTubeImports";
 import { parseMediaLink, SITE_NAME, YOUTUBE_FORMATS, YOUTUBE_QUALITIES, type YouTubeChoice, type YouTubeFormat, type YouTubeQuality } from "@/lib/youtube/url";
 import { cx } from "@/lib/utils/cx";
+import { InstagramLogo, YouTubeLogo } from "@/components/start/BrandLogos";
 
 const control =
   "rounded-xl border border-sys-gray4 bg-sys-gray5 text-[15px] text-white placeholder:text-label-3 focus:border-sys-blue focus:outline-none focus:ring-1 focus:ring-sys-blue/50 disabled:opacity-50";
@@ -93,7 +94,7 @@ export function YouTubeBar({
     <section className="card mt-8 rounded-2xl p-4 sm:p-5" aria-labelledby="link-import-title">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id="link-import-title" className="text-lg font-semibold leading-tight tracking-tight text-white">
-          Paste an Instagram Reel or YouTube link
+          Paste an <InstagramLogo size={20} className="mx-0.5" />Instagram Reel or <YouTubeLogo size={20} className="mx-0.5" />YouTube link
         </h2>
         <p className="text-sm text-label-3">It becomes a project you can caption and edit. Nothing is uploaded anywhere.</p>
       </div>
@@ -179,13 +180,14 @@ export function YouTubeBar({
             <p className="min-w-0 flex-1" aria-live="polite" data-youtube-recognised={media ? media.source : ""}>
               {media ? (
                 <span className="inline-flex items-center gap-1.5 font-medium text-sys-green">
-                  <CircleCheck size={14} /> {isInstagram ? "Instagram Reel. Comes out as an MP4." : `${SITE_NAME[media.source]} link. Ready to download.`}
+                  <CircleCheck size={14} /> {isInstagram ? <InstagramLogo size={15} /> : <YouTubeLogo size={15} />}
+                  {isInstagram ? "Instagram Reel. Comes out as an MP4." : `${SITE_NAME[media.source]} link. Ready to download.`}
                 </span>
               ) : link.trim() ? (
                 <span className="text-label-3">That doesn&apos;t look like an Instagram Reel or YouTube link yet.</span>
               ) : (
                 <span className="text-label-3">
-                  <b className="font-semibold text-label-2">Instagram:</b> Share, then Copy link. <b className="font-semibold text-label-2">YouTube:</b> Share, then Copy.
+                  <InstagramLogo size={14} /> <b className="font-semibold text-label-2">Instagram:</b> Share, then Copy link. <YouTubeLogo size={14} className="ml-1" /> <b className="font-semibold text-label-2">YouTube:</b> Share, then Copy.
                 </span>
               )}
             </p>
