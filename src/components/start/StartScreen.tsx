@@ -249,7 +249,7 @@ export function StartScreen() {
         </div>
       </header>
 
-      <YouTubeBar onSubmit={youtube.start} />
+      <YouTubeBar onSubmit={youtube.start} active={youtube.items.find((it) => it.stage !== "error") ?? null} onCancel={youtube.cancel} />
 
       <section className="mt-6 grid gap-6 md:grid-cols-[1.5fr_1fr]">
         <FileDrop
@@ -306,7 +306,7 @@ export function StartScreen() {
 
       <section className="mt-14">
         <div className="mb-5 flex items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold tracking-tight">Your projects</h2>
+          <h2 id="projects" className="scroll-mt-6 text-xl font-semibold tracking-tight">Your projects</h2>
           {projects.length > 0 && (
             <div className="flex items-center gap-3">
               <span className="text-sm text-label-3">{projects.length} project{projects.length === 1 ? "" : "s"}</span>

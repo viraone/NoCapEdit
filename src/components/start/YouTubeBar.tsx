@@ -1,7 +1,9 @@
 "use client";
-import { useRef, useState, type FormEvent } from "react";
-import { ClipboardPaste, CircleCheck, Download, X } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ClipboardPaste, CircleCheck, Download, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { youtubeStageText, type YouTubeImport } from "@/components/start/useYouTubeImports";
 import { parseMediaLink, SITE_NAME, YOUTUBE_FORMATS, YOUTUBE_QUALITIES, type YouTubeChoice, type YouTubeFormat, type YouTubeQuality } from "@/lib/youtube/url";
 import { cx } from "@/lib/utils/cx";
 
@@ -15,13 +17,39 @@ const control =
  * secondary choices under the button; a Reel comes at its full size, so the quality
  * picker hides when the pasted link is Instagram's.
  * `onSubmit` throws when the text is not a link the helper takes; the message shows under the box.
+ * While `active` is a download under way, a big blue status block takes the button's place
+ * (spinner, what is happening, percentage, Cancel), so nobody has to hunt for the card
+ * further down the page to see that something is happening.
  */
-export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, choice: YouTubeChoice) => void; disabled?: boolean }) {
+export function YouTubeBar({
+  onSubmit,
+  disabled,
+  active = null,
+  onCancel,
+}: {
+  onSubmit: (link: string, choice: YouTubeChoice) => void;
+  disabled?: boolean;
+  active?: YouTubeImport | null;
+  onCancel?: (key: string) => void;
+}) {
   const [link, setLink] = useState("");
   const [format, setFormat] = useState<YouTubeFormat>("mp4");
   const [quality, setQuality] = useState<YouTubeQuality>(1080);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** The download that just finished, shown as a green "Done" line for a few seconds. */
+  const [done, setDone] = useState<YouTubeImport | null>(null);
+  const lastActive = useRef<YouTubeImport | null>(null);
+  useEffect(() => {
+    // The in-flight item disappears from `active` the moment it lands (an error keeps it, so it stays in the list).
+    if (active) lastActive.current = active;
+    else if (lastActive.current && lastActive.current.stage !== "error") {
+      setDone(lastActive.current);
+      lastActive.current = null;
+      const t = setTimeout(() => setDone(null), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [active]);
   const media = parseMediaLink(link);
   const isInstagram = media?.source === "instagram";
   // An Instagram Reel is only ever converted to an MP4; the visitor's MP3 pick is kept for the next YouTube link.
@@ -64,7 +92,7 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
         Turn an Instagram Reel into an MP4, or a YouTube link into an MP4 or MP3
       </h2>
       <p className="mt-2 text-[15px] leading-snug text-label-2">
-        Paste the link below, then press Convert. <b className="font-semibold text-white">Instagram Reels are MP4 only.</b> <b className="font-semibold text-white">YouTube links</b> can be an MP4 (the video, saved to Your projects, ready to caption and edit) or an MP3 (just the sound, saved to your Downloads).
+        Paste the link below, then press Download. <b className="font-semibold text-white">Instagram Reels are MP4 only.</b> <b className="font-semibold text-white">YouTube links</b> can be an MP4 (the video, saved to Your projects, ready to caption and edit) or an MP3 (just the sound, saved to your Downloads).
       </p>
 
       <form onSubmit={submit} className="mt-5">
@@ -113,7 +141,7 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
         <p className="mt-2 min-h-5 text-sm" aria-live="polite" data-youtube-recognised={media ? media.source : ""}>
           {media ? (
             <span className="inline-flex items-center gap-1.5 font-medium text-sys-green">
-              <CircleCheck size={16} /> {isInstagram ? "Instagram Reel link. It will be converted to an MP4." : `${SITE_NAME[media.source]} link. Ready to convert.`}
+              <CircleCheck size={16} /> {isInstagram ? "Instagram Reel link. It will be converted to an MP4." : `${SITE_NAME[media.source]} link. Ready to download.`}
             </span>
           ) : link.trim() ? (
             <span className="text-label-3">That doesn&apos;t look like an Instagram Reel or YouTube link yet.</span>
@@ -150,9 +178,40 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
           })}
         </div>
 
-        <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} className="mt-3 h-14 w-full text-base" data-youtube-convert>
-          <Download size={20} /> Convert
-        </Button>
+        {active ? (
+          <div className="mt-3 space-y-2.5 rounded-xl border-2 border-sys-blue bg-sys-blue/15 p-4 shadow-[0_0_0_4px_rgba(10,132,255,0.18)] motion-safe:animate-pulse" role="status" aria-live="polite" data-youtube-active={active.stage}>
+            <p className="flex items-center gap-2.5 text-lg font-bold leading-snug text-white">
+              <Loader2 size={22} className="shrink-0 animate-spin text-sys-blue" aria-hidden />
+              <span>{active.stage === "saving" ? "Downloading" : active.stage === "importing" ? "Almost done" : `Getting the ${active.source === "instagram" ? "Reel" : "video"} from ${SITE_NAME[active.source]}`}…</span>
+            </p>
+            <p className="truncate text-[15px] text-white/90">{active.title}</p>
+            <div className="flex items-start justify-between gap-2 text-sm">
+              <span className="min-w-0 text-white/80 [overflow-wrap:anywhere]">{youtubeStageText(active)}</span>
+              {active.stage === "saving" && active.total ? <span className="shrink-0 tabular-nums font-semibold text-white">{Math.round((active.loaded / active.total) * 100)}%</span> : null}
+            </div>
+            <ProgressBar className="h-2.5" value={active.stage === "saving" && active.total ? active.loaded / active.total : null} />
+            <div className="flex items-center justify-between gap-2 text-xs text-white/70">
+              <span>Keep this page open. It lands under Your projects when it is done.</span>
+              {onCancel && (
+                <Button variant="outline" size="sm" onClick={() => onCancel(active.key)}>
+                  <X size={12} /> Cancel
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} className="mt-3 h-14 w-full text-base" data-youtube-convert>
+            <Download size={20} /> Download
+          </Button>
+        )}
+        {done && !active && (
+          <p className="mt-3 flex items-center gap-2 rounded-xl border border-sys-green/50 bg-sys-green/10 px-4 py-3 text-[15px] font-semibold text-sys-green" role="status" data-youtube-done>
+            <CircleCheck size={18} className="shrink-0" />
+            <span>
+              Done. {done.format === "mp3" ? "The MP3 is in your Downloads folder." : <>&ldquo;{done.title}&rdquo; is ready under <a href="#projects" className="underline">Your projects</a>.</>}
+            </span>
+          </p>
+        )}
 
         {chosen === "mp4" && !isInstagram && (
           <label className="mt-4 flex items-center gap-2 text-sm text-label-2">
