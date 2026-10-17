@@ -7,6 +7,7 @@ import { youtubeStageText, type YouTubeImport } from "@/components/start/useYouT
 import { parseMediaLink, SITE_NAME, YOUTUBE_FORMATS, YOUTUBE_QUALITIES, type YouTubeChoice, type YouTubeFormat, type YouTubeQuality } from "@/lib/youtube/url";
 import { cx } from "@/lib/utils/cx";
 import { InstagramLogo, YouTubeLogo } from "@/components/start/BrandLogos";
+import { DownloadingNotice } from "@/components/start/DownloadingNotice";
 
 const control =
   "rounded-xl border border-sys-gray4 bg-sys-gray5 text-[15px] text-white placeholder:text-label-3 focus:border-sys-blue focus:outline-none focus:ring-1 focus:ring-sys-blue/50 disabled:opacity-50";
@@ -102,7 +103,9 @@ export function YouTubeBar({
       <form onSubmit={submit} className="mt-3">
         {active ? (
           // A download under way: the row becomes the status block so the progress is where the visitor is looking.
-          <div className="space-y-2 rounded-xl border-2 border-sys-blue bg-sys-blue/15 p-3 shadow-[0_0_0_4px_rgba(10,132,255,0.18)] motion-safe:animate-pulse" role="status" aria-live="polite" data-youtube-active={active.stage}>
+          <div className="relative space-y-2 rounded-xl border-2 border-sys-blue bg-sys-blue/15 p-3" role="status" aria-live="polite" data-youtube-active={active.stage}>
+            {/* Only the outline pulses, so the text inside stays fully readable. */}
+            <span aria-hidden className="pointer-events-none absolute -inset-1.5 rounded-2xl ring-2 ring-sys-blue/60 motion-safe:animate-pulse" />
             <p className="flex items-center gap-2 text-base font-bold leading-snug text-white">
               <Loader2 size={18} className="shrink-0 animate-spin text-sys-blue" aria-hidden />
               <span className="truncate">
@@ -114,14 +117,14 @@ export function YouTubeBar({
               {active.stage === "saving" && active.total ? <span className="shrink-0 tabular-nums font-semibold text-white">{Math.round((active.loaded / active.total) * 100)}%</span> : null}
             </div>
             <ProgressBar className="h-2" value={active.stage === "saving" && active.total ? active.loaded / active.total : null} />
-            <div className="flex items-center justify-between gap-2 text-xs text-white/70">
-              <span>Keep this page open. It lands under Your projects when it is done.</span>
-              {onCancel && (
+            <DownloadingNotice format={active.format} />
+            {onCancel && (
+              <div className="flex justify-end">
                 <Button variant="outline" size="sm" onClick={() => onCancel(active.key)}>
                   <X size={12} /> Cancel
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-2 sm:flex-row">

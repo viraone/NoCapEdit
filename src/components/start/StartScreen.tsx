@@ -5,6 +5,7 @@ import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck, 
 import Link from "next/link";
 import { Recorder, useRecordingSupported } from "@/components/record/Recorder";
 import { YouTubeBar } from "@/components/start/YouTubeBar";
+import { DownloadingNotice } from "@/components/start/DownloadingNotice";
 import { useYouTubeImports, youtubeStageText } from "@/components/start/useYouTubeImports";
 import { SITE_NAME } from "@/lib/youtube/url";
 import { exportBackup, importBackup } from "@/lib/storage/backup";
@@ -291,6 +292,7 @@ export function StartScreen() {
                     <>
                       <ProgressBar className="mt-3 h-2" value={it.stage === "saving" && it.total ? it.loaded / it.total : null} />
                       <p className="mt-2 text-sm text-label-3">{youtubeStageText(it)}</p>
+                      <DownloadingNotice format={it.format} className="mt-3" />
                     </>
                   )}
                 </div>
