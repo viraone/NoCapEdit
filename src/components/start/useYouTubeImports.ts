@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createProject } from "@/lib/models/project";
 import { saveProject, requestPersistentStorage } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
-import { youtubeVideoId, type YouTubeChoice, type YouTubeFormat } from "@/lib/youtube/url";
+import { defaultTitle, parseMediaLink, SITE_NAME, type MediaSource, type YouTubeChoice, type YouTubeFormat } from "@/lib/youtube/url";
 import { downloadYouTube, fetchYouTubeInfo, YouTubeServiceError } from "@/lib/youtube/service";
 import { downloadBlob } from "@/lib/utils/download";
 import { uid } from "@/lib/utils/id";
@@ -14,6 +14,8 @@ export type YouTubeStage = "info" | "fetching" | "saving" | "importing" | "error
 export interface YouTubeImport {
   key: string;
   link: string;
+  source: MediaSource;
+  /** YouTube video id or Instagram shortcode. */
   videoId: string;
   format: YouTubeFormat;
   quality: number;
@@ -31,7 +33,7 @@ export function youtubeStageText(item: YouTubeImport): string {
     case "info":
       return "Looking up the video… the helper can take a minute to wake up";
     case "fetching":
-      return item.format === "mp3" ? "Fetching from YouTube and converting to MP3… this can take a minute for long videos" : "Fetching from YouTube… this can take a minute for long videos";
+      return item.format === "mp3" ? `Fetching from ${SITE_NAME[item.source]} and converting to MP3… this can take a minute for long videos` : `Fetching from ${SITE_NAME[item.source]}… this can take a minute for long videos`;
     case "saving":
       return item.total ? `Receiving ${Math.round((item.loaded / item.total) * 100)}%` : "Receiving…";
     case "importing":
@@ -42,8 +44,8 @@ export function youtubeStageText(item: YouTubeImport): string {
 }
 
 /**
- * Runs YouTube imports: look the link up, fetch the MP4 through the helper,
- * store it on this device as a new project. The project is only written once
+ * Runs YouTube and Instagram imports: look the link up, fetch the MP4 through the
+ * helper, store it on this device as a new project. The project is only written once
  * the file has fully arrived, so a failed or cancelled fetch leaves nothing behind.
  * An MP3 can't be edited here, so it skips the project and goes straight to the
  * visitor's Downloads folder as a normal browser download.
@@ -69,14 +71,15 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
     async (item: YouTubeImport) => {
       const abort = new AbortController();
       controllers.current.set(item.key, abort);
-      const { key, videoId, format, quality } = item;
+      const { key, source, videoId, format, quality } = item;
+      const media = { source, id: videoId };
       try {
-        const info = await fetchYouTubeInfo(videoId, abort.signal);
+        const info = await fetchYouTubeInfo(media, abort.signal);
         patch(key, { title: info.title, thumbnail: info.thumbnail, stage: "fetching" });
         if (info.maxSeconds && info.duration > info.maxSeconds) {
           throw new YouTubeServiceError(`This video is ${Math.round(info.duration / 60)} minutes long; the helper takes up to ${Math.round(info.maxSeconds / 60)}.`, "rejected");
         }
-        const { file, title } = await downloadYouTube(videoId, { format, height: quality }, (loaded, total) => patch(key, { stage: "saving", loaded, total }), abort.signal);
+        const { file, title } = await downloadYouTube(media, { format, height: quality }, (loaded, total) => patch(key, { stage: "saving", loaded, total }), abort.signal);
         patch(key, { stage: "importing", title });
         if (format === "mp3") {
           downloadBlob(file, file.name);
@@ -111,18 +114,21 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
     [patch, drop],
   );
 
-  /** Starts an import. Throws when the text is not a YouTube link, so the bar can say so inline. */
+  /** Starts an import. Throws when the text is not a YouTube or Instagram link, so the bar can say so inline. */
   const start = useCallback(
     (link: string, { format, quality }: YouTubeChoice) => {
-      const videoId = youtubeVideoId(link);
-      if (!videoId) throw new Error("That doesn't look like a YouTube link. Paste the address of a video, e.g. https://youtu.be/…");
+      const media = parseMediaLink(link);
+      if (!media) {
+        throw new Error("That doesn't look like a YouTube or Instagram link. Paste the address of a video or reel, e.g. https://youtu.be/… or https://www.instagram.com/reel/…");
+      }
       const item: YouTubeImport = {
         key: uid("yt"),
         link: link.trim(),
-        videoId,
+        source: media.source,
+        videoId: media.id,
         format,
         quality,
-        title: "YouTube video",
+        title: defaultTitle(media.source),
         thumbnail: null,
         stage: "info",
         loaded: 0,

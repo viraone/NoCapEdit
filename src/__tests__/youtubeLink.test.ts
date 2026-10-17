@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { youtubeVideoId, youtubeWatchUrl } from "@/lib/youtube/url";
+import { instagramShortcode, mediaUrl, parseMediaLink, youtubeVideoId, youtubeWatchUrl } from "@/lib/youtube/url";
 // The helper is plain JavaScript; these tests pin its link rules to the site's.
-import { availableHeights, formatSelector, outputArgs, outputFormat, safeTitle, youtubeVideoId as helperVideoId } from "../../server/youtube/lib.mjs";
+import {
+  availableHeights,
+  canonicalMediaUrl,
+  formatSelector,
+  instagramSelector,
+  instagramShortcode as helperShortcode,
+  outputArgs,
+  outputFormat,
+  parseMediaLink as helperParseMediaLink,
+  safeTitle,
+  youtubeVideoId as helperVideoId,
+} from "../../server/youtube/lib.mjs";
 
 const links: [string, string | null][] = [
   ["https://www.youtube.com/watch?v=jNQXAC9IVRw", "jNQXAC9IVRw"],
@@ -37,11 +48,64 @@ describe("youtube links", () => {
   });
 });
 
+const reels: [string, string | null][] = [
+  ["https://www.instagram.com/reel/C8Z0bXwyT7f/", "C8Z0bXwyT7f"],
+  ["https://www.instagram.com/reel/C8Z0bXwyT7f/?igsh=MTd4YXRtZHg3bXF4Zg==", "C8Z0bXwyT7f"],
+  ["https://www.instagram.com/reels/C8Z0bXwyT7f/", "C8Z0bXwyT7f"],
+  ["instagram.com/reel/C8Z0bXwyT7f", "C8Z0bXwyT7f"],
+  ["https://www.instagram.com/p/C8Z0bXwyT7f/", "C8Z0bXwyT7f"],
+  ["https://www.instagram.com/tv/C8Z0bXwyT7f/", "C8Z0bXwyT7f"],
+  ["https://m.instagram.com/reel/C8Z0bXwyT7f/", "C8Z0bXwyT7f"],
+  ["https://instagr.am/p/C8Z0bXwyT7f/", "C8Z0bXwyT7f"],
+  // The app's "Copy link" sometimes puts the account in front.
+  ["https://www.instagram.com/therickshawhaha/reel/C8Z0bXwyT7f/", "C8Z0bXwyT7f"],
+  ["  https://www.instagram.com/reel/C8Z0bXwyT7f/  ", "C8Z0bXwyT7f"],
+  // Not a single video: a profile, the explore page, a story, or an opaque share token.
+  ["https://www.instagram.com/therickshawhaha/", null],
+  ["https://www.instagram.com/explore/", null],
+  ["https://www.instagram.com/stories/therickshawhaha/123/", null],
+  ["https://www.instagram.com/share/reel/_abc123XYZ", null],
+  ["https://notinstagram.com/reel/C8Z0bXwyT7f/", null],
+  ["C8Z0bXwyT7f", null],
+];
+
+describe("instagram links", () => {
+  it("finds the shortcode in the link shapes people paste", () => {
+    for (const [link, code] of reels) expect(instagramShortcode(link), link).toBe(code);
+  });
+
+  it("the helper reads links the same way the site does", () => {
+    for (const [link, code] of reels) expect(helperShortcode(link), link).toBe(code);
+  });
+
+  it("never mistakes one site's link for the other's", () => {
+    for (const [link, id] of links) if (id) expect(instagramShortcode(link), link).toBeNull();
+    for (const [link, code] of reels) if (code) expect(youtubeVideoId(link), link).toBeNull();
+  });
+
+  it("tells the two sites apart and builds one canonical link each", () => {
+    expect(parseMediaLink("https://youtu.be/jNQXAC9IVRw")).toEqual({ source: "youtube", id: "jNQXAC9IVRw" });
+    expect(parseMediaLink("https://www.instagram.com/reel/C8Z0bXwyT7f/?igsh=x")).toEqual({ source: "instagram", id: "C8Z0bXwyT7f" });
+    expect(parseMediaLink("https://example.com/")).toBeNull();
+    expect(helperParseMediaLink("https://www.instagram.com/reel/C8Z0bXwyT7f/")).toEqual({ source: "instagram", id: "C8Z0bXwyT7f" });
+    expect(mediaUrl({ source: "instagram", id: "C8Z0bXwyT7f" })).toBe("https://www.instagram.com/reel/C8Z0bXwyT7f/");
+    expect(mediaUrl({ source: "youtube", id: "jNQXAC9IVRw" })).toBe("https://www.youtube.com/watch?v=jNQXAC9IVRw");
+    expect(canonicalMediaUrl({ source: "instagram", id: "C8Z0bXwyT7f" })).toBe(mediaUrl({ source: "instagram", id: "C8Z0bXwyT7f" }));
+  });
+});
+
 describe("youtube helper", () => {
   it("asks yt-dlp for H.264 + AAC up to the chosen height, defaulting to 1080", () => {
     expect(formatSelector(720)).toMatch(/^bv\*\[vcodec\^=avc1\]\[height<=720\]\+ba\[ext=m4a\]/);
     expect(formatSelector("999")).toContain("[height<=1080]");
     expect(formatSelector(undefined)).toContain("[height<=1080]");
+  });
+
+  it("fetches an Instagram reel at its full size, with no height cap", () => {
+    expect(instagramSelector()).toMatch(/^bv\*\[vcodec\^=avc1\]\+ba\[ext=m4a\]/);
+    expect(instagramSelector()).not.toContain("height");
+    expect(outputArgs("mp4", 720, "instagram")).toEqual(["-f", instagramSelector(), "--merge-output-format", "mp4"]);
+    expect(outputArgs("mp3", 720, "instagram")).toEqual(outputArgs("mp3", 720, "youtube"));
   });
 
   it("delivers an MP4 unless MP3 is asked for, then extracts the sound", () => {
@@ -64,6 +128,7 @@ describe("youtube helper", () => {
 
   it("makes a safe file name from the title", () => {
     expect(safeTitle('Me: at "the" zoo / 2005?')).toBe("Me at the zoo 2005");
-    expect(safeTitle("")).toBe("YouTube video");
+    expect(safeTitle("")).toBe("Video");
+    expect(safeTitle("", "Instagram reel")).toBe("Instagram reel");
   });
 });

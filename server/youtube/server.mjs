@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 /**
- * NoCap Edit YouTube helper.
+ * NoCap Edit download helper for YouTube videos and Instagram reels.
  *
- * A browser cannot fetch a YouTube video by itself (no CORS, signed per-viewer
- * URLs), so this small service does the one step the static site can't: it runs
- * yt-dlp and streams back a browser-playable MP4 (H.264 + AAC). The site then
- * stores the file in the visitor's browser like any dropped recording; nothing
- * about the visitor's projects ever reaches this service.
+ * A browser cannot fetch a YouTube video or an Instagram reel by itself (no CORS,
+ * signed per-viewer URLs), so this small service does the one step the static site
+ * can't: it runs yt-dlp and streams back a browser-playable MP4 (H.264 + AAC). The
+ * site then stores the file in the visitor's browser like any dropped recording;
+ * nothing about the visitor's projects ever reaches this service.
  *
- * Routes (all GET, CORS enabled):
+ * Routes (all GET, CORS enabled; <link> is a YouTube or Instagram video link):
  *   /health                      -> { ok, ytdlp }
- *   /info?url=<link>             -> { id, title, duration, thumbnail, uploader, heights }
+ *   /info?url=<link>             -> { id, source, title, duration, thumbnail, uploader, heights }
  *   /download?url=<link>&height= -> video/mp4 body, X-Video-Title / X-Video-Id headers
+ *                                   (height applies to YouTube; a reel comes at its full size)
  *   /download?url=<link>&format=mp3 -> audio/mpeg body (sound only), same headers
  *
  * Needs yt-dlp and ffmpeg on PATH. Zero npm dependencies.
@@ -24,10 +25,11 @@
  *   MAX_JOBS      downloads running at once (2)
  *   YTDLP         yt-dlp executable (yt-dlp)
  *   YTDLP_ARGS    extra arguments, split on spaces (e.g. "--cookies /data/cookies.txt")
- *   YTDLP_COOKIES a Netscape cookies.txt exported from a signed-in YouTube session, as
- *                 plain text or base64 (one line); written to a temp file and passed as
- *                 --cookies. Gets past "Sign in to confirm you're not a bot" on data-centre
- *                 addresses.
+ *   YTDLP_COOKIES a Netscape cookies.txt exported from a browser signed in to YouTube
+ *                 and/or Instagram, as plain text or base64 (one line); written to a temp
+ *                 file and passed as --cookies. Gets past YouTube's "Sign in to confirm
+ *                 you're not a bot" on data-centre addresses, and Instagram's habit of
+ *                 demanding a signed-in session before it hands over even a public reel.
  */
 import http from "node:http";
 import { spawn } from "node:child_process";
@@ -35,7 +37,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { availableHeights, canonicalUrl, outputArgs, outputFormat, safeTitle, youtubeVideoId } from "./lib.mjs";
+import { availableHeights, canonicalMediaUrl, defaultTitle, outputArgs, outputFormat, parseMediaLink, safeTitle } from "./lib.mjs";
 
 const PORT = Number(process.env.PORT) || 3131;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -89,7 +91,14 @@ function json(res, status, body) {
 }
 
 /** Turns yt-dlp's wording into something a visitor can act on. */
-function friendlyError(message) {
+function friendlyError(message, source = "youtube") {
+  if (source === "instagram") {
+    if (/empty media response|login required|rate-?limit|not available|cookies|sign ?in|log ?in/i.test(message)) {
+      return "Instagram wouldn't hand over this reel. It may be private, or Instagram is asking the helper to sign in first (it often does, even for public reels). The site owner can fix the sign-in part by giving the helper Instagram cookies (see server/youtube/README.md). Meanwhile, save the reel from the Instagram app and drop the file in.";
+    }
+    if (/unsupported url|no video|is not a video|no formats|image/i.test(message)) return "That Instagram post doesn't contain a video.";
+    return message;
+  }
   if (/cookies are no longer valid|rotated/i.test(message)) {
     return "The helper's YouTube cookies have expired or been rotated. The site owner needs to export fresh ones (see server/youtube/README.md). Meanwhile, drop a video file instead.";
   }
@@ -103,7 +112,7 @@ function friendlyError(message) {
 }
 
 /** Runs yt-dlp, resolving with stdout; rejects with the last useful stderr line. */
-function runYtDlp(args, { timeoutMs, signal }) {
+function runYtDlp(args, { timeoutMs, signal, source }) {
   return new Promise((resolve, reject) => {
     const child = spawn(YTDLP, [...EXTRA_ARGS, ...args], { stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
@@ -126,29 +135,31 @@ function runYtDlp(args, { timeoutMs, signal }) {
       const last = lines.filter((l) => l.startsWith("ERROR")).pop() ?? lines.pop() ?? `yt-dlp exited with ${code}`;
       // The raw wording goes to the server log; the browser gets the friendly version.
       console.log(`[yt-dlp] ${last.slice(0, 400)}`);
-      reject(new Error(friendlyError(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]{11}:\s*)?/, ""))));
+      reject(new Error(friendlyError(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]+:\s*)?/, ""), source)));
     });
   });
 }
 
 function parseLink(url, res) {
-  const id = youtubeVideoId(url);
-  if (!id) {
-    json(res, 400, { error: "That is not a YouTube video link." });
+  const link = parseMediaLink(url);
+  if (!link) {
+    json(res, 400, { error: "That is not a YouTube or Instagram video link." });
     return null;
   }
-  return id;
+  return link;
 }
 
 async function handleInfo(req, res, params) {
-  const id = parseLink(params.get("url"), res);
-  if (!id) return;
+  const link = parseLink(params.get("url"), res);
+  if (!link) return;
+  const { id, source } = link;
   try {
-    const raw = await runYtDlp(["-J", "--no-playlist", "--no-warnings", canonicalUrl(id)], { timeoutMs: INFO_TIMEOUT_MS });
+    const raw = await runYtDlp(["-J", "--no-playlist", "--no-warnings", canonicalMediaUrl(link)], { timeoutMs: INFO_TIMEOUT_MS, source });
     const info = JSON.parse(raw);
     json(res, 200, {
       id,
-      title: info.title ?? "YouTube video",
+      source,
+      title: info.title ?? defaultTitle(source),
       duration: Number(info.duration) || 0,
       thumbnail: info.thumbnail ?? null,
       uploader: info.uploader ?? info.channel ?? null,
@@ -161,8 +172,9 @@ async function handleInfo(req, res, params) {
 }
 
 async function handleDownload(req, res, params) {
-  const id = parseLink(params.get("url"), res);
-  if (!id) return;
+  const link = parseLink(params.get("url"), res);
+  if (!link) return;
+  const { id, source } = link;
   if (running >= MAX_JOBS) return json(res, 429, { error: `The helper is busy with ${MAX_JOBS} downloads. Try again in a minute.` });
   running++;
   const abort = new AbortController();
@@ -173,22 +185,22 @@ async function handleDownload(req, res, params) {
   try {
     const out = await runYtDlp(
       [
-        ...outputArgs(format, params.get("height")),
+        ...outputArgs(format, params.get("height"), source),
         "--no-playlist", "--no-warnings", "--no-progress",
         "--match-filters", `!is_live & duration<=${MAX_SECONDS}`,
         "-o", path.join(dir, "media.%(ext)s"),
         // after_move runs once every post-processor is done, so for MP3 the path is the converted file.
         "--print", "after_move:%(.{filepath,title,id,duration})j",
-        canonicalUrl(id),
+        canonicalMediaUrl(link),
       ],
-      { timeoutMs: DOWNLOAD_TIMEOUT_MS, signal: abort.signal },
+      { timeoutMs: DOWNLOAD_TIMEOUT_MS, signal: abort.signal, source },
     );
     const line = out.trim().split("\n").filter(Boolean).pop();
     if (!line) throw new Error(`The video is live or longer than ${Math.round(MAX_SECONDS / 60)} minutes, so the helper skipped it.`);
     const meta = JSON.parse(line);
     const size = (await stat(meta.filepath)).size;
-    const title = safeTitle(meta.title);
-    console.log(`[download] ${id} "${title}" ${format} ${(size / 1e6).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(0)} s`);
+    const title = safeTitle(meta.title, defaultTitle(source));
+    console.log(`[download] ${source}:${id} "${title}" ${format} ${(size / 1e6).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(0)} s`);
     res.writeHead(200, {
       "Content-Type": format === "mp3" ? "audio/mpeg" : "video/mp4",
       "Content-Length": size,
@@ -238,7 +250,7 @@ const server = http.createServer(async (req, res) => {
 let ytdlpVersion = "checking";
 
 server.listen(PORT, HOST, () => {
-  console.log(`NoCap Edit YouTube helper listening on http://${HOST}:${PORT} (yt-dlp: ${YTDLP}, up to ${MAX_SECONDS / 60} min per video)`);
+  console.log(`NoCap Edit YouTube / Instagram helper listening on http://${HOST}:${PORT} (yt-dlp: ${YTDLP}, up to ${MAX_SECONDS / 60} min per video)`);
   runYtDlp(["--version"], { timeoutMs: 60_000 })
     .then((v) => {
       ytdlpVersion = v.trim();

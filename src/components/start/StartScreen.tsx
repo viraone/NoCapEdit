@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Recorder, useRecordingSupported } from "@/components/record/Recorder";
 import { YouTubeBar } from "@/components/start/YouTubeBar";
 import { useYouTubeImports, youtubeStageText } from "@/components/start/useYouTubeImports";
+import { SITE_NAME } from "@/lib/youtube/url";
 import { exportBackup, importBackup } from "@/lib/storage/backup";
 import { requestDiskSink, createBlobSink } from "@/lib/ffmpeg/sinks";
 import { downloadBlob, safeFilename } from "@/lib/utils/download";
@@ -113,7 +114,7 @@ export function StartScreen() {
     setStorage(await storageEstimate());
   }, []);
 
-  // A pasted YouTube link becomes a card under Your projects while it downloads, then a real project.
+  // A pasted YouTube or Instagram link becomes a card under Your projects while it downloads, then a real project.
   const youtube = useYouTubeImports(refresh);
 
   useEffect(() => {
@@ -316,7 +317,7 @@ export function StartScreen() {
           )}
         </div>
         {projects.length === 0 && youtube.items.length === 0 ? (
-          <p className="card rounded-3xl border-dashed p-14 text-center text-lg text-label-3">No projects yet. Paste a YouTube link or drop a video above, or create a new project.</p>
+          <p className="card rounded-3xl border-dashed p-14 text-center text-lg text-label-3">No projects yet. Paste a YouTube or Instagram link or drop a video above, or create a new project.</p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {youtube.items.map((it) => (
@@ -331,7 +332,9 @@ export function StartScreen() {
                     </div>
                   )}
                   <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
-                  <span className="absolute left-2 top-2 rounded bg-sys-red/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">YouTube · {it.format === "mp3" ? "MP3" : `${it.quality}p`}</span>
+                  <span className="absolute left-2 top-2 rounded bg-sys-red/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    {SITE_NAME[it.source]} · {it.format === "mp3" ? "MP3" : it.source === "instagram" ? "Reel" : `${it.quality}p`}
+                  </span>
                 </div>
                 <div className="px-5 pb-4 pt-4 text-left">
                   <p className="truncate text-lg font-semibold text-white">{it.title}</p>

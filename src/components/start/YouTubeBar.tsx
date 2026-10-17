@@ -1,22 +1,25 @@
 "use client";
 import { useState, type FormEvent } from "react";
-import { RefreshCw, MonitorPlay } from "lucide-react";
+import { RefreshCw, MonitorPlay, Clapperboard } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { YOUTUBE_FORMATS, YOUTUBE_QUALITIES, type YouTubeChoice, type YouTubeFormat, type YouTubeQuality } from "@/lib/youtube/url";
+import { parseMediaLink, YOUTUBE_FORMATS, YOUTUBE_QUALITIES, type YouTubeChoice, type YouTubeFormat, type YouTubeQuality } from "@/lib/youtube/url";
 import { cx } from "@/lib/utils/cx";
 
 const control =
   "h-12 rounded-xl border border-sys-gray4 bg-sys-gray5 text-[15px] text-white placeholder:text-label-3 focus:border-sys-blue focus:outline-none focus:ring-1 focus:ring-sys-blue/50 disabled:opacity-50";
 
 /**
- * Paste-a-link bar (the EzMP4 pattern: link, MP4 or MP3, quality, Convert).
- * `onSubmit` throws when the text is not a YouTube link; the message shows under the bar.
+ * Paste-a-link bar for YouTube videos and Instagram reels (the EzMP4 pattern:
+ * link, MP4 or MP3, quality, Convert). The quality picker is for YouTube; a reel
+ * comes at its full size, so it hides as soon as the pasted link is Instagram's.
+ * `onSubmit` throws when the text is not a link the helper takes; the message shows under the bar.
  */
 export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, choice: YouTubeChoice) => void; disabled?: boolean }) {
   const [link, setLink] = useState("");
   const [format, setFormat] = useState<YouTubeFormat>("mp4");
   const [quality, setQuality] = useState<YouTubeQuality>(1080);
   const [error, setError] = useState<string | null>(null);
+  const isInstagram = parseMediaLink(link)?.source === "instagram";
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -30,18 +33,18 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
   };
 
   return (
-    <section className="card mt-10 rounded-3xl p-5" aria-label="Import from YouTube">
+    <section className="card mt-10 rounded-3xl p-5" aria-label="Import from YouTube or Instagram">
       <form onSubmit={submit} className="flex flex-wrap items-center gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sys-red/15 text-sys-red">
-          <MonitorPlay size={24} />
+          {isInstagram ? <Clapperboard size={24} /> : <MonitorPlay size={24} />}
         </div>
         <input
           type="url"
           inputMode="url"
           autoComplete="off"
           spellCheck={false}
-          aria-label="YouTube link"
-          placeholder="Paste a YouTube link here…"
+          aria-label="YouTube or Instagram link"
+          placeholder="Paste a YouTube or Instagram Reel link here…"
           value={link}
           onChange={(e) => {
             setLink(e.target.value);
@@ -58,7 +61,7 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
             </option>
           ))}
         </select>
-        {format === "mp4" && (
+        {format === "mp4" && !isInstagram && (
           <select aria-label="Video quality" value={quality} onChange={(e) => setQuality(Number(e.target.value) as YouTubeQuality)} disabled={disabled} className={cx(control, "w-28 px-3")} data-youtube-quality>
             {YOUTUBE_QUALITIES.map((q) => (
               <option key={q} value={q}>
@@ -73,8 +76,8 @@ export function YouTubeBar({ onSubmit, disabled }: { onSubmit: (link: string, ch
       </form>
       <p className="mt-3 text-sm text-label-3">
         {format === "mp3"
-          ? "The link goes to the YouTube helper, which sends the sound back as an MP3. The file is saved to your computer (your Downloads folder); it is never uploaded anywhere."
-          : "The link goes to the YouTube helper, which sends the MP4 back. The video is saved in this browser as a new project under Your projects; it is never uploaded anywhere."}
+          ? "The link goes to the download helper, which sends the sound back as an MP3. The file is saved to your computer (your Downloads folder); it is never uploaded anywhere."
+          : "The link goes to the download helper, which sends the MP4 back (a Reel at its full size). The video is saved in this browser as a new project under Your projects; it is never uploaded anywhere."}
       </p>
       {error && (
         <p className="mt-2 text-sm text-sys-red" role="alert">

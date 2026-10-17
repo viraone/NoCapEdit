@@ -39,11 +39,11 @@ export default function DocsPage() {
           <ArrowLeft size={16} /> Projects
         </Link>
         <h1 className="mt-6 text-4xl font-semibold leading-tight tracking-tight">How to use NoCap Edit</h1>
-        <p className="mt-3 text-lg text-label-2">From a YouTube link or a recording to captioned vertical reels, in your browser. Nothing is installed and your videos never leave your device.</p>
+        <p className="mt-3 text-lg text-label-2">From a YouTube link, an Instagram Reel or a recording to captioned vertical reels, in your browser. Nothing is installed and your videos never leave your device.</p>
         <nav aria-label="On this page" className="mt-6 flex flex-wrap gap-2 text-sm">
           {[
             ["#your-video", "1. Your own video"],
-            ["#start", "2. A YouTube link"],
+            ["#start", "2. A YouTube or Instagram link"],
             ["#edit", "3. Open and edit"],
             ["#reels", "4. Reels"],
             ["#api-key", "5. Free Google key"],
@@ -84,11 +84,11 @@ export default function DocsPage() {
           </p>
         </Section>
 
-        <Section id="start" title="2. Or start from a YouTube link">
+        <Section id="start" title="2. Or start from a YouTube or Instagram link">
           <p>
-            Copy the video&apos;s address from YouTube, paste it into the bar at the top of the start page, pick a quality (1080p is the default), and click <b className="text-white">Convert</b>. A card appears under <b className="text-white">Your projects</b> while the video downloads, then becomes a project with the video&apos;s title. The first paste after a quiet spell can take about a minute while the helper wakes up. Only want the sound? Switch <b className="text-white">MP4</b> to <b className="text-white">MP3</b> before clicking Convert: the audio is saved to your Downloads folder as an MP3 instead of becoming a project.
+            Copy the video&apos;s address from YouTube, or a Reel&apos;s link from Instagram (the share arrow, then <b className="text-white">Copy link</b>), paste it into the bar at the top of the start page, pick a quality for YouTube (1080p is the default; a Reel comes at its full size), and click <b className="text-white">Convert</b>. A card appears under <b className="text-white">Your projects</b> while the video downloads, then becomes a project with the video&apos;s title. The first paste after a quiet spell can take about a minute while the helper wakes up. Only want the sound? Switch <b className="text-white">MP4</b> to <b className="text-white">MP3</b> before clicking Convert: the audio is saved to your Downloads folder as an MP3 instead of becoming a project.
           </p>
-          <Shot src="start-paste-link.png" alt="The paste bar on the start page: a YouTube link, the 1080p quality picker and the Convert button" width={1200} height={300} />
+          <Shot src="start-paste-link.png" alt="The paste bar on the start page: a YouTube or Instagram link, the 1080p quality picker and the Convert button" width={1200} height={300} />
           <p className="text-sm text-label-3">Only download videos you have the right to use: your own, or for private editing practice.</p>
         </Section>
 

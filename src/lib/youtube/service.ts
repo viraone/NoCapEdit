@@ -1,15 +1,15 @@
 /**
- * Client for the YouTube helper (server/youtube/server.mjs): the one job the
- * static site cannot do in the browser. The helper fetches the video with
- * yt-dlp and streams back an MP4; everything after that (storage, captions,
- * export) stays on the visitor's device like any dropped recording.
+ * Client for the download helper (server/youtube/server.mjs): the one job the
+ * static site cannot do in the browser. The helper fetches a YouTube video or an
+ * Instagram reel with yt-dlp and streams back an MP4; everything after that
+ * (storage, captions, export) stays on the visitor's device like any dropped recording.
  *
  * Which helper is used, in order:
  *   1. localStorage "nocap.youtubeService" (set from the console to test a hosted copy)
  *   2. NEXT_PUBLIC_YOUTUBE_SERVICE_URL at build time (the hosted helper for visitors)
  *   3. http://127.0.0.1:3131, the helper started with `npm run youtube` on this computer
  */
-import { youtubeWatchUrl, type YouTubeFormat } from "./url";
+import { defaultTitle, mediaUrl, type MediaLink, type MediaSource, type YouTubeFormat } from "./url";
 
 export const DEFAULT_YOUTUBE_SERVICE = "http://127.0.0.1:3131";
 export const YOUTUBE_SERVICE_KEY = "nocap.youtubeService";
@@ -26,6 +26,7 @@ export function youtubeServiceUrl(): string {
 
 export interface YouTubeInfo {
   id: string;
+  source: MediaSource;
   title: string;
   /** Seconds, 0 when unknown. */
   duration: number;
@@ -79,12 +80,13 @@ async function serviceFetch(path: string, signal?: AbortSignal): Promise<Respons
   return res;
 }
 
-export async function fetchYouTubeInfo(id: string, signal?: AbortSignal): Promise<YouTubeInfo> {
-  const res = await serviceFetch(`/info?url=${encodeURIComponent(youtubeWatchUrl(id))}`, signal);
+export async function fetchYouTubeInfo(link: MediaLink, signal?: AbortSignal): Promise<YouTubeInfo> {
+  const res = await serviceFetch(`/info?url=${encodeURIComponent(mediaUrl(link))}`, signal);
   const info = (await res.json()) as Partial<YouTubeInfo>;
   return {
-    id,
-    title: info.title || "YouTube video",
+    id: link.id,
+    source: link.source,
+    title: info.title || defaultTitle(link.source),
     duration: Number(info.duration) || 0,
     thumbnail: info.thumbnail ?? null,
     uploader: info.uploader ?? null,
@@ -102,16 +104,17 @@ export interface YouTubeDownload {
 /**
  * Streams the MP4 (or, with `format: "mp3"`, the sound as MP3) from the helper
  * into a File. `onProgress` starts once the helper has the video and begins
- * sending it; before that the helper is still talking to YouTube.
+ * sending it; before that the helper is still talking to YouTube or Instagram.
+ * `height` applies to YouTube; an Instagram reel comes at its full size.
  */
 export async function downloadYouTube(
-  id: string,
+  link: MediaLink,
   { format, height }: { format: YouTubeFormat; height: number },
   onProgress?: (loaded: number, total: number | null) => void,
   signal?: AbortSignal,
 ): Promise<YouTubeDownload> {
-  const res = await serviceFetch(`/download?url=${encodeURIComponent(youtubeWatchUrl(id))}&height=${height}&format=${format}`, signal);
-  const title = decodeURIComponent(res.headers.get("X-Video-Title") || "") || "YouTube video";
+  const res = await serviceFetch(`/download?url=${encodeURIComponent(mediaUrl(link))}&height=${height}&format=${format}`, signal);
+  const title = decodeURIComponent(res.headers.get("X-Video-Title") || "") || defaultTitle(link.source);
   const duration = Number(res.headers.get("X-Video-Duration")) || 0;
   const total = Number(res.headers.get("Content-Length")) || null;
   const chunks: Uint8Array[] = [];

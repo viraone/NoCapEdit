@@ -71,9 +71,9 @@ lucide-react, vitest, Playwright.
 src/app/                      routes: / (start screen), /editor?id= (editor), /docs (how-to guide), /m (phone)
 src/components/
   start/StartScreen.tsx       project manager, quick import, Record, Import backup / Backup
-  start/YouTubeBar.tsx        paste-a-link bar (link, MP4/MP3, quality, Convert) → useYouTubeImports.ts, which
-                              fetches the MP4 through server/youtube/ and saves it as a project (an MP3 is
-                              handed to the browser as a download instead)
+  start/YouTubeBar.tsx        paste-a-link bar for YouTube videos and Instagram reels (link, MP4/MP3, quality,
+                              Convert) → useYouTubeImports.ts, which fetches the MP4 through server/youtube/
+                              and saves it as a project (an MP3 is handed to the browser as a download instead)
   record/Recorder.tsx         screen / camera / screen+mic MediaRecorder modal
   editor/EditorShell.tsx      floating-card layout, keyboard shortcuts, engine wiring, notice strip
   editor/TopBar.tsx           name, Home|Edit control, Import clips, Export video
@@ -133,7 +133,7 @@ src/lib/
   matte/matte.ts              MODNet background removal for stickers; offline video matting masks
   tracking/templateTracker.ts NCC motion tracker; autoReframe.ts MediaPipe face → pan keyframes
   stock/providers.ts          Pexels / Pixabay search + download
-  youtube/url.ts, service.ts  YouTube link parsing; client for the yt-dlp helper (server/youtube/)
+  youtube/url.ts, service.ts  YouTube + Instagram link parsing; client for the yt-dlp helper (server/youtube/)
   storage/db.ts               IndexedDB stores: projects, assets, peaks, thumbs, projectThumbs
   storage/backup.ts           .nocap streamed zip export / import (fflate)
   media/                      import flows, probing, filmstrip thumbnails, asset events
@@ -141,7 +141,7 @@ src/lib/
 src/store/editorStore.ts      Zustand: project + undo/redo (transactions for drags), selection, time, notice
 e2e/                          smoke.mjs (full flow + ffprobe validation), screenshot.mjs, serve.mjs, fixtures/
 docs/                         DEPLOYMENT.md, EXPORT-PIPELINE.md (read this), ROADMAP.md, this file
-server/youtube/               yt-dlp helper (server.mjs, lib.mjs, Dockerfile, README): the one fetch a browser can't do
+server/youtube/               yt-dlp helper for YouTube and Instagram (server.mjs, lib.mjs, Dockerfile, README): the one fetch a browser can't do
 ```
 
 ## 6. Data model in one paragraph

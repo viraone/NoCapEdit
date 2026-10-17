@@ -15,13 +15,11 @@ export function outputFormat(format) {
 }
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+/** Instagram shortcodes are 11 characters for ordinary posts and reels; some older or private-account posts run longer. */
+const SHORTCODE = /^[A-Za-z0-9_-]{5,40}$/;
 
-/**
- * Returns the 11-character video id when `input` is a YouTube link, else null.
- * Accepts watch, short, shorts, live and embed links on youtube.com, youtu.be,
- * m.youtube.com and music.youtube.com, with or without a scheme.
- */
-export function youtubeVideoId(input) {
+/** `input` as a URL when it is an http(s) web address (scheme optional), else null. */
+function webUrl(input) {
   if (typeof input !== "string") return null;
   const text = input.trim();
   if (!text) return null;
@@ -31,7 +29,17 @@ export function youtubeVideoId(input) {
   } catch {
     return null;
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  return url.protocol === "https:" || url.protocol === "http:" ? url : null;
+}
+
+/**
+ * Returns the 11-character video id when `input` is a YouTube link, else null.
+ * Accepts watch, short, shorts, live and embed links on youtube.com, youtu.be,
+ * m.youtube.com and music.youtube.com, with or without a scheme.
+ */
+export function youtubeVideoId(input) {
+  const url = webUrl(input);
+  if (!url) return null;
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
   const check = (id) => (id && VIDEO_ID.test(id) ? id : null);
   if (host === "youtu.be") return check(url.pathname.split("/")[1]);
@@ -42,9 +50,48 @@ export function youtubeVideoId(input) {
   return null;
 }
 
+/**
+ * Returns the shortcode when `input` is an Instagram reel, post or IGTV link, else null.
+ * Accepts /reel/, /reels/, /p/ and /tv/ on instagram.com, m.instagram.com and instagr.am,
+ * with or without a username in front (the app's "Copy link" sometimes adds one) and
+ * with or without a scheme. /share/ links are opaque redirect tokens, not shortcodes,
+ * so they are refused; the visitor can open one in a browser and copy the real address.
+ */
+export function instagramShortcode(input) {
+  const url = webUrl(input);
+  if (!url) return null;
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  if (host !== "instagram.com" && host !== "m.instagram.com" && host !== "instagr.am") return null;
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts[0] === "share") return null;
+  for (let i = 0; i + 1 < parts.length; i++) {
+    if (["reel", "reels", "p", "tv"].includes(parts[i]) && SHORTCODE.test(parts[i + 1])) return parts[i + 1];
+  }
+  return null;
+}
+
+/** Which site a pasted link belongs to and the id the helper fetches by, or null when it is neither. */
+export function parseMediaLink(input) {
+  const videoId = youtubeVideoId(input);
+  if (videoId) return { source: "youtube", id: videoId };
+  const shortcode = instagramShortcode(input);
+  if (shortcode) return { source: "instagram", id: shortcode };
+  return null;
+}
+
 /** The link handed to yt-dlp: one canonical form, so playlist and tracking parameters never come along. */
 export function canonicalUrl(id) {
   return `https://www.youtube.com/watch?v=${id}`;
+}
+
+/** The canonical link for either site. */
+export function canonicalMediaUrl({ source, id }) {
+  return source === "instagram" ? `https://www.instagram.com/reel/${id}/` : canonicalUrl(id);
+}
+
+/** What a download is called before its real title is known. */
+export function defaultTitle(source) {
+  return source === "instagram" ? "Instagram reel" : "YouTube video";
 }
 
 /**
@@ -57,27 +104,37 @@ export function formatSelector(height) {
   return `bv*[vcodec^=avc1][height<=${h}]+ba[ext=m4a]/b[ext=mp4][height<=${h}]/bv*[height<=${h}]+ba/b`;
 }
 
+/**
+ * yt-dlp format selector for an Instagram reel: the same H.264 + AAC preference with
+ * no height cap. Reels are vertical (1080×1920), so a `height<=1080` rule would pick
+ * a shrunken copy over the original.
+ */
+export function instagramSelector() {
+  return "bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b";
+}
+
 /** yt-dlp format selector for sound only: the AAC track, else the best audio there is. ffmpeg turns it into MP3. */
 export function audioSelector() {
   return "ba[ext=m4a]/ba";
 }
 
 /**
- * The yt-dlp arguments that decide what comes out: a merged MP4 up to `height`,
- * or an MP3 (highest VBR quality) extracted from the best audio track.
+ * The yt-dlp arguments that decide what comes out: a merged MP4 (up to `height` for
+ * YouTube, full size for an Instagram reel), or an MP3 (highest VBR quality)
+ * extracted from the best audio track.
  */
-export function outputArgs(format, height) {
+export function outputArgs(format, height, source = "youtube") {
   if (outputFormat(format) === "mp3") return ["-f", audioSelector(), "-x", "--audio-format", "mp3", "--audio-quality", "0"];
-  return ["-f", formatSelector(height), "--merge-output-format", "mp4"];
+  return ["-f", source === "instagram" ? instagramSelector() : formatSelector(height), "--merge-output-format", "mp4"];
 }
 
-/** A file name browsers and the site's importer are happy with. */
-export function safeTitle(title) {
+/** A file name browsers and the site's importer are happy with; `fallback` when the title is empty. */
+export function safeTitle(title, fallback = "Video") {
   const clean = String(title ?? "")
     .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return (clean || "YouTube video").slice(0, 120);
+  return (clean || fallback).slice(0, 120);
 }
 
 /** Distinct H.264 heights available for the video, best first, from a yt-dlp info dict. */
