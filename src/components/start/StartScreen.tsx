@@ -356,57 +356,44 @@ export function StartScreen() {
         )}
       </section>
 
-      <section className="mt-14 grid gap-6 md:grid-cols-[1.5fr_1fr]">
+      {/* Second way in, under the projects: a slim drop strip and one quiet line of what runs on this device. */}
+      <section className="mt-10 space-y-2.5">
         <FileDrop
           accept="video/*,image/*"
           multiple
           onFiles={quickImport}
           disabled={!!busy}
-          className="relative flex min-h-72 flex-col items-center justify-center gap-3 overflow-hidden rounded-3xl bg-sys-gray5 px-8 py-10 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_50px_rgba(0,0,0,0.45)]"
+          className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-sys-gray5 px-5 py-4 sm:flex-nowrap"
         >
-          <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 h-64 w-[36rem] -translate-x-1/2 rounded-full bg-sys-blue/15 blur-3xl" />
-          <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-sys-gray4 text-sys-blue shadow-inner shadow-black/40">
-            <Upload size={36} />
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sys-gray4 text-sys-blue">
+            <Upload size={22} />
           </div>
-          <p className="relative text-2xl font-semibold tracking-tight">Drop a recording or a flyer to start a new reel</p>
-          <p className="relative text-base text-label-2">MP4, MOV, WebM · or an image, which becomes an {STILL_SECONDS} s Instagram post · files never leave this device</p>
-          {busy && (
-            <div className="relative mt-3 w-80">
-              <ProgressBar value={null} className="h-2" />
-              <p className="mt-2 text-sm text-label-2">{busy}</p>
-            </div>
-          )}
-          {error && <p className="relative text-sm text-sys-red">{error}</p>}
+          <div className="min-w-0 flex-1 text-left">
+            <p className="text-base font-semibold text-white">Drop a recording or a flyer here to start a new reel</p>
+            <p className="text-[13px] text-label-3">MP4, MOV or WebM, or an image, which becomes a {STILL_SECONDS} s Instagram post. Files never leave this device.</p>
+            {busy && (
+              <div className="mt-2 max-w-sm">
+                <ProgressBar value={null} className="h-1.5" />
+                <p className="mt-1 text-xs text-label-2">{busy}</p>
+              </div>
+            )}
+            {error && <p className="mt-1 text-[13px] text-sys-red">{error}</p>}
+          </div>
         </FileDrop>
-        <div className="card flex flex-col justify-center rounded-3xl p-6 text-[15px] text-label-2">
-          <p className="mb-5 flex items-center gap-2.5 text-lg font-semibold text-white">
-            <ShieldCheck size={22} className="text-sys-green" /> Zero-cost, on-device pipeline
-          </p>
-          <ul className="space-y-3.5">
-            <li className="flex items-start gap-3">
-              <Cpu size={20} className="mt-0.5 shrink-0 text-sys-teal" />
-              <span>
-                <span className="block text-white">Whisper speech-to-text</span>
-                <span className="text-label-3">{caps?.webgpu ? "WebGPU accelerated" : "WASM (WebGPU unavailable)"}</span>
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <Layers size={20} className="mt-0.5 shrink-0 text-sys-purple" />
-              <span>
-                <span className="block text-white">ffmpeg.wasm export</span>
-                <span className="text-label-3">{caps?.isolated ? "multi-threaded" : "single-threaded (no cross-origin isolation)"}</span>
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <HardDrive size={20} className="mt-0.5 shrink-0 text-sys-orange" />
-              <span>
-                <span className="block text-white">Local storage</span>
-                <span className="text-label-3">{storage ? `${formatBytes(storage.usage)} used of ${formatBytes(storage.quota)}${storage.persisted ? " · persistent" : ""}` : "Checking…"}</span>
-              </span>
-            </li>
-          </ul>
-          {storage && storage.quota > 0 && <ProgressBar className="mt-5 h-2" value={storage.usage / storage.quota} />}
-        </div>
+        <p className="flex flex-wrap items-center gap-x-5 gap-y-1 px-1 text-[13px] text-label-3">
+          <span className="inline-flex items-center gap-1.5 font-medium text-label-2">
+            <ShieldCheck size={15} className="text-sys-green" /> Free and on-device
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Cpu size={15} className="text-sys-teal" /> Whisper: {caps?.webgpu ? "WebGPU" : "WASM (no WebGPU)"}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Layers size={15} className="text-sys-purple" /> ffmpeg: {caps?.isolated ? "multi-threaded" : "single-threaded"}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <HardDrive size={15} className="text-sys-orange" /> Storage: {storage ? `${formatBytes(storage.usage)} of ${formatBytes(storage.quota)}${storage.persisted ? " · persistent" : ""}` : "checking…"}
+          </span>
+        </p>
       </section>
 
       <footer className="mt-auto pt-14 text-sm text-label-3">

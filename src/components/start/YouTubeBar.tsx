@@ -177,7 +177,7 @@ export function YouTubeBar({
 
         {!active && (
           <div className="mt-2 flex min-h-6 flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px]">
-            <p className="min-w-0 flex-1" aria-live="polite" data-youtube-recognised={media ? media.source : ""}>
+            <p className="min-w-0 basis-full sm:flex-1 sm:basis-0" aria-live="polite" data-youtube-recognised={media ? media.source : ""}>
               {media ? (
                 <span className="inline-flex items-center gap-1.5 font-medium text-sys-green">
                   <CircleCheck size={14} /> {isInstagram ? <InstagramLogo size={15} /> : <YouTubeLogo size={15} />}
