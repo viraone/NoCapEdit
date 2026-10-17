@@ -50,25 +50,55 @@ export class YouTubeServiceError extends Error {
   }
 }
 
-/** What to tell the visitor when nothing answers at the helper's address. */
+/** What to tell the visitor when nothing answers at the helper's address, even after waiting. */
 export function unreachableText(base = youtubeServiceUrl()): string {
   if (base === DEFAULT_YOUTUBE_SERVICE) {
-    return "The YouTube helper isn't running on this computer. Start it with \"npm run youtube\" in the NoCap Edit folder, then try again.";
+    return "The download helper isn't running on this computer. Start it with \"npm run youtube\" in the NoCap Edit folder, then try again.";
   }
-  return "YouTube import isn't available right now (the helper didn't answer). Try again in a minute, or drop a video file instead.";
+  return "The download helper didn't answer, even after a minute and a half. It is probably restarting after an update. Try again in a couple of minutes, or drop a video file instead.";
+}
+
+/**
+ * How long to keep knocking when the helper does not answer at all. Render's free
+ * instance sleeps after 15 idle minutes and takes up to a minute to wake, and a
+ * redeploy leaves it unreachable for a short while, so a connection failure is
+ * retried every few seconds for a while before the visitor is told.
+ */
+const UNREACHABLE_RETRY_MS = 90_000;
+const UNREACHABLE_RETRY_EVERY_MS = 5_000;
+
+function cancelled(signal?: AbortSignal, e?: unknown): boolean {
+  return !!signal?.aborted || (e instanceof DOMException && e.name === "AbortError");
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      resolve();
+    }, { once: true });
+  });
 }
 
 async function serviceFetch(path: string, signal?: AbortSignal): Promise<Response> {
   const base = youtubeServiceUrl();
   let res: Response;
-  try {
-    res = await fetch(`${base}${path}`, { signal, mode: "cors" });
-  } catch (e) {
-    if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) throw new YouTubeServiceError("Cancelled", "cancelled");
-    throw new YouTubeServiceError(unreachableText(base), "unreachable");
+  const started = Date.now();
+  for (;;) {
+    try {
+      res = await fetch(`${base}${path}`, { signal, mode: "cors" });
+      break;
+    } catch (e) {
+      if (cancelled(signal, e)) throw new YouTubeServiceError("Cancelled", "cancelled");
+      // Nothing answered (asleep, restarting, or no network): wait and knock again, up to the limit.
+      if (base === DEFAULT_YOUTUBE_SERVICE || Date.now() - started >= UNREACHABLE_RETRY_MS) throw new YouTubeServiceError(unreachableText(base), "unreachable");
+      await sleep(UNREACHABLE_RETRY_EVERY_MS, signal);
+      if (cancelled(signal)) throw new YouTubeServiceError("Cancelled", "cancelled");
+    }
   }
   if (!res.ok) {
-    let message = `The YouTube helper answered ${res.status}.`;
+    let message = `The download helper answered ${res.status}.`;
     try {
       const body = (await res.json()) as { error?: string };
       if (body?.error) message = body.error;

@@ -11,7 +11,13 @@ services:
     dockerfilePath: ./server/youtube/Dockerfile
     dockerContext: ./server/youtube
     healthCheckPath: /health
-    autoDeploy: true
+    autoDeployTrigger: commit
+    # Only a change inside the helper's own folder rebuilds it. Without this, every push
+    # to main (even one that only touches the website) rebuilt the image, and the helper
+    # was unreachable for a few minutes each time: visitors saw "the helper didn't answer".
+    buildFilter:
+      paths:
+        - server/youtube/**
     envVars:
       - key: HOST
         value: 0.0.0.0
