@@ -2,8 +2,8 @@
  * Turns the local AI's highlights into finished reels: each pick becomes its
  * own small project (source clip re-encoded to that range plus REEL_HANDLE
  * seconds of slack on each side, captions carried over and shifted, the
- * source's frame format and caption style, and face tracking on landscape
- * sources) tagged with the source project's id so the Subtitles panel can
+ * source's frame format and caption style, and the picture following the
+ * face, as the Reframe tool does) tagged with the source project's id so the Subtitles panel can
  * list them under "Reels". The slack lets the reel's clip be dragged out on
  * the timeline; reelStretch cuts more from the source past it.
  */
@@ -256,22 +256,22 @@ async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeRe
   const outPoint = Math.max(inPoint + 0.1, Math.min(clip.duration, shown.end - covered.start));
   const finished: Clip = { ...clip, inPoint, outPoint, ...(source0.look ? { look: structuredClone(source0.look) } : {}), background: source0.background };
   const frame = getFormat(reel.formatId);
+  // Every reel follows the face, the same as the Reframe tool, so a reel never needs a second visit there.
+  // A phone recording is already upright, but the comedian still moves; the tracker keeps them centred.
   const landscape = clip.width > clip.height && frame.height > frame.width;
-  if (landscape) {
-    o.onProgress?.({ stage: "Following the face", progress: null });
+  o.onProgress?.({ stage: "Following the face", progress: null });
+  try {
+    const url = URL.createObjectURL(blob);
     try {
-      const url = URL.createObjectURL(blob);
-      try {
-        const keyframes = await autoReframe({ videoUrl: url, clip: finished, frame: { width: frame.width, height: frame.height }, signal: o.signal, onProgress: (m, p) => o.onProgress?.({ stage: "Following the face", detail: m, progress: p }) });
-        finished.reframe = { keyframes, label: "Face tracking" };
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") throw e;
-      // No face found: fall back to fitting the whole picture in the frame.
-      finished.zoom = fitZoom({ width: clip.width, height: clip.height }, { width: frame.width, height: frame.height });
+      const keyframes = await autoReframe({ videoUrl: url, clip: finished, frame: { width: frame.width, height: frame.height }, signal: o.signal, onProgress: (m, p) => o.onProgress?.({ stage: "Following the face", detail: m, progress: p }) });
+      finished.reframe = { keyframes, label: "Face tracking" };
+    } finally {
+      URL.revokeObjectURL(url);
     }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    // No face found. A wide picture in a tall frame falls back to fitting the whole picture; any other stays as cut.
+    if (landscape) finished.zoom = fitZoom({ width: clip.width, height: clip.height }, { width: frame.width, height: frame.height });
   }
   reel.clips = [finished];
   reel.cues = cuesForRange(source.cues, shown.start, shown.end);
