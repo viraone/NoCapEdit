@@ -71,20 +71,49 @@ export async function probeAudio(blob: Blob): Promise<{ duration: number }> {
   const url = URL.createObjectURL(blob);
   const audio = document.createElement("audio");
   audio.preload = "metadata";
+  let duration: number;
   try {
-    return await withTimeout(
-      new Promise<{ duration: number }>((resolve, reject) => {
-        audio.onerror = () => reject(new Error("This audio file could not be decoded by your browser."));
-        audio.onloadedmetadata = () => resolve({ duration: audio.duration });
-        audio.src = url;
-      }),
-      PROBE_TIMEOUT_MS,
-      "Reading the audio",
-    );
+    duration = (
+      await withTimeout(
+        new Promise<{ duration: number }>((resolve, reject) => {
+          audio.onerror = () => reject(new Error("This audio file could not be decoded by your browser."));
+          audio.onloadedmetadata = () => resolve({ duration: audio.duration });
+          audio.src = url;
+        }),
+        PROBE_TIMEOUT_MS,
+        "Reading the audio",
+      )
+    ).duration;
   } finally {
     audio.removeAttribute("src");
     audio.load();
     URL.revokeObjectURL(url);
+  }
+  // The header's length is a guess for an MP3 without a length tag (many downloaded songs): Chrome said
+  // 228 s for a 250 s file, and some report Infinity. Decoding the whole file is exact and takes well
+  // under a second for a song, so it wins whenever it works; the header stands in only when it does not.
+  const decoded = blob.size <= DECODE_FOR_LENGTH_MAX_BYTES ? await decodedDuration(blob) : null;
+  if (decoded !== null) duration = decoded;
+  else if (!Number.isFinite(duration) || duration <= 0) throw new Error("This audio file could not be decoded by your browser.");
+  return { duration };
+}
+
+/** Files bigger than this (an hour-long mix) keep the header's length rather than being decoded whole. */
+const DECODE_FOR_LENGTH_MAX_BYTES = 80 * 1024 * 1024;
+
+/** The exact length of an audio file, found by decoding all of it at a low rate; null when the browser cannot decode it. */
+async function decodedDuration(blob: Blob): Promise<number | null> {
+  const attempt = async (rate: number) => new OfflineAudioContext(1, 1, rate).decodeAudioData(await blob.arrayBuffer());
+  try {
+    // A low rate keeps the decoded samples small; some engines refuse it, so 44.1 kHz is the second try.
+    const buffer = await withTimeout(
+      attempt(8000).catch(() => attempt(44100)),
+      PROBE_TIMEOUT_MS,
+      "Reading the audio",
+    );
+    return buffer.duration > 0 ? buffer.duration : null;
+  } catch {
+    return null;
   }
 }
 

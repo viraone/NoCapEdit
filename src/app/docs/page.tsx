@@ -68,7 +68,7 @@ export default function DocsPage() {
               The box shows &ldquo;Reading&rdquo; and then &ldquo;Analysing audio and frames&rdquo; for a few seconds (longer for a big file). The editor then opens on its own. The file is copied into your browser&apos;s storage, not uploaded anywhere.
             </li>
             <li>
-              <b className="text-white">A flyer or poster instead of a video?</b> Drop the image. It becomes a 12-second Instagram post (4:5 frame) that you can put music and text on.
+              <b className="text-white">A flyer or poster instead of a video?</b> Drop the image. It becomes a 12-second Instagram post (4:5 frame) that you can put music and text on. Add a song and the picture stays on screen for the whole song, however long it is.
             </li>
           </ol>
           <Shot src="drop-zone.png" alt="The drop box on the start page: Drop a recording or a flyer to start a new reel, MP4, MOV, WebM or an image" width={1200} height={520} />

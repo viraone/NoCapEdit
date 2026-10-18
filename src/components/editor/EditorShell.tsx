@@ -7,6 +7,8 @@ import { ensureFontsLoaded } from "@/lib/captions/fonts";
 import { splitClipAt, captionsClearedNotice, removeClip } from "@/lib/models/clipOps";
 import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
+import { useFitPictureToSong, useStillLength } from "@/components/panels/useStillLength";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { ToolRail } from "@/components/panels/ToolRail";
 import { ClipsPanel } from "@/components/panels/ClipsPanel";
 import { TrimPanel } from "@/components/panels/TrimPanel";
@@ -60,11 +62,33 @@ function NoticeStrip() {
   );
 }
 
+/** Shown on every panel while a picture is being made as long as the song (it takes a few seconds), or when that failed. */
+function StillLengthStrip() {
+  const { status, error } = useStillLength();
+  if (!status && !error) return null;
+  return (
+    <div className="flex shrink-0 items-center gap-3 rounded-lg bg-sys-blue/10 px-3 py-1.5 text-[13px] text-white" role={error ? "alert" : "status"}>
+      <Lightbulb size={14} className="shrink-0 text-sys-blue" />
+      {status ? (
+        <>
+          <span className="shrink-0">Making the picture as long as your song · {status}</span>
+          <div className="min-w-0 flex-1">
+            <ProgressBar value={null} />
+          </div>
+        </>
+      ) : (
+        <p className="min-w-0 flex-1 whitespace-pre-wrap text-sys-red">{error}</p>
+      )}
+    </div>
+  );
+}
+
 export function EditorShell() {
   const tool = useEditor((s) => s.tool);
   const chrome = useIsDesktopChrome();
   const project = useEditor((s) => s.project);
   const assetUrls = useEditor((s) => s.assetUrls);
+  useFitPictureToSong();
 
   useEffect(() => {
     engine.onTime = (t) => useEditor.getState().setTime(t);
@@ -168,6 +192,7 @@ export function EditorShell() {
     <div className="flex h-screen flex-col gap-2 overflow-hidden bg-[#0b0b0d] p-2.5 text-white">
       <TopBar />
       <NoticeStrip />
+      <StillLengthStrip />
       <ImportErrorStrip />
       <div className="flex min-h-0 flex-1 gap-3">
         <div className="flex shrink-0 gap-3">
