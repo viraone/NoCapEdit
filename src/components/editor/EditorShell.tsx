@@ -22,7 +22,6 @@ import { ExportPanel } from "@/components/panels/ExportPanel";
 import { ReelsPanel } from "@/components/panels/ReelsPanel";
 import { PostPanel } from "@/components/panels/PostPanel";
 import { ReframePanel } from "@/components/panels/ReframePanel";
-import { useIsDesktopChrome } from "@/lib/ai/browser";
 import { CanvasBar } from "@/components/canvas/CanvasBar";
 import { VideoCanvas } from "@/components/canvas/VideoCanvas";
 import { TimelineDock } from "@/components/timeline/TimelineDock";
@@ -85,7 +84,6 @@ function StillLengthStrip() {
 
 export function EditorShell() {
   const tool = useEditor((s) => s.tool);
-  const chrome = useIsDesktopChrome();
   const project = useEditor((s) => s.project);
   const assetUrls = useEditor((s) => s.assetUrls);
   useFitPictureToSong();
@@ -207,7 +205,7 @@ export function EditorShell() {
             {tool === "picture" && <PicturePanel />}
             {tool === "music" && <MusicPanel />}
             {tool === "reels" && <ReelsPanel />}
-            {tool === "post" && chrome && <PostPanel />}
+            {tool === "post" && <PostPanel />}
             {tool === "reframe" && <ReframePanel />}
             {tool === "export" && <ExportPanel />}
           </aside>

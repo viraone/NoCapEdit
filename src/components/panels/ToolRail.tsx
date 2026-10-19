@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, Sparkles, TextSelect } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
-import { useIsDesktopChrome } from "@/lib/ai/browser";
 import { cx } from "@/lib/utils/cx";
 
 /** Apple system colours per tool, like the Halycol rail. */
@@ -17,7 +16,7 @@ const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentTyp
   { id: "music", label: "Music", hint: "Music, sound effects and voice-over", icon: Music, color: "#64d2ff" },
   { id: "reels", label: "Reels", hint: "Cut the best moments into short reels", icon: Clapperboard, color: "#ff375f" },
   { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
-  { id: "post", label: "Post", hint: "Write the caption and hashtags for your post", icon: Sparkles, color: "#5e5ce6" },
+  { id: "post", label: "Post", hint: "Write this week's Rickshaw Instagram post and copy it", icon: Sparkles, color: "#5e5ce6" },
   // Reframe is not on the rail: cutting a reel follows the face by itself. The panel still opens from ?tool=reframe.
 ];
 
@@ -93,10 +92,7 @@ export function ToolRail() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  // Post uses Chrome's built-in AI, so only Chrome gets it.
-  const chrome = useIsDesktopChrome();
-  const tools = TOOLS.filter((t) => t.id !== "post" || chrome);
-  const lay = railLayout(height, tools.length);
+  const lay = railLayout(height, TOOLS.length);
   return (
     <nav
       ref={ref}
@@ -107,7 +103,7 @@ export function ToolRail() {
       data-labels={lay.labels || undefined}
       data-tile={lay.tile}
     >
-      {tools.map(({ id, label, icon: Icon, color }) => {
+      {TOOLS.map(({ id, label, icon: Icon, color }) => {
         const active = tool === id;
         return (
           <button
