@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createProject } from "@/lib/models/project";
 import { saveProject, requestPersistentStorage } from "@/lib/storage/db";
-import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
+import { importAudio, importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { defaultTitle, formatFor, parseMediaLink, SITE_NAME, type MediaSource, type YouTubeChoice, type YouTubeFormat } from "@/lib/youtube/url";
 import { downloadYouTube, fetchYouTubeInfo, YouTubeServiceError } from "@/lib/youtube/service";
 import { openSaveFolder, saveDownload, type SaveFolder } from "@/lib/utils/saveFolder";
@@ -10,7 +10,7 @@ import { uid } from "@/lib/utils/id";
 
 export type YouTubeStage = "info" | "fetching" | "saving" | "importing" | "error";
 
-/** One pasted link on its way to becoming a project (MP4) or a file on the visitor's computer (MP3); shown as a card under Your projects. */
+/** One pasted link on its way to becoming a project (a video, or a song to put a picture to); shown as a card under Your projects. */
 export interface YouTubeImport {
   key: string;
   link: string;
@@ -39,7 +39,7 @@ export function youtubeStageText(item: YouTubeImport): string {
     case "saving":
       return item.total ? `Receiving ${Math.round((item.loaded / item.total) * 100)}%` : "Receiving…";
     case "importing":
-      if (item.format === "mp3") return "Saving the MP3 to your computer…";
+      if (item.format === "mp3") return "Saving the MP3 and adding it to your projects…";
       return item.detail ? `Adding to your projects: ${item.detail}…` : "Adding to your projects…";
     case "error":
       return item.error ?? "Something went wrong";
@@ -51,7 +51,8 @@ export function youtubeStageText(item: YouTubeImport): string {
  * helper, save a copy to the folder the visitor chose (or, with none, to Downloads as a
  * normal browser download), and store it on this device as a new project. The project is only written once the
  * file has fully arrived, so a failed or cancelled fetch leaves nothing behind.
- * An MP3 can't be edited here, so it stops at the Downloads copy.
+ * An MP3 becomes a project too: an Instagram post with the song already on its music track,
+ * ready for a picture (a flyer, a poster) to be added in the editor.
  */
 export function useYouTubeImports(onImported: (projectId: string) => void) {
   const [items, setItems] = useState<YouTubeImport[]>([]);
@@ -87,19 +88,19 @@ export function useYouTubeImports(onImported: (projectId: string) => void) {
         const { file, title } = await downloadYouTube(media, { format, height: quality }, (loaded, total) => patch(key, { stage: "saving", loaded, total }), abort.signal);
         patch(key, { stage: "importing", title });
         // The file is complete here, so it is saved straight away (into the chosen folder, with
-        // no dialog, or as a normal download): an MP3 is done at that point; an MP4 carries on
-        // to become a project as well.
+        // no dialog, or as a normal download); then it becomes a project as well.
         setSavedTo(await saveDownload(file, await folder));
-        if (format === "mp3") {
-          drop(key);
-          return;
-        }
-        const project = createProject({ name: title });
+        const project = createProject({ name: title, ...(format === "mp3" ? { formatId: "ig-portrait" } : {}) });
         await saveProject(project);
         try {
-          const { clip, blob } = await importVideo(file, project.id, (detail) => patch(key, { detail }));
-          project.clips.push(clip);
-          await updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
+          if (format === "mp3") {
+            const { assetId, duration, name } = await importAudio(file, project.id);
+            project.music = { assetId, name, duration, volume: 1, fadeIn: 0, fadeOut: 0, startOffset: 0, loop: false };
+          } else {
+            const { clip, blob } = await importVideo(file, project.id, (detail) => patch(key, { detail }));
+            project.clips.push(clip);
+            await updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
+          }
           await saveProject(project);
         } catch (e) {
           // Never leave an empty project behind on the start screen.

@@ -13,7 +13,7 @@ export function DownloadingNotice({ format, folder = null, className }: { format
       <Hourglass size={20} className="mt-0.5 shrink-0 text-sys-orange" aria-hidden />
       <p className="text-[15px] leading-normal text-white">
         <b className="font-bold">Please wait. Don&apos;t close this page or open anything.</b>{" "}
-        {format === "mp3" ? `The MP3 will land in ${where}.` : `The video will land in ${where} and show up under Your projects.`}
+        {format === "mp3" ? `The MP3 will land in ${where} and show up under Your projects.` : `The video will land in ${where} and show up under Your projects.`}
       </p>
     </div>
   );

@@ -425,9 +425,9 @@ export function VideoCanvas() {
         {project.clips.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl bg-sys-gray6 text-center text-label-2">
             <Film size={36} className="text-sys-gray3" />
-            <p className="text-[13px]">Import a recording to start</p>
+            <p className="text-[13px]">{project.music ? "Your song is ready. Add a picture to go with it" : "Import a recording to start"}</p>
             <Button variant="primary" size="sm" className="pointer-events-auto" onClick={() => setTool("clips")}>
-              Add clips
+              {project.music ? "Add a picture" : "Add clips"}
             </Button>
           </div>
         )}

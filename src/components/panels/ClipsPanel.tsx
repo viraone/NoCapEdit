@@ -124,7 +124,7 @@ export function ClipsPanel() {
         }
       >
         {project.clips.length === 0 ? (
-          <EmptyState icon={<Film size={22} />} title="No clips yet" description="Import a recording to build your reel." />
+          <EmptyState icon={<Film size={22} />} title="No clips yet" description={project.music ? "Add a picture or a recording. A picture is held on screen for the whole song." : "Import a recording to build your reel."} />
         ) : (
           <ul className="space-y-1.5">
             {layouts.map((layout, i) => {

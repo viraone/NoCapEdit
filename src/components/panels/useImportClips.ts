@@ -4,6 +4,8 @@ import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { isImageFile, toClipFile } from "@/lib/media/stillVideo";
 import { uid } from "@/lib/utils/id";
 import { importErrorText } from "@/lib/media/importFeedback";
+import { pictureFit } from "@/lib/models/pictureFit";
+import { useStillLength } from "./useStillLength";
 
 /**
  * Shared "add video files" flow used by the Clips panel and the top bar. The
@@ -14,6 +16,7 @@ export function useImportClips() {
   const status = useEditor((s) => s.importStatus);
   // In the store, so a failure from the top bar shows in the Clips panel too.
   const error = useEditor((s) => s.importError);
+  const stillLength = useStillLength();
 
   const onFiles = async (files: File[]) => {
     const state = useEditor.getState();
@@ -55,6 +58,10 @@ export function useImportClips() {
     if (!current()) return;
     state.setImportError(importErrorText(failures));
     if (added) state.setNotice(`Added ${added} clip${added === 1 ? "" : "s"}.`);
+    // A picture added after the song holds on screen for the whole song, as when a song is added after the picture.
+    const now = useEditor.getState().project;
+    const fit = added && now ? pictureFit(now.clips, now.music) : null;
+    if (fit?.known) void stillLength.run(fit.clip.id, fit.seconds);
   };
 
   return { onFiles, status, error, busy: !!status };

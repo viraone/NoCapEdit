@@ -181,7 +181,7 @@ export function YouTubeBar({
           <p className="mt-2 flex items-center gap-2 rounded-xl border border-sys-green/50 bg-sys-green/10 px-3 py-2 text-sm font-semibold text-sys-green" role="status" data-youtube-done>
             <CircleCheck size={16} className="shrink-0" />
             <span>
-              Done. {done.format === "mp3" ? `The MP3 is in your ${savedTo ? `${savedTo} folder` : "Downloads folder"}.` : <>&ldquo;{done.title}&rdquo; is in your {savedTo ? `${savedTo} folder` : "Downloads folder"} and ready under <a href="#projects" className="underline">Your projects</a>.</>}
+              Done. {done.format === "mp3" ? <>The MP3 is in your {savedTo ? `${savedTo} folder` : "Downloads folder"} and ready under <a href="#projects" className="underline">Your projects</a>, where you can add a picture.</> : <>&ldquo;{done.title}&rdquo; is in your {savedTo ? `${savedTo} folder` : "Downloads folder"} and ready under <a href="#projects" className="underline">Your projects</a>.</>}
             </span>
           </p>
         )}
@@ -213,7 +213,7 @@ export function YouTubeBar({
                       role="radio"
                       aria-checked={chosen === f}
                       aria-disabled={unavailable || undefined}
-                      title={unavailable ? "Instagram Reels come out as MP4 only" : f === "mp4" ? "The video: saved to your Downloads and opened as a project you can edit here" : "YouTube sound only, saved to your Downloads"}
+                      title={unavailable ? "Instagram Reels come out as MP4 only" : f === "mp4" ? "The video: saved to your Downloads and opened as a project you can edit here" : "YouTube sound only: saved to your Downloads and opened as a project where you can add a picture"}
                       onClick={() => {
                         if (!unavailable) setFormat(f);
                       }}
@@ -239,7 +239,7 @@ export function YouTubeBar({
                   ))}
                 </select>
               )}
-              {chosen === "mp3" && <span className="text-xs text-label-3">Sound only, to Downloads</span>}
+              {chosen === "mp3" && <span className="text-xs text-label-3">Sound only, also opens to edit</span>}
             </div>
           </div>
         )}
