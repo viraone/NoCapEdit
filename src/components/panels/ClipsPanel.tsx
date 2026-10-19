@@ -7,8 +7,9 @@ import { useProject } from "./shared";
 import { useImportClips } from "./useImportClips";
 import { layoutClips } from "@/lib/models/timeline";
 import { unusedAssetIds } from "@/lib/models/project";
+import { assetsUsedByVersions } from "@/lib/storage/versions";
 import { captionsClearedNotice, duplicateClip, moveClip, removeClip, splitClipAt } from "@/lib/models/clipOps";
-import { deleteAsset, listProjectAssets } from "@/lib/storage/db";
+import { deleteAsset, listProjectAssets, listVersions } from "@/lib/storage/db";
 import { formatTime } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
@@ -44,10 +45,13 @@ export function ClipsPanel() {
   const cleanup = async () => {
     if (useEditor.getState().importStatus) return;
     const assets = await listProjectAssets(project.id);
+    // A saved version still needs its files: cleanup only removes what neither the project nor a version uses.
+    const kept = assetsUsedByVersions(await listVersions(project.id));
     // Read the project after the await: the render-time copy can be stale by now.
     const { project: now, pendingAssetIds } = useEditor.getState();
     if (!now || now.id !== project.id) return;
-    const unused = unusedAssetIds(assets.map((a) => a.id), now, pendingAssetIds);
+    const unused = unusedAssetIds(assets.map((a) => a.id), now, [...pendingAssetIds, ...kept]);
+    const heldByVersions = unusedAssetIds(assets.map((a) => a.id), now, pendingAssetIds).filter((id) => kept.has(id)).length;
     let n = 0;
     for (const id of unused) {
       await deleteAsset(id);
@@ -55,7 +59,8 @@ export function ClipsPanel() {
       n++;
     }
     useEditor.setState({ past: [], future: [] });
-    setCleanupNote(n ? `Removed ${n} unused file${n === 1 ? "" : "s"}` : "Nothing to clean up");
+    const held = heldByVersions ? ` (${heldByVersions} kept for saved versions)` : "";
+    setCleanupNote(n ? `Removed ${n} unused file${n === 1 ? "" : "s"}${held}` : `Nothing to clean up${held}`);
     setTimeout(() => setCleanupNote(null), 2500);
   };
 

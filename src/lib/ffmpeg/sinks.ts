@@ -72,12 +72,12 @@ export function createBlobSink(name: string, type = "video/mp4"): OutputSink {
  * user gesture (e.g. the Export button's click handler). Returns null when the
  * API is unavailable or the dialog was dismissed.
  */
-export async function requestDiskSink(suggestedName: string): Promise<OutputSink | null> {
+export async function requestDiskSink(suggestedName: string, type: { description: string; accept: Record<string, string[]> } = { description: "MP4 video", accept: { "video/mp4": [".mp4"] } }): Promise<OutputSink | null> {
   if (!supportsDiskStreaming()) return null;
   const picker = (window as unknown as { showSaveFilePicker: SaveFilePicker }).showSaveFilePicker;
   let handle: FileSystemFileHandleLike;
   try {
-    handle = await picker({ suggestedName, types: [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }] });
+    handle = await picker({ suggestedName, types: [type] });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") return null;
     throw e;

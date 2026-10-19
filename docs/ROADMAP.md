@@ -31,4 +31,9 @@ deliberately left as a plan, with the reason.
 | Lottie / animated lower thirds | Done | dotlottie-web with deterministic `setFrame`; animated text entrances |
 | Background removal (stickers) | Done | `background-removal` pipeline (`Xenova/modnet`, 25 MB fp32 on WebGPU / 7 MB q8 on WASM) in the ML worker; RMBG-1.4 no longer loads in Transformers.js 4 |
 | Video matting (subject cut-out) | Done (offline pass) | masks at 4–15 fps stored as a compressed asset; compositor applies nearest mask; "behind the subject" layer |
+| NLE timeline export (FCPXML, xmeml) | Done | `lib/export/nle.ts` + `nleBundle.ts`. FCPXML 1.10 is checked against Apple's DTD in development; xmeml follows the Final Cut Pro 7 XML layout Premiere reads. The cut between two clips sits in the middle of a dissolve so every clip keeps its project time. Not tested in the editors themselves. Left out: colour looks, stickers/Lottie, GPU transitions (become cross dissolves), reframe keyframes (one fixed position per clip), cut/looped music (first piece / once) |
+| GIF export | Done | `lib/export/altFormats.ts`: the video is rendered small as an MP4, then `palettegen` + `paletteuse`. Capped at 30 s |
+| Transparent video | Done | Captions/text/stickers drawn per frame on a clear canvas, encoded to WebM (VP8 + alpha) or ProRes 4444 MOV. WebM is VP8 because the VP9 encoder in `@ffmpeg/core` crashes with "memory access out of bounds" on any frame size. Subject cut-out is not included |
+| Pre-export check | Done | `lib/export/preflight.ts`; media readability, fonts that did not load, text and captions cut off by the frame, things that never show, untranslated captions |
+| Named versions | Done | `versions` store in IndexedDB (DB version 2); snapshots share the project's media, cleanup keeps what they use |
 | In-browser Stable Diffusion B-roll | Not planned | 1.5 GB+ model, desktop GPU only, seconds per image; not a fit for the zero-cost mobile-friendly goal |

@@ -4,6 +4,7 @@ import { normalizeProject, type VideoProject } from "@/lib/models/project";
 import { rippleTimeline } from "@/lib/models/ripple";
 import { getProject, listProjectAssets, saveProject } from "@/lib/storage/db";
 import { engine } from "@/lib/playback/engine";
+import { sameProject } from "@/lib/utils/same";
 import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/components/timeline/dockLayout";
 
 export type ToolId = "clips" | "trim" | "subtitles" | "transcript" | "style" | "text" | "picture" | "music" | "reels" | "post" | "reframe" | "export";
@@ -86,17 +87,7 @@ export interface EditorState {
 
 const MAX_HISTORY = 60;
 
-/** Structural equality over the plain JSON values a project is made of. */
-export function sameProject(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => sameProject(v, b[i]));
-  const ka = Object.keys(a as object);
-  const kb = Object.keys(b as object);
-  if (ka.length !== kb.length) return false;
-  return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && sameProject((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
-}
+export { sameProject };
 
 /** Same project content; the save stamp, which every update bumps, is ignored. */
 function sameEdit(a: VideoProject, b: VideoProject): boolean {

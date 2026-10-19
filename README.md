@@ -32,6 +32,10 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
   just those pitches out, live in the preview (Web Audio) and in the export (ffmpeg
   `bandreject`). Stored on the clip as the optional `feedbackNotches` list of Hz.
 - Undo/redo, autosave to IndexedDB, project manager with thumbnails, storage usage.
+- **Saved versions** (Project menu): name a snapshot of the project ("Before the new intro") and go
+  back to it later. Going back first keeps what you had as a version, so nothing is lost; the media is
+  shared, not copied, and cleanup never removes a file a version still uses. Versions travel in
+  `.nocap` backups.
 - **Magic Cut**: one click removes filler words (from Whisper word timings) and dead
   air (from the waveform), re-timing captions, overlays and voice-overs.
 - **Highlight finder**: TF-IDF salience plus delivery cues suggests the best 15/30/60 s
@@ -73,6 +77,17 @@ user, only static hosting (free tier on Vercel, Netlify, Cloudflare Pages…).
   voices; plain-text transcript.
 
 **Export**
+- **Check before export**: the Export panel reads the project first and lists what would go wrong
+  (media missing or unreadable in this browser's storage: blocks the export) or look wrong (text or
+  captions running past the edge of the picture, fonts that did not load, things that start after the
+  video ends, captions with no translation), each with a "Show me" button.
+- **GIF**: 320/480/640 px, 10-20 fps, up to 30 s, palette made from the clip itself.
+- **Transparent video**: captions, text and stickers on a clear background, as WebM (VP8 with
+  alpha) or MOV (ProRes 4444), for laying over footage in an editor.
+- **Editor timeline**: a zip with the project as FCPXML 1.10 (Final Cut Pro, DaVinci Resolve) and xmeml
+  (Premiere Pro, DaVinci Resolve) plus the original media, so nothing is re-encoded. Carries cuts,
+  trims, speed, volume, zoom/pan, dissolves, music, voice-overs, noise-removed audio, captions and text as
+  titles; the READ ME in the zip lists what stays behind (colour looks, stickers, GPU transitions).
 - ffmpeg.wasm inside a Web Worker, multi-threaded when the page is cross-origin
   isolated. Any resolution up to 4K/2160p, 24/30/60 fps, H.264 or H.265, CRF or
   target-bitrate rate control, x264/x265 presets.

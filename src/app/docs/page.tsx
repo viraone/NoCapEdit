@@ -93,7 +93,7 @@ export default function DocsPage() {
         </Section>
 
         <Section id="edit" title="3. Open and edit">
-          <p>Click the project&apos;s card (the picture or the title) to open the editor. The tools run down the left side: Clips, Trim, Subtitles, Style, Text, Picture, Music, Reels, Export. Everything autosaves to this browser, so you can close the tab and come back later.</p>
+          <p>Click the project&apos;s card (the picture or the title) to open the editor. The tools run down the left side: Clips, Trim, Subtitles, Style, Text, Picture, Music, Reels, Export. Everything autosaves to this browser, so you can close the tab and come back later. To keep a version you may want back, open <b className="text-white">Project</b> then <b className="text-white">Saved versions</b>, give it a name and save; going back to it later keeps what you had too.</p>
           <Shot src="project-card.png" alt="A project card under Your projects, showing the thumbnail, length, name and clip count" width={1200} height={700} />
           <p>
             A good order for a long landscape video: <b className="text-white">Reels</b> to cut out the best moments, then <b className="text-white">Subtitles</b> and <b className="text-white">Style</b> on each reel, then <b className="text-white">Export</b>.
@@ -182,6 +182,12 @@ export default function DocsPage() {
         <Section id="export" title="7. Export">
           <p>
             Open the <b className="text-white">Export</b> tool, keep the defaults (1080p, 30 fps, H.264) unless the platform asks for something else, and click <b className="text-white">Export video</b>. The MP4 lands in your Downloads folder, ready to post to Reels, TikTok or Shorts. Long videos render in segments, so memory stays flat even for a 20-minute source.
+          </p>
+          <p>
+            Above the settings, <b className="text-white">Check before export</b> reads the project and says what would go wrong: a file the browser lost (the export cannot run until you add it again), text or captions that run past the edge of the picture, fonts that did not load, or things that start after the video ends. <b className="text-white">Show me</b> takes you to each one.
+          </p>
+          <p>
+            Under <b className="text-white">More ways to export</b>: a <b className="text-white">GIF</b> (up to 30 seconds), a <b className="text-white">transparent video</b> of just the captions, text and stickers (WebM or ProRes MOV) to lay over footage, and an <b className="text-white">editor timeline</b>, a zip with your cuts, music and captions for Final Cut Pro, Premiere Pro or DaVinci Resolve plus your original media. Unzip it, open the .fcpxml (Final Cut Pro, DaVinci Resolve) or the .xml (Premiere Pro), and use Relink if the editor asks where the media is.
           </p>
           <p className="text-sm text-label-3">
             Something not working? The start page lists what your browser supports. Chrome or Edge on a laptop gives the fastest captions (WebGPU) and exports (multi-threaded).

@@ -38,8 +38,19 @@ export interface ProjectThumbRecord {
   blob: Blob;
 }
 
+/** A named snapshot of a project the visitor saved on purpose ("Before the reshoot"). */
+export interface VersionRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  createdAt: number;
+  /** The whole project as it was. Its media stays in the assets store, which cleanup leaves alone while a version uses it. */
+  project: VideoProject;
+}
+
 interface ReelFlowDB extends DBSchema {
   projects: { key: string; value: VideoProject; indexes: { "by-updated": number } };
+  versions: { key: string; value: VersionRecord; indexes: { "by-project": string } };
   assets: { key: string; value: AssetRecord; indexes: { "by-project": string } };
   peaks: { key: string; value: PeaksRecord };
   thumbs: { key: string; value: ThumbsRecord };
@@ -47,7 +58,7 @@ interface ReelFlowDB extends DBSchema {
 }
 
 const DB_NAME = "reelflow";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<ReelFlowDB>> | null = null;
 
@@ -57,14 +68,26 @@ let openDb: Awaited<ReturnType<typeof openDB<ReelFlowDB>>> | null = null;
 function getDb() {
   if (!dbPromise) {
     dbPromise = openDB<ReelFlowDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        const projects = db.createObjectStore("projects", { keyPath: "id" });
-        projects.createIndex("by-updated", "updatedAt");
-        const assets = db.createObjectStore("assets", { keyPath: "id" });
-        assets.createIndex("by-project", "projectId");
-        db.createObjectStore("peaks", { keyPath: "assetId" });
-        db.createObjectStore("thumbs", { keyPath: "assetId" });
-        db.createObjectStore("projectThumbs", { keyPath: "projectId" });
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const projects = db.createObjectStore("projects", { keyPath: "id" });
+          projects.createIndex("by-updated", "updatedAt");
+          const assets = db.createObjectStore("assets", { keyPath: "id" });
+          assets.createIndex("by-project", "projectId");
+          db.createObjectStore("peaks", { keyPath: "assetId" });
+          db.createObjectStore("thumbs", { keyPath: "assetId" });
+          db.createObjectStore("projectThumbs", { keyPath: "projectId" });
+        }
+        if (oldVersion < 2) {
+          const versions = db.createObjectStore("versions", { keyPath: "id" });
+          versions.createIndex("by-project", "projectId");
+        }
+      },
+      // Another tab running a newer build wants to upgrade: let go so it is not stuck waiting for this one.
+      blocking() {
+        openDb?.close();
+        openDb = null;
+        dbPromise = null;
       },
     });
     dbPromise.then((db) => (openDb = db)).catch(() => undefined);
@@ -99,10 +122,12 @@ export async function deleteProject(id: string): Promise<void> {
   const reels = (await db.getAll("projects")).filter((p) => p.sourceProjectId === id && p.id !== id);
   for (const r of reels) await deleteProject(r.id);
   const assets = await db.getAllKeysFromIndex("assets", "by-project", id);
-  const tx = db.transaction(["projects", "assets", "peaks", "thumbs", "projectThumbs"], "readwrite");
+  const versions = await db.getAllKeysFromIndex("versions", "by-project", id);
+  const tx = db.transaction(["projects", "assets", "peaks", "thumbs", "projectThumbs", "versions"], "readwrite");
   await Promise.all([
     tx.objectStore("projects").delete(id),
     tx.objectStore("projectThumbs").delete(id),
+    ...versions.map((v) => tx.objectStore("versions").delete(v)),
     ...assets.flatMap((a) => [
       tx.objectStore("assets").delete(a),
       tx.objectStore("peaks").delete(a),
@@ -140,6 +165,25 @@ export async function duplicateProject(id: string, newId: string, name: string):
   if (thumb) await tx.objectStore("projectThumbs").put({ projectId: newId, blob: thumb.blob });
   await tx.done;
   return normalizeProject(copy);
+}
+
+// ---------- versions ----------
+
+/** The project's saved versions, newest first. */
+export async function listVersions(projectId: string): Promise<VersionRecord[]> {
+  const db = await getDb();
+  const all = await db.getAllFromIndex("versions", "by-project", projectId);
+  return all.map((v) => ({ ...v, project: normalizeProject(v.project) })).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function putVersion(record: VersionRecord): Promise<void> {
+  const db = await getDb();
+  await db.put("versions", record);
+}
+
+export async function deleteVersion(id: string): Promise<void> {
+  const db = await getDb();
+  await db.delete("versions", id);
 }
 
 // ---------- assets ----------

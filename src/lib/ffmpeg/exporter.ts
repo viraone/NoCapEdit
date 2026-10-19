@@ -45,7 +45,8 @@ import { AAC_PRIMING_SECONDS, buildFilterGraph, buildInputArgs, splitMusicSeek, 
 import { planSegments, segmentGrid } from "./segments";
 import { createBlobSink, type OutputSink } from "./sinks";
 
-export type ExportResolution = "native" | "720" | "1080" | "1440" | "2160";
+/** The numbers are the short side in pixels; "360" and "480" are for the GIF export and are not offered as video presets. */
+export type ExportResolution = "native" | "360" | "480" | "720" | "1080" | "1440" | "2160";
 
 export interface ExportOptions {
   resolution: ExportResolution;

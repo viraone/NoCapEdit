@@ -5,7 +5,7 @@
  */
 import { Zip, ZipPassThrough, ZipDeflate, Unzip, UnzipInflate, UnzipPassThrough, strToU8, strFromU8 } from "fflate";
 import { normalizeProject, remapAssetIds, type VideoProject } from "@/lib/models/project";
-import { getProject, listProjectAssets, putAsset, saveProject, getAsset, putPeaks, putThumbs } from "./db";
+import { getProject, listProjectAssets, listVersions, putAsset, putVersion, saveProject, getAsset, putPeaks, putThumbs, type VersionRecord } from "./db";
 import { uid } from "@/lib/utils/id";
 import { decodeAudio, peaksFromSamples } from "@/lib/ffmpeg/waveform";
 import { generateFilmstrip } from "@/lib/media/thumbnails";
@@ -51,6 +51,9 @@ export async function exportBackup(projectId: string, sink: BackupSink, onProgre
   };
   text("manifest.json", JSON.stringify(manifest, null, 2));
   text("project.json", JSON.stringify(project));
+  // Saved versions travel with the project (they point at the same media files).
+  const versions = await listVersions(projectId);
+  if (versions.length) text("versions.json", JSON.stringify(versions.map((v) => ({ name: v.name, createdAt: v.createdAt, project: v.project }))));
   const total = assets.reduce((s, a) => s + a.size, 0) || 1;
   let done = 0;
   for (const a of assets) {
@@ -70,6 +73,7 @@ export async function importBackup(file: File, onProgress?: (message: string) =>
   const newId = uid("prj");
   let manifest: Manifest | null = null;
   let projectJson = "";
+  let versionsJson = "";
   const assetParts = new Map<string, Uint8Array[]>();
   const unzip = new Unzip();
   unzip.register(UnzipInflate);
@@ -82,6 +86,7 @@ export async function importBackup(file: File, onProgress?: (message: string) =>
       if (!final) return;
       if (entry.name === "manifest.json") manifest = JSON.parse(strFromU8(concat(chunks)));
       else if (entry.name === "project.json") projectJson = strFromU8(concat(chunks));
+      else if (entry.name === "versions.json") versionsJson = strFromU8(concat(chunks));
       else if (entry.name.startsWith("assets/")) assetParts.set(entry.name.slice(7), chunks);
     };
     entry.start();
@@ -117,6 +122,17 @@ export async function importBackup(file: File, onProgress?: (message: string) =>
     if (a.type.startsWith("video/")) videoAssets.push({ id, blob });
   }
   await saveProject(project);
+  if (versionsJson) {
+    try {
+      const saved = JSON.parse(versionsJson) as Pick<VersionRecord, "name" | "createdAt" | "project">[];
+      for (const v of saved) {
+        const snapshot = remapAssetIds(normalizeProject({ ...v.project, id: newId }), remap);
+        await putVersion({ id: uid("ver"), projectId: newId, name: v.name, createdAt: v.createdAt, project: snapshot });
+      }
+    } catch {
+      /* versions are a bonus: a damaged list must not fail the restore */
+    }
+  }
 
   // Rebuild caches (waveform peaks and filmstrips) in the background.
   void (async () => {

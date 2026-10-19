@@ -6,6 +6,7 @@ import { useProject } from "./shared";
 import { getFormat } from "@/lib/models/formats";
 import { projectDuration } from "@/lib/models/timeline";
 import { getAsset } from "@/lib/storage/db";
+import { loadImages } from "@/lib/export/images";
 import { exportProject, plannedSegments, DEFAULT_EXPORT_OPTIONS, outputFrame, type ExportOptions, type ExportProgress, type ExportResult } from "@/lib/ffmpeg/exporter";
 import { requestDiskSink, supportsDiskStreaming, type OutputSink } from "@/lib/ffmpeg/sinks";
 import { setSingleThreadPreference, singleThreadPreferred, subscribeSingleThreadPreference, supportsMultithread, type FFmpegInfo } from "@/lib/ffmpeg/loader";
@@ -21,27 +22,8 @@ import { Select } from "@/components/ui/Select";
 import { Toggle } from "@/components/ui/Toggle";
 import { Slider } from "@/components/ui/Slider";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-
-async function loadImages(assetIds: string[]): Promise<Map<string, HTMLImageElement>> {
-  const map = new Map<string, HTMLImageElement>();
-  await Promise.all(
-    assetIds.map(async (id) => {
-      const asset = await getAsset(id);
-      if (!asset) return;
-      const url = URL.createObjectURL(asset.blob);
-      await new Promise<void>((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          map.set(id, img);
-          resolve();
-        };
-        img.onerror = () => resolve();
-        img.src = url;
-      });
-    }),
-  );
-  return map;
-}
+import { ExportCheck, usePreflight } from "./ExportCheck";
+import { ExportMore } from "./ExportMore";
 
 const PRESET_CHOICES: { id: X264Preset; label: string }[] = [
   { id: "ultrafast", label: "Fastest" },
@@ -75,6 +57,11 @@ export function ExportPanel() {
   /** The engine that actually ran (or is running) the latest export. */
   const [engine, setEngine] = useState<FFmpegInfo | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** A GIF, transparent video or timeline is being made in the section below. */
+  const [moreBusy, setMoreBusy] = useState(false);
+  const preflight = usePreflight(project, { captionSource: opts.captionSource, includeCaptions: opts.includeCaptions, includeOverlays: opts.includeOverlays });
+  const blocker = preflight.issues?.find((i) => i.severity === "error");
+  const blocked = blocker ? `${blocker.title}. ${blocker.detail}` : null;
   const toDisk = toDiskChoice ?? disk;
   const setToDisk = setToDiskChoice;
 
@@ -96,6 +83,11 @@ export function ExportPanel() {
   const run = async () => {
     setError(null);
     setResult(null);
+    // The check above already read the media; an export that cannot finish is not started.
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
     // The save dialog must open inside the click gesture, before any await.
     let sink: OutputSink | null = null;
     if (toDisk) {
@@ -173,6 +165,7 @@ export function ExportPanel() {
           </>
         }
       />
+      <ExportCheck state={preflight} />
       <PanelSection title="Output">
         <Field label="Resolution" right={`${frame.width}×${frame.height}`}>
           <Select value={opts.resolution} onChange={(e) => set({ resolution: e.target.value as ExportOptions["resolution"] })} disabled={running}>
@@ -311,7 +304,7 @@ export function ExportPanel() {
           </p>
         </div>
         {!running ? (
-          <Button variant="primary" className="w-full" onClick={run} disabled={!project.clips.length}>
+          <Button variant="primary" className="w-full" onClick={run} disabled={!project.clips.length || moreBusy}>
             <Download size={14} /> Export MP4
           </Button>
         ) : (
@@ -357,6 +350,7 @@ export function ExportPanel() {
           </div>
         )}
       </PanelSection>
+      <ExportMore project={project} assetUrls={assetUrls} opts={opts} busy={running || moreBusy} setBusy={setMoreBusy} blocked={blocked} />
     </>
   );
 }

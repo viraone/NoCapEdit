@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2 } from "lucide-react";
+import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useImportClips } from "@/components/panels/useImportClips";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Toggle } from "@/components/ui/Toggle";
+import { VersionsModal } from "./VersionsModal";
 import { cx } from "@/lib/utils/cx";
 
 export function TopBar() {
@@ -20,6 +21,7 @@ export function TopBar() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
@@ -146,6 +148,9 @@ export function TopBar() {
               <button type="button" role="menuitem" className="flex w-full items-center gap-[10px] rounded-lg px-[10px] py-[8px] text-left hover:bg-sys-gray4 disabled:opacity-50" disabled={!project.clips.length} onClick={() => (setMenuOpen(false), useEditor.getState().requestReels())}>
                 <Clapperboard size={16} /> Make reels
               </button>
+              <button type="button" role="menuitem" className="flex w-full items-center gap-[10px] rounded-lg px-[10px] py-[8px] text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), setVersionsOpen(true))} data-versions-open>
+                <History size={16} /> Saved versions…
+              </button>
             </div>
           )}
         </div>
@@ -158,6 +163,7 @@ export function TopBar() {
             setReplaceFile(f);
           }
         }} />
+        <VersionsModal open={versionsOpen} onClose={() => setVersionsOpen(false)} />
         <Modal open={!!replaceFile} onClose={() => !replacing && setReplaceFile(null)} title="Replace entire video?">
           <p className="text-sm text-label-2">
             “{replaceFile?.name}” becomes the only clip in <b className="text-white">{project.name}</b>. The name, frame format, music, text and stickers stay. Undo brings the old video back.
