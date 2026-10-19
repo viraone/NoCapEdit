@@ -78,7 +78,7 @@ describe("readStoredDockHeight", () => {
       mem.set("reelflow.timelineHeight", String(DOCK_MAX_H));
       expect(readStoredDockHeight()).toBe(320); // the window leaves only 320 px for the dock
       g.localStorage = { getItem: () => { throw new Error("blocked"); } };
-      expect(readStoredDockHeight(260)).toBe(260);
+      expect(readStoredDockHeight(300)).toBe(300);
     } finally {
       g.localStorage = saved.localStorage;
       g.window = saved.window;

@@ -53,7 +53,7 @@ export function MusicLane({ music, pxPerSec, shown, used, duration }: { music: M
   };
 
   return (
-    <div ref={root} className="absolute top-1 h-5" style={{ width: shownPx }} data-music-block onPointerLeave={() => setCutX(null)}>
+    <div ref={root} className="absolute inset-y-1" style={{ width: shownPx }} data-music-block onPointerLeave={() => setCutX(null)}>
       {layout.map(({ start, end }, i) => {
         const left = start * pxPerSec;
         const width = Math.max(6, (end - start) * pxPerSec);

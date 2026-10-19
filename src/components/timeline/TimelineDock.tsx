@@ -19,7 +19,7 @@ import { toSourceTime } from "@/lib/models/timeline";
 import { stretchOf, type Slack } from "@/lib/edit/reelStretch";
 import { AudioWaveform } from "./AudioWaveform";
 import { useReelStretch, type InOut, type TrimDrag } from "./useReelStretch";
-import { RULER_H, CUE_H, MUSIC_H, DOCK_CHROME_H, STRIP_OVERSCAN, drawRange, videoLaneHeight, visibleWindow } from "./dockLayout";
+import { RULER_H, CUE_H, DOCK_CHROME_H, STRIP_OVERSCAN, drawRange, videoLaneHeight, visibleWindow } from "./dockLayout";
 
 const EDGE = 7;
 /** Below this width (px) a caption chip has no room for words: it is drawn as a plain bar. */
@@ -510,7 +510,9 @@ export function TimelineDock() {
   const contentW = Math.max(viewW, Math.max(duration, musicShown) * pxPerSec + 160);
   // The audio lane matches the video lane, so waveforms read at the same scale as the filmstrip.
   const audioH = videoH;
-  const lanesH = RULER_H + CUE_H + videoH + audioH + MUSIC_H;
+  /** The music lane is as tall as the video lane, so its bar is the same size as a clip block. */
+  const musicH = videoH;
+  const lanesH = RULER_H + CUE_H + videoH + audioH + musicH;
   // Fit the video; with no video yet, fit the song.
   const fit = () => {
     const len = duration > 0 ? duration : musicShown;
@@ -625,7 +627,7 @@ export function TimelineDock() {
           <div className="flex items-center gap-1 px-2" style={{ height: audioH }}>
             <AudioLines size={13} /> Audio
           </div>
-          <div className="flex items-center gap-1 px-2" style={{ height: MUSIC_H }}>
+          <div className="flex items-center gap-1 px-2" style={{ height: musicH }}>
             <Music size={13} /> Music
           </div>
         </div>
@@ -762,7 +764,7 @@ export function TimelineDock() {
                 );
               })}
             </div>
-            <div className="relative" style={{ height: MUSIC_H }}>
+            <div className="relative" style={{ height: musicH }}>
               {project.voiceovers.map((vo) => (
                 <div
                   key={vo.id}
