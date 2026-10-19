@@ -118,9 +118,15 @@ export function instagramSelector() {
   return "bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b";
 }
 
-/** yt-dlp format selector for sound only: the AAC track, else the best audio there is. ffmpeg turns it into MP3. */
+/**
+ * yt-dlp format selector for sound only: the AAC track, else the best audio there is, else the
+ * best video that carries sound (ffmpeg takes the sound out of it). The last step matters on a
+ * data-centre address, where YouTube may offer no sound-only tracks at all but still serves a
+ * combined MP4; without it yt-dlp stops with "Requested format is not available". ffmpeg turns
+ * whichever it gets into MP3.
+ */
 export function audioSelector() {
-  return "ba[ext=m4a]/ba";
+  return "ba[ext=m4a]/ba/b[ext=mp4]/b";
 }
 
 /**

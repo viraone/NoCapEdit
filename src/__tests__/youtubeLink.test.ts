@@ -5,6 +5,7 @@ import {
   availableHeights,
   canonicalMediaUrl,
   formatFor as helperFormatFor,
+  audioSelector,
   formatSelector,
   instagramSelector,
   instagramShortcode as helperShortcode,
@@ -128,6 +129,14 @@ describe("youtube helper", () => {
     expect(mp3.slice(mp3.indexOf("--audio-format"), mp3.indexOf("--audio-format") + 2)).toEqual(["--audio-format", "mp3"]);
     expect(mp3[1]).toMatch(/^ba\[ext=m4a\]/);
     expect(mp3).not.toContain("--merge-output-format");
+  });
+
+  it("falls back to a combined MP4 for MP3 when YouTube offers no sound-only track", () => {
+    // From a data-centre address YouTube can answer with one 360p MP4 that has sound and nothing else;
+    // "ba[ext=m4a]/ba" alone then fails with "Requested format is not available".
+    const steps = audioSelector().split("/");
+    expect(steps.slice(0, 2)).toEqual(["ba[ext=m4a]", "ba"]);
+    expect(steps.slice(2)).toEqual(["b[ext=mp4]", "b"]);
   });
 
   it("lists the heights that have an H.264 rendition, best first", () => {
