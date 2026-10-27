@@ -10,7 +10,8 @@ import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/compon
 export type ToolId = "clips" | "trim" | "subtitles" | "transcript" | "style" | "text" | "picture" | "music" | "reels" | "post" | "reframe" | "export";
 
 export interface Selection {
-  kind: "clip" | "cue" | "overlay" | "voiceover";
+  kind: "clip" | "cue" | "overlay" | "voiceover" | "music";
+  /** For music: the number of the selected piece of the song (0 when it is in one piece). */
   id: string;
 }
 

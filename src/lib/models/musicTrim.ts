@@ -172,6 +172,20 @@ export function removeMusicPiece(m: TrimmedMusic, index: number): boolean {
   return true;
 }
 
+/**
+ * What Remove and Delete do to the selected part of the music: take out that piece when the song is cut
+ * into several, otherwise the whole song. Says which it did.
+ */
+export function removeMusicSelection<T extends TrimmedMusic>(project: { music: T | null }, pieceIndex: number): "piece" | "song" | null {
+  if (!project.music) return null;
+  if (removeMusicPiece(project.music, pieceIndex)) return "piece";
+  project.music = null;
+  return "song";
+}
+
+/** The note shown after removing music. */
+export const removedMusicNotice = (what: "piece" | "song") => (what === "piece" ? "Removed that piece of the music and closed the gap. Undo brings it back." : "Removed the music. Undo brings it back.");
+
 /** Removes everything before project time t (the music then starts there). False when nothing would be left. */
 export function cutMusicBefore(m: TrimmedMusic, t: number): boolean {
   if (t < 0.05 || musicSpan(m) - t < MIN_MUSIC_SECONDS) return false;

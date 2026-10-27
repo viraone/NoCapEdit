@@ -109,7 +109,7 @@ export function VideoCanvas() {
     rectsRef.current = rects;
     const sel = selectionRef.current;
     let next: Rect | null = null;
-    if (sel && sel.kind !== "clip") next = rects.find((r) => r.id === sel.id)?.rect ?? null;
+    if (sel && sel.kind !== "clip" && sel.kind !== "music") next = rects.find((r) => r.id === sel.id)?.rect ?? null;
     const prev = selRectRef.current;
     const changed =
       (!prev && next) ||
@@ -309,7 +309,7 @@ export function VideoCanvas() {
     e.stopPropagation();
     const sel = selectionRef.current;
     const r = selRectRef.current;
-    if (!sel || !r || sel.kind === "clip" || sel.kind === "voiceover") return;
+    if (!sel || !r || sel.kind === "clip" || sel.kind === "voiceover" || sel.kind === "music") return;
     const proj = projectRef.current;
     let sizeValue = proj.subtitleStyle.sizeScale;
     if (sel.kind === "overlay") {

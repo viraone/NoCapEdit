@@ -5,6 +5,7 @@ import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
 import { ensureFontsLoaded } from "@/lib/captions/fonts";
 import { splitClipAt, captionsClearedNotice, removeClip } from "@/lib/models/clipOps";
+import { removeMusicSelection, removedMusicNotice } from "@/lib/models/musicTrim";
 import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
 import { useFitPictureToSong, useStillLength } from "@/components/panels/useStillLength";
@@ -155,13 +156,16 @@ export function EditorShell() {
         if (!sel) return;
         e.preventDefault();
         let cleared = 0;
+        let music = null as "piece" | "song" | null;
         s.update((p) => {
+          if (sel.kind === "music") music = removeMusicSelection(p, Number(sel.id));
           if (sel.kind === "cue") p.cues = p.cues.filter((c) => c.id !== sel.id);
           if (sel.kind === "overlay") p.overlays = p.overlays.filter((o) => o.id !== sel.id);
           if (sel.kind === "clip") cleared = removeClip(p, sel.id).clearedCaptions;
           if (sel.kind === "voiceover") p.voiceovers = p.voiceovers.filter((v) => v.id !== sel.id);
         });
         s.select(null);
+        if (music) s.setNotice(removedMusicNotice(music));
         if (cleared) s.setNotice(captionsClearedNotice(cleared));
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_MUSIC_SECONDS, cutMusicAfter, cutMusicBefore, musicFadeEnd, musicIsCut, musicLoops, musicMaxSpan, musicPieceAt, musicPieces, musicSlices, musicSpan, removeMusicPiece, setMusicSpan, setMusicStart, splitMusicAt, type MusicPiece } from "@/lib/models/musicTrim";
+import { MIN_MUSIC_SECONDS, cutMusicAfter, cutMusicBefore, musicFadeEnd, musicIsCut, musicLoops, musicMaxSpan, musicPieceAt, musicPieces, musicSlices, musicSpan, removeMusicPiece, removeMusicSelection, setMusicSpan, setMusicStart, splitMusicAt, type MusicPiece } from "@/lib/models/musicTrim";
 import { musicSourceTime } from "@/lib/playback/engine";
 
 const song = (extra: Record<string, unknown> = {}) => ({ duration: 100, startOffset: 0, endTrim: 0, loop: true, pieces: undefined as MusicPiece[] | undefined, ...extra });
@@ -161,3 +161,22 @@ describe("cutting the music", () => {
 function musicSourceTimeOf(m: ReturnType<typeof song>, t: number) {
   return musicSourceTime(m as Parameters<typeof musicSourceTime>[0], t);
 }
+
+describe("removeMusicSelection (Remove and Delete on a selected music bar)", () => {
+  it("takes out the whole song when it is in one piece", () => {
+    const project = { music: song() as ReturnType<typeof song> | null };
+    expect(removeMusicSelection(project, 0)).toBe("song");
+    expect(project.music).toBeNull();
+  });
+  it("takes out only the selected piece of a cut song", () => {
+    const m = song();
+    splitMusicAt(m, 40);
+    const project = { music: m as ReturnType<typeof song> | null };
+    expect(removeMusicSelection(project, 0)).toBe("piece");
+    expect(project.music).not.toBeNull();
+    expect(musicSpan(project.music!)).toBe(60);
+  });
+  it("does nothing when there is no music", () => {
+    expect(removeMusicSelection({ music: null }, 0)).toBeNull();
+  });
+});

@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { Music, Trash2 } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import type { MusicTrack } from "@/lib/models/project";
-import { applyMusicPieces, headTo, musicLayout, musicPieces, musicSpan, removeMusicPiece, splitMusicAt, tailTo, type MusicPiece } from "@/lib/models/musicTrim";
+import { applyMusicPieces, headTo, musicLayout, musicPieces, musicSpan, removeMusicPiece, removedMusicNotice, splitMusicAt, tailTo, type MusicPiece } from "@/lib/models/musicTrim";
 import { playCutSound } from "@/lib/audio/uiSounds";
 import { formatTime } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
@@ -17,7 +17,8 @@ const CLICK_SLOP = 3;
  */
 export function MusicLane({ music, pxPerSec, shown, used, duration }: { music: MusicTrack; pxPerSec: number; shown: number; used: number; duration: number }) {
   const root = useRef<HTMLDivElement>(null);
-  const [sel, setSel] = useState<number | null>(null);
+  const sel = useEditor((s) => (s.selection?.kind === "music" ? Number(s.selection.id) : null));
+  const setSel = (i: number | null) => useEditor.getState().select(i === null ? null : { kind: "music", id: String(i) });
   /** Pointer x within the lane while over the selected piece: where a click would cut. */
   const [cutX, setCutX] = useState<number | null>(null);
   const drag = useRef<{ mode: "l" | "r"; startX: number; pieces: MusicPiece[]; shown: number } | null>(null);
@@ -49,7 +50,7 @@ export function MusicLane({ music, pxPerSec, shown, used, duration }: { music: M
     const { update, setNotice } = useEditor.getState();
     update((p) => void (p.music && removeMusicPiece(p.music, index)));
     setSel(null);
-    setNotice("Removed that piece of the music and closed the gap. Undo brings it back.");
+    setNotice(removedMusicNotice("piece"));
   };
 
   return (

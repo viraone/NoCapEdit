@@ -1,10 +1,11 @@
 "use client";
-import { Play, Pause, SkipBack, ArrowRightToLine, ArrowLeftToLine, ArrowLeft, ArrowRight, Trash2, Film, Undo2 } from "lucide-react";
+import { Play, Pause, SkipBack, ArrowRightToLine, ArrowLeftToLine, ArrowLeft, ArrowRight, Trash2, Film, Music, Undo2 } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useTargetClip } from "@/components/panels/shared";
 import { engine } from "@/lib/playback/engine";
 import { projectDuration } from "@/lib/models/timeline";
 import { captionsClearedNotice, cutAfter, cutBefore, moveClip, removeClip } from "@/lib/models/clipOps";
+import { musicIsCut, removeMusicSelection, removedMusicNotice } from "@/lib/models/musicTrim";
 import { formatTime, formatTimecode } from "@/lib/utils/time";
 import { Button } from "@/components/ui/Button";
 
@@ -17,6 +18,8 @@ export function TransportBar() {
   const canUndo = useEditor((s) => s.past.length > 0);
   const { seek, update, select, setNotice, undo } = useEditor.getState();
   const clip = useTargetClip();
+  const music = useEditor((s) => (s.selection?.kind === "music" ? s.project?.music ?? null : null));
+  const musicPiece = useEditor((s) => (s.selection?.kind === "music" ? Number(s.selection.id) : 0));
   const index = useEditor((s) => (clip ? s.project!.clips.findIndex((c) => c.id === clip.id) : -1));
 
   return (
@@ -71,7 +74,31 @@ export function TransportBar() {
       </div>
       {/* The clip name gives way (ellipsis) before it ever runs into the time. */}
       <div className="flex min-w-0 items-center justify-end gap-1.5">
-        {clip && (
+        {music && (
+          // The music bar is selected: Remove takes out the music (or the piece of it), never the picture or video.
+          <>
+            <span className="mr-1 flex min-w-0 items-center gap-1.5 text-[13px] text-white/75" title={music.name}>
+              <Music size={14} className="shrink-0" />
+              <span className="truncate">{music.name}</span>
+            </span>
+            <Button
+              variant="danger"
+              size="md"
+              className="shrink-0"
+              onClick={() => {
+                let what = null as "piece" | "song" | null;
+                update((p) => void (what = removeMusicSelection(p, musicPiece)));
+                select(null);
+                if (what) setNotice(removedMusicNotice(what));
+              }}
+              title={musicIsCut(music) ? "Remove this piece of the music (Delete)" : "Remove the music (Delete)"}
+              data-remove-music
+            >
+              <Trash2 size={15} /> {musicIsCut(music) ? "Remove piece" : "Remove music"}
+            </Button>
+          </>
+        )}
+        {!music && clip && (
           <>
             <span className="mr-1 flex min-w-0 items-center gap-1.5 text-[13px] text-white/75" title={clip.name}>
               <Film size={14} className="shrink-0" />
