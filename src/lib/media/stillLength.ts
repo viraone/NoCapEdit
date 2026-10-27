@@ -7,6 +7,7 @@
 import { ffmpegEngine } from "@/lib/ffmpegEngine";
 import { withDeadline } from "@/lib/ffmpeg/deadline";
 import { imageToStillVideo, STILL_FPS } from "@/lib/media/stillVideo";
+import { firstFrameCanvas, stillVideoFast } from "@/lib/media/stillFast";
 import { getThumbs } from "@/lib/storage/db";
 
 /** Longest a picture may be shown (half an hour). */
@@ -55,6 +56,13 @@ async function firstFramePng(blob: Blob, onStatus?: (message: string) => void): 
 /** Renders the first frame of `media` as a silent video of `seconds`, named like the clip. */
 export async function renderStillLength(media: Blob, name: string, seconds: number, onStatus?: (message: string) => void): Promise<File> {
   const length = Math.min(MAX_STILL_SECONDS, Math.max(1, seconds));
+  // The browser's own decoder and encoder first: seconds instead of minutes, and no ffmpeg download.
+  const frameCanvas = await firstFrameCanvas(media);
+  if (frameCanvas) {
+    onStatus?.("Rendering the picture");
+    const fast = await stillVideoFast(frameCanvas, length, stillFps(length), name, onStatus);
+    if (fast) return fast;
+  }
   const png = await firstFramePng(media, onStatus);
   const frame = new File([new Uint8Array(png)], `${name}.png`, { type: "image/png" });
   return imageToStillVideo(frame, { seconds: length, fps: stillFps(length), onStatus });

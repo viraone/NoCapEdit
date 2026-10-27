@@ -160,7 +160,7 @@ export function StartScreen() {
       for (const [i, raw] of files.entries()) {
         const status = (s: string) => setBusy(`${s} (${i + 1}/${files.length})`);
         const file = await toClipFile(raw, status);
-        const { clip, blob } = await importVideo(file, project.id, status);
+        const { clip, blob } = await importVideo(file, project.id, status, undefined, isImageFile(raw));
         if (isImageFile(raw)) {
           clip.zoom = fitZoom({ width: clip.width, height: clip.height }, { width: format.width, height: format.height });
           clip.pan = { x: 0, y: 0 };

@@ -21,6 +21,8 @@ export async function importVideo(
   onStatus?: (message: string) => void,
   /** Pre-allocated id, so the caller can protect the asset before it is written. */
   assetId: string = uid("asset"),
+  /** A picture made into a silent video: no sound to read and one frame to copy, so the import skips both. */
+  still = false,
 ): Promise<ImportedVideo> {
   onStatus?.(`Reading ${file.name}`);
   const info = await probeVideo(file);
@@ -29,6 +31,10 @@ export async function importVideo(
   onStatus?.("Analysing audio and frames");
   let hasAudio = true;
   const audioTask = (async () => {
+    if (still) {
+      hasAudio = false;
+      return;
+    }
     if (file.size > MAX_DECODE_BYTES) return;
     const decoded = await decodeAudio(file).catch(() => null);
     if (!decoded) {
@@ -47,6 +53,7 @@ export async function importVideo(
     undefined,
     (done, total) => onStatus?.(`Making thumbnails, ${done} of ${total}`),
     (hidden) => onStatus?.(hidden ? "Paused while this tab is in the background. Come back to this tab and it carries on" : "Making thumbnails"),
+    still,
   )
     .then(async (rec) => {
       await putThumbs(rec);

@@ -63,6 +63,8 @@ export async function generateFilmstrip(
   onProgress?: (done: number, total: number) => void,
   /** Called when the job pauses because the tab went to the background, and again when it resumes. */
   onHidden?: (hidden: boolean) => void,
+  /** A held picture: every frame is the same, so the first one is read once and copied across. */
+  still = false,
 ): Promise<ThumbsRecord> {
   const url = URL.createObjectURL(blob);
   try {
@@ -82,6 +84,11 @@ export async function generateFilmstrip(
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const interval = duration / count;
     for (let i = 0; i < count; i++) {
+      if (still && i > 0) {
+        ctx.drawImage(canvas, 0, 0, frameWidth, frameHeight, i * frameWidth, 0, frameWidth, frameHeight);
+        onProgress?.(i + 1, count);
+        continue;
+      }
       const t = Math.min(Math.max(0, duration - 0.05), (i + 0.5) * interval);
       await whenVisible(onHidden);
       await seek(video, t);

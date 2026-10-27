@@ -64,7 +64,7 @@ export function useStillLength() {
       if (!asset) throw new Error("The picture's file is missing.");
       // The clip's speed stretches media time, so the media is rendered that much longer or shorter.
       const file = await renderStillLength(asset.blob, clip.name, target * clip.speed, (m) => setStatus(m));
-      const { clip: made, blob } = await importVideo(file, project.id, (m) => setStatus(m), assetId);
+      const { clip: made, blob } = await importVideo(file, project.id, (m) => setStatus(m), assetId, true);
       if (useEditor.getState().project?.id !== project.id) return;
       state.registerAsset(assetId, blob);
       state.update(

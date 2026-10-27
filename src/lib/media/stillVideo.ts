@@ -6,6 +6,7 @@
  * looped into an H.264 MP4 at the requested length.
  */
 import { ffmpegEngine } from "@/lib/ffmpegEngine";
+import { stillVideoFast } from "@/lib/media/stillFast";
 
 export const STILL_SECONDS = 12;
 export const STILL_FPS = 30;
@@ -15,7 +16,7 @@ export function isImageFile(file: File): boolean {
   return file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|avif|heic)$/i.test(file.name);
 }
 
-async function decodeToPng(file: File): Promise<{ png: Uint8Array; width: number; height: number }> {
+async function decodeToCanvas(file: File): Promise<OffscreenCanvas> {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
   const width = Math.max(2, Math.round((bmp.width * scale) / 2) * 2);
@@ -24,8 +25,12 @@ async function decodeToPng(file: File): Promise<{ png: Uint8Array; width: number
   const ctx = canvas.getContext("2d")!;
   ctx.drawImage(bmp, 0, 0, width, height);
   bmp.close();
+  return canvas;
+}
+
+async function canvasToPng(canvas: OffscreenCanvas): Promise<Uint8Array> {
   const blob = await canvas.convertToBlob({ type: "image/png" });
-  return { png: new Uint8Array(await blob.arrayBuffer()), width, height };
+  return new Uint8Array(await blob.arrayBuffer());
 }
 
 export interface StillVideoOptions {
@@ -39,7 +44,12 @@ export async function imageToStillVideo(file: File, opts: StillVideoOptions = {}
   const seconds = opts.seconds ?? STILL_SECONDS;
   const fps = opts.fps ?? STILL_FPS;
   opts.onStatus?.(`Preparing ${file.name}`);
-  const { png } = await decodeToPng(file);
+  const canvas = await decodeToCanvas(file);
+  // The browser's own video encoder first: seconds instead of minutes, and no ffmpeg download.
+  opts.onStatus?.(`Rendering ${file.name} as a ${formatSeconds(seconds)} clip`);
+  const fast = await stillVideoFast(canvas, seconds, fps, file.name, opts.onStatus);
+  if (fast) return fast;
+  const png = await canvasToPng(canvas);
   await ffmpegEngine.load((m) => opts.onStatus?.(m));
   const ffmpeg = ffmpegEngine.instance;
   const input = `/still_${Date.now().toString(36)}.png`;
