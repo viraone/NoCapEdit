@@ -785,7 +785,7 @@ export function TimelineDock() {
                   <span className="truncate">{vo.kind === "sfx" ? "🔔" : "🎙"} {vo.name}</span>
                 </div>
               ))}
-              {music && <MusicLane music={music} pxPerSec={pxPerSec} shown={musicShown} used={musicUsed} duration={duration} />}
+              {music && <MusicLane music={music} pxPerSec={pxPerSec} shown={musicShown} used={musicUsed} duration={duration} height={musicH - 10} view={view} />}
             </div>
             {/* Where a click would cut: a thin line through the video and audio lanes, notched at both ends. */}
             {hover?.cut && (

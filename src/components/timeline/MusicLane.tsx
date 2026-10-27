@@ -7,15 +7,17 @@ import { applyMusicPieces, headTo, musicLayout, musicPieces, musicSpan, removeMu
 import { playCutSound } from "@/lib/audio/uiSounds";
 import { formatTime } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
+import { AudioWaveform } from "./AudioWaveform";
+import { visibleWindow } from "./dockLayout";
 
 const EDGE = 7;
 const CLICK_SLOP = 3;
 
 /**
- * The music on the timeline: one green block per piece of the song. Drag the outer edges to trim,
+ * The music on the timeline: one green block per piece of the song, with the song's waveform drawn in it. Drag the outer edges to trim,
  * click a piece to select it and click it again to cut it there, and use its trash button to remove it.
  */
-export function MusicLane({ music, pxPerSec, shown, used, duration }: { music: MusicTrack; pxPerSec: number; shown: number; used: number; duration: number }) {
+export function MusicLane({ music, pxPerSec, shown, used, duration, height, view }: { music: MusicTrack; pxPerSec: number; shown: number; used: number; duration: number; height: number; view: { from: number; to: number } }) {
   const root = useRef<HTMLDivElement>(null);
   const sel = useEditor((s) => (s.selection?.kind === "music" ? Number(s.selection.id) : null));
   const setSel = (i: number | null) => useEditor.getState().select(i === null ? null : { kind: "music", id: String(i) });
@@ -126,6 +128,8 @@ export function MusicLane({ music, pxPerSec, shown, used, duration }: { music: M
               useEditor.getState().endTransaction();
             }}
           >
+            {/* The song's waveform for this piece, behind the name; only the part on screen is drawn. */}
+            <AudioWaveform assetId={music.assetId} inPoint={layout[i].piece.from} outPoint={layout[i].piece.to} width={width} height={height} color="rgba(52,211,153,0.5)" visible={visibleWindow(left, width, view)} />
             <div className="relative flex h-full items-center gap-1 px-1.5">
               {i === 0 && <Music size={10} className="shrink-0" />}
               {(i === 0 || cut) && <span className="truncate">{i === 0 ? music.name : formatTime(end - start)}</span>}
