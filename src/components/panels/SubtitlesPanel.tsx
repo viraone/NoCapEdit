@@ -79,7 +79,12 @@ export function SubtitlesPanel() {
   const { update, select, seek, setNotice: pushNotice } = useEditor.getState();
 
   const [model, setModel] = useState(DEFAULT_WHISPER_MODEL);
-  const [language, setLanguage] = useState(project.captions.sourceLanguage || "auto");
+  // English is the starting pick for everyone; a project that recorded another
+  // source language keeps it.
+  const [language, setLanguage] = useState(() => {
+    const saved = project.captions.sourceLanguage;
+    return saved && saved !== "auto" ? saved : "en";
+  });
   const [device, setDevice] = useState<DevicePreference>("auto");
   const [diarize, setDiarize] = useState(false);
   const [maxSpeakers, setMaxSpeakers] = useState(3);

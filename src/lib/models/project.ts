@@ -373,7 +373,7 @@ export function createProject(partial: Partial<VideoProject> = {}): VideoProject
     voiceovers: [],
     music: null,
     subtitleStyle: defaultSubtitleStyle(),
-    captions: { visible: true, showTranslated: false, sourceLanguage: "auto", targetLanguage: "es" },
+    captions: { visible: true, showTranslated: false, sourceLanguage: "en", targetLanguage: "es" },
     // The guide is opt-in: the Safe zone button turns on the mask the format suggests.
     safeZone: "none",
     ...partial,

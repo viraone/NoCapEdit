@@ -24,7 +24,8 @@ export const WHISPER_MODELS: WhisperModel[] = [
   { id: "onnx-community/whisper-large-v3-turbo_timestamped", name: "Whisper Large v3 Turbo", size: "~600 MB", note: "Best accuracy, needs WebGPU" },
 ];
 
-export const DEFAULT_WHISPER_MODEL = WHISPER_MODELS[1].id;
+/** Whisper Small: the starting pick in the Subtitles panel for everyone. */
+export const DEFAULT_WHISPER_MODEL = WHISPER_MODELS[2].id;
 
 export type DevicePreference = "auto" | "webgpu" | "wasm";
 

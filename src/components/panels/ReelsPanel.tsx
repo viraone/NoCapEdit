@@ -203,7 +203,9 @@ export function ReelsPanel() {
     const controller = new AbortController();
     captionAbortRef.current = controller;
     const cuesAtStart = current.cues;
-    const language = current.captions.sourceLanguage || "auto";
+    // Same default as the Subtitles panel: English unless the project knows better.
+    const saved = current.captions.sourceLanguage;
+    const language = saved && saved !== "auto" ? saved : "en";
     setCaptionJob({ message: "Getting ready", progress: null });
     setTwoStep(true);
     useEditor.getState().setNotice("Step 1 of 2: making the subtitles. The reels come right after.");
