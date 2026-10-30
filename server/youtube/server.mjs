@@ -39,6 +39,7 @@ import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { availableHeights, canonicalMediaUrl, defaultTitle, formatFor, outputArgs, parseMediaLink, safeTitle } from "./lib.mjs";
+import { updateYtDlp } from "./update.mjs";
 
 const PORT = Number(process.env.PORT) || 3131;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -105,6 +106,9 @@ function friendlyError(message, source = "youtube") {
   }
   if (/not a bot|cookies/i.test(message)) {
     return "YouTube is blocking the helper's server right now (its bot check). The site owner can fix this by giving the helper cookies (see server/youtube/README.md). Meanwhile, drop a video file instead.";
+  }
+  if (/failed to extract any player response|unable to extract.*player/i.test(message)) {
+    return "YouTube wouldn't hand this video to the helper (it changes its player often, and the helper's yt-dlp can fall behind). The helper updates yt-dlp itself the next time it starts, so try again in a few minutes; if it still fails, drop a video file instead.";
   }
   if (/private video|members-only|sign in to confirm your age|age-restricted/i.test(message)) return "This video is private, members-only or age-restricted, so it can't be fetched.";
   if (/video unavailable|has been removed|does not exist/i.test(message)) return "That video isn't available on YouTube (removed, or the link is wrong).";
@@ -250,6 +254,9 @@ const server = http.createServer(async (req, res) => {
 
 /** Looked up once after start-up, reported by /health ("checking…" until then, "missing" if yt-dlp isn't installed). */
 let ytdlpVersion = "checking";
+// The container's yt-dlp lives in a folder the `node` user owns and refreshes itself at
+// start-up (see update.mjs); a local `npm run youtube` leaves the Homebrew one alone.
+const SELF_UPDATE = process.env.YTDLP_SELF_UPDATE === "1" && path.isAbsolute(YTDLP);
 
 server.listen(PORT, HOST, () => {
   console.log(`NoCap Edit YouTube / Instagram helper listening on http://${HOST}:${PORT} (yt-dlp: ${YTDLP}, up to ${MAX_SECONDS / 60} min per video)`);
@@ -257,6 +264,13 @@ server.listen(PORT, HOST, () => {
     .then((v) => {
       ytdlpVersion = v.trim();
       console.log(`yt-dlp ${ytdlpVersion} ready`);
+      if (!SELF_UPDATE) return;
+      return updateYtDlp({ currentVersion: ytdlpVersion, targetPath: YTDLP })
+        .then(({ updated, version }) => {
+          ytdlpVersion = version;
+          if (!updated) console.log(`yt-dlp ${version} is already the latest nightly`);
+        })
+        .catch((e) => console.error(`yt-dlp update check failed, keeping ${ytdlpVersion}: ${e.message}`));
     })
     .catch((e) => {
       ytdlpVersion = "missing";

@@ -87,6 +87,17 @@ Links that start with `instagram.com/share/` are opaque share tokens, not reel
 addresses; the bar refuses them. Open the link once in a browser and copy the
 `instagram.com/reel/…` address it lands on.
 
+### If downloads fail with "Failed to extract any player response"
+
+YouTube changed something and the helper's yt-dlp is behind. The hosted image does not
+rebuild when only YouTube changes, so the Docker image now refreshes yt-dlp itself: at
+start-up the service asks GitHub for the latest nightly, and when it is newer it
+downloads the ~41 MB Linux build, checks it against the release's `SHA2-256SUMS`, and
+swaps it in without disturbing a download in progress. On Render this happens on the
+next wake-up and needs nothing from you; restart the service if you want it straight
+away. On your own computer yt-dlp comes from Homebrew instead, so run
+`brew upgrade yt-dlp`.
+
 ## Settings (environment variables)
 
 | Variable | Default | Meaning |
@@ -98,6 +109,7 @@ addresses; the bar refuses them. Open the link once in a browser and copy the
 | `MAX_JOBS` | `2` | Downloads running at once (more get a 429) |
 | `YTDLP` | `yt-dlp` | yt-dlp executable |
 | `YTDLP_ARGS` | | Extra yt-dlp arguments, e.g. `--cookies /data/cookies.txt` |
+| `YTDLP_SELF_UPDATE` | | `1` refreshes yt-dlp from the nightly releases at start-up (the Dockerfile sets it; a local `npm run youtube` leaves Homebrew's yt-dlp alone) |
 
 ## Routes
 
