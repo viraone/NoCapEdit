@@ -8,7 +8,7 @@ YouTube only, just the sound as an MP3. The site then stores the MP4 in the visi
 dropped recording, or saves the MP3 to their computer. The helper never sees the
 visitor's projects.
 
-Zero npm dependencies. Needs Node 20+, `yt-dlp`, `ffmpeg` and `deno` on the PATH
+Zero npm dependencies (the Docker image also carries the bgutil token server, see below). Needs Node 20+, `yt-dlp`, `ffmpeg` and `deno` on the PATH
 (yt-dlp uses Deno to solve YouTube's player challenges; without it YouTube answers
 "The page needs to be reloaded" from server addresses).
 
@@ -72,6 +72,20 @@ The helper decodes it, writes a temp file and passes `--cookies`. Cookies expire
 some weeks; export again if the bot check comes back. Only download videos you have the
 right to use.
 
+### If downloads fail with "Failed to extract any player response"
+
+On Render's address YouTube refuses even a fresh yt-dlp with valid cookies, and says
+only "Failed to extract any player response". The container therefore runs the
+[bgutil PO-token provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider):
+`start.sh` starts its small server on `127.0.0.1:4416` next to the helper, and a yt-dlp
+plugin (a zip in `~/.config/yt-dlp/plugins`) asks it for a proof-of-origin token on every
+YouTube request. Nothing to configure. To check it from the service's Shell tab, run
+`yt-dlp -v --simulate <link>` and look for `PO Token Providers: bgutil:http-2.0.2` and,
+when YouTube asks for one, a `Generating a ... PO Token` line. A token does not
+guarantee YouTube will let the address through; if it still fails, the next steps are a
+residential proxy (`YTDLP_ARGS=--proxy ...`) or running the helper elsewhere. Bump the two
+`2.0.2` versions in the Dockerfile together when updating.
+
 ### If Instagram reels fail with "Instagram wouldn't hand over this reel"
 
 Instagram usually refuses to serve a reel to anything that isn't a signed-in browser,
@@ -87,17 +101,6 @@ Links that start with `instagram.com/share/` are opaque share tokens, not reel
 addresses; the bar refuses them. Open the link once in a browser and copy the
 `instagram.com/reel/…` address it lands on.
 
-### If downloads fail with "Failed to extract any player response"
-
-YouTube changed something and the helper's yt-dlp is behind. The hosted image does not
-rebuild when only YouTube changes, so the Docker image now refreshes yt-dlp itself: at
-start-up the service asks GitHub for the latest nightly, and when it is newer it
-downloads the ~41 MB Linux build, checks it against the release's `SHA2-256SUMS`, and
-swaps it in without disturbing a download in progress. On Render this happens on the
-next wake-up and needs nothing from you; restart the service if you want it straight
-away. On your own computer yt-dlp comes from Homebrew instead, so run
-`brew upgrade yt-dlp`.
-
 ## Settings (environment variables)
 
 | Variable | Default | Meaning |
@@ -109,7 +112,6 @@ away. On your own computer yt-dlp comes from Homebrew instead, so run
 | `MAX_JOBS` | `2` | Downloads running at once (more get a 429) |
 | `YTDLP` | `yt-dlp` | yt-dlp executable |
 | `YTDLP_ARGS` | | Extra yt-dlp arguments, e.g. `--cookies /data/cookies.txt` |
-| `YTDLP_SELF_UPDATE` | | `1` refreshes yt-dlp from the nightly releases at start-up (the Dockerfile sets it; a local `npm run youtube` leaves Homebrew's yt-dlp alone) |
 
 ## Routes
 
