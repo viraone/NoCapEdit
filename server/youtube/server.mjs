@@ -25,6 +25,7 @@
  *   MAX_MINUTES   longest video accepted (180)
  *   MAX_JOBS      downloads running at once (2)
  *   YTDLP         yt-dlp executable (yt-dlp)
+ *   YTDLP_VERBOSE 1 = pass -v to yt-dlp (the Dockerfile turns it on while YouTube blocking is being diagnosed)
  *   YTDLP_ARGS    extra arguments, split on spaces (e.g. "--cookies /data/cookies.txt")
  *   YTDLP_COOKIES a Netscape cookies.txt exported from a browser signed in to YouTube
  *                 and/or Instagram, as plain text or base64 (one line); written to a temp
@@ -47,6 +48,8 @@ const MAX_SECONDS = (Number(process.env.MAX_MINUTES) || 180) * 60;
 const MAX_JOBS = Number(process.env.MAX_JOBS) || 2;
 const YTDLP = process.env.YTDLP || "yt-dlp";
 const EXTRA_ARGS = (process.env.YTDLP_ARGS || "").split(" ").filter(Boolean);
+// YTDLP_VERBOSE=1 adds -v, so a failed request's log shows which player clients yt-dlp tried and why each was refused.
+if (process.env.YTDLP_VERBOSE === "1") EXTRA_ARGS.push("-v");
 if (process.env.YTDLP_COOKIES) {
   const cookieFile = path.join(tmpdir(), `nocap-yt-cookies-${process.pid}.txt`);
   await writeFile(cookieFile, decodeCookies(process.env.YTDLP_COOKIES), { mode: 0o600 });
@@ -136,6 +139,8 @@ function runYtDlp(args, { timeoutMs, signal, source }) {
       const last = lines.filter((l) => l.startsWith("ERROR")).pop() ?? lines.pop() ?? `yt-dlp exited with ${code}`;
       // The raw wording goes to the server log; the browser gets the friendly version.
       console.log(`[yt-dlp] ${last.slice(0, 400)}`);
+      // yt-dlp's one-line error hides why each player client failed; those reasons are in the lines before it.
+      console.log(`[yt-dlp] full output (last lines):\n${lines.slice(-40).join("\n").slice(-4000)}`);
       reject(new Error(friendlyError(last.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]+:\s*)?/, ""), source)));
     });
   });
@@ -155,7 +160,7 @@ async function handleInfo(req, res, params) {
   if (!link) return;
   const { id, source } = link;
   try {
-    const raw = await runYtDlp(["-J", "--no-playlist", "--no-warnings", canonicalMediaUrl(link)], { timeoutMs: INFO_TIMEOUT_MS, source });
+    const raw = await runYtDlp(["-J", "--no-playlist", canonicalMediaUrl(link)], { timeoutMs: INFO_TIMEOUT_MS, source });
     const info = JSON.parse(raw);
     json(res, 200, {
       id,
@@ -187,7 +192,7 @@ async function handleDownload(req, res, params) {
     const out = await runYtDlp(
       [
         ...outputArgs(format, params.get("height"), source),
-        "--no-playlist", "--no-warnings", "--no-progress",
+        "--no-playlist", "--no-progress",
         // "<=?" lets a video with no reported length through: Instagram reels have none.
         "--match-filters", `!is_live & duration<=?${MAX_SECONDS}`,
         "-o", path.join(dir, "media.%(ext)s"),

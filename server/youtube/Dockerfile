@@ -29,7 +29,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY lib.mjs server.mjs start.sh ./
 
-ENV HOST=0.0.0.0 PORT=3131 MAX_MINUTES=180 MAX_JOBS=2
+ENV HOST=0.0.0.0 PORT=3131 MAX_MINUTES=180 MAX_JOBS=2 YTDLP_VERBOSE=1
 EXPOSE 3131
 USER node
 CMD ["sh", "start.sh"]
