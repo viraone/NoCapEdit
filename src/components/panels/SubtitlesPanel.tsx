@@ -140,17 +140,19 @@ export function SubtitlesPanel() {
     }
     const controller = new AbortController();
     abortRef.current = controller;
-    // Cues edited or imported while this job runs are kept when it finishes.
+    // Cues edited or imported while this job runs are kept when it finishes; a trim made
+    // meanwhile moves the new cues with the picture.
     const cuesAtStart = useEditor.getState().project?.cues ?? [];
+    const clipsAtStart = project.clips;
     try {
-      const g = await generateCaptions({ clips: project.clips, model, language, device, diarize, maxSpeakers, rules, signal: controller.signal, onProgress: (p) => setJob({ kind: "transcribe", ...p }) });
+      const g = await generateCaptions({ clips: clipsAtStart, model, language, device, diarize, maxSpeakers, rules, signal: controller.signal, onProgress: (p) => setJob({ kind: "transcribe", ...p }) });
       if (!g) {
         // Nothing transcribed: never replace existing captions with an empty list.
         setError(useEditor.getState().project?.cues.length ? "No speech was found; your existing captions were kept." : "No speech was found.");
         return;
       }
       let kept = 0;
-      update((p) => void (kept = applyGeneratedCaptions(p, cuesAtStart, g, language, diarize)));
+      update((p) => void (kept = applyGeneratedCaptions(p, cuesAtStart, g, language, diarize, clipsAtStart)));
       const keptNote = kept ? ` ${kept} caption${kept === 1 ? "" : "s"} edited or imported while generating ${kept === 1 ? "was" : "were"} kept alongside the new ones (Undo reverts).` : "";
       setNotice(`${g.cues.length} captions from ${g.wordCount} words (${g.device || "on-device"})${g.speakerCount ? `, ${g.speakerCount} speaker${g.speakerCount === 1 ? "" : "s"}` : ""}.${g.diarizationNote}${keptNote}`);
     } catch (e) {

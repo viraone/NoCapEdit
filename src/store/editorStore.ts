@@ -40,6 +40,8 @@ export interface EditorState {
   notice: string | null;
   /** Set by a canvas double-click: the panel for this element should focus its content field. */
   editRequest: (Selection & { nonce: number }) | null;
+  /** Set by the Reels panel's "+10 s" buttons; the timeline dock, which owns the stretch, performs it. */
+  stretchRequest: { side: "before" | "after"; seconds: number; nonce: number } | null;
   /** Bumped by "Make reels" in the top-bar menu; the Subtitles panel runs the job. */
   reelsRequest: number;
   /** Progress line of the video import running in this editor (shared by the top bar and the Clips panel), null when idle. */
@@ -78,6 +80,8 @@ export interface EditorState {
   /** Selects the element, switches to its panel and asks that panel to focus its editor. */
   requestEdit(sel: Selection): void;
   requestReels(): void;
+  /** Asks the timeline to lengthen a one-clip reel by `seconds` of the source video on that side. */
+  requestStretch(side: "before" | "after", seconds: number): void;
   registerAsset(assetId: string, blob: Blob): string;
   releaseAsset(assetId: string): void;
   setImportStatus(status: string | null): void;
@@ -170,6 +174,7 @@ export const useEditor = create<EditorState>()(
     canvasZoom: "fit",
     notice: null,
     editRequest: null,
+    stretchRequest: null,
     reelsRequest: 0,
     importStatus: null,
     importError: null,
@@ -211,7 +216,7 @@ export const useEditor = create<EditorState>()(
         clearTimeout(noticeTimer);
         noticeTimer = null;
       }
-      set({ project: null, sourceProject: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, importStatus: null, importError: null, pendingAssetIds: [], notice: null });
+      set({ project: null, sourceProject: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, stretchRequest: null, importStatus: null, importError: null, pendingAssetIds: [], notice: null });
     },
 
     update(fn, opts = {}) {
@@ -297,6 +302,10 @@ export const useEditor = create<EditorState>()(
       if (noticeTimer) clearTimeout(noticeTimer);
       if (text) noticeTimer = setTimeout(() => set({ notice: null }), 6000);
     },
+    requestStretch(side, seconds) {
+      set({ stretchRequest: { side, seconds, nonce: Date.now() } });
+    },
+
     requestReels() {
       // The Reels panel takes it from here: it runs the job, or asks for
       // subtitles first when the project has no captions.

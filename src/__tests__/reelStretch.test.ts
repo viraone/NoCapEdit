@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyReelReveal, applyReelStretch, mergeStretchedCues, reelMedia, reelSlack, reelSourceRange, stretchOf } from "@/lib/edit/reelStretch";
+import { applyReelReveal, applyReelStretch, mergeStretchedCues, recaptionFromSource, reelMedia, reelSlack, reelSourceRange, stretchOf } from "@/lib/edit/reelStretch";
 import { createClip, createProject, type CaptionCue, type ReelInfo, type VideoProject } from "@/lib/models/project";
 import { rippleTimeline } from "@/lib/models/ripple";
 
@@ -214,5 +214,28 @@ describe("applyReelStretch", () => {
     split.clips.push(clip(5));
     expect(stretch(split)).toBeNull();
     expect(stretch(createProject({ clips: [clip(10)] }))).toBeNull();
+  });
+});
+
+describe("recaptionFromSource", () => {
+  it("copies the source's captions for what the reel shows, timed from the reel's start", () => {
+    const src = source();
+    src.cues = [cue("before", 85, 87), cue("in", 95, 97), cue("edge", 128, 133), cue("after", 140, 142)];
+    const reel = legacyReel();
+    reel.reel = { ...info, media: { start: 80, end: 140 } };
+    reel.clips = [clip(60, { assetId: "reel_media", inPoint: 10, outPoint: 50 })];
+    expect(recaptionFromSource(reel, src)).toBe(2);
+    expect(reel.cues.map((c) => [c.text, c.start, c.end])).toEqual([
+      ["in", 5, 7],
+      ["edge", 38, 40],
+    ]);
+  });
+
+  it("refuses a project that isn't a one-clip reel of that source", () => {
+    const src = source();
+    const reel = legacyReel();
+    reel.clips = [reel.clips[0], clip(5)];
+    expect(recaptionFromSource(reel, src)).toBeNull();
+    expect(recaptionFromSource(createProject({ name: "plain" }), src)).toBeNull();
   });
 });

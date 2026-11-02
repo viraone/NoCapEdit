@@ -7,6 +7,7 @@
  */
 import type { CaptionCue, Clip, VideoProject, WordTiming } from "@/lib/models/project";
 import { layoutClips, toProjectTime } from "@/lib/models/timeline";
+import { rippleCues } from "@/lib/models/ripple";
 import { getAsset } from "@/lib/storage/db";
 import { getSpeechAudio } from "./audioCache";
 import { buildCues, cuesEditedSince, sortCues, type CaptionRules } from "./captionBuilder";
@@ -101,11 +102,15 @@ export async function generateCaptions(o: GenerateCaptionsOptions): Promise<Gene
 /**
  * Puts generated captions on a draft project. Captions edited or imported
  * since `cuesAtStart` (while the job ran) are kept alongside the new ones;
- * returns how many. Undo reverts the whole step.
+ * returns how many. The new cues were timed for `clipsAtStart` (the clips
+ * the job was given); when the video was trimmed or cut meanwhile they are
+ * moved onto the clips as they are now, so they stay on the speech. Undo
+ * reverts the whole step.
  */
-export function applyGeneratedCaptions(p: VideoProject, cuesAtStart: CaptionCue[], g: GeneratedCaptions, language: string, diarize: boolean): number {
+export function applyGeneratedCaptions(p: VideoProject, cuesAtStart: CaptionCue[], g: GeneratedCaptions, language: string, diarize: boolean, clipsAtStart?: Clip[]): number {
   const edited = cuesEditedSince(cuesAtStart, p.cues);
-  p.cues = edited.length ? sortCues([...edited, ...g.cues]) : g.cues;
+  const fresh = clipsAtStart ? rippleCues(clipsAtStart, p.clips, g.cues) : g.cues;
+  p.cues = edited.length ? sortCues([...edited, ...fresh]) : fresh;
   p.captions.sourceLanguage = language;
   if (diarize && g.hasSpeakers) p.subtitleStyle.speakerColors = true;
   return edited.length;

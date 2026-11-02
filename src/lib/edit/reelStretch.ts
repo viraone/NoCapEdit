@@ -60,6 +60,22 @@ export function reelSlack(reel: VideoProject, source: VideoProject | null): Slac
   return { before: Math.max(0, media.start - range.start), after: Math.max(0, range.end - media.end) };
 }
 
+/**
+ * Replaces a reel's captions with the source's for the range the reel shows
+ * (its clip's in and out points inside the media), timed from the reel's
+ * start: the fix when the reel was cut while the source's captions were off,
+ * or after the source's captions were corrected. Caption edits made in the
+ * reel are replaced too. Returns how many captions it has now, or null when
+ * this isn't a one-clip reel of that source.
+ */
+export function recaptionFromSource(reel: VideoProject, source: VideoProject): number | null {
+  if (!reelSlack(reel, source)) return null;
+  const media = reelMedia(reel)!;
+  const c = reel.clips[0];
+  reel.cues = cuesForRange(source.cues, media.start + c.inPoint, media.start + c.outPoint);
+  return reel.cues.length;
+}
+
 /** How far a clip's in and out points sit outside its media; both zero except mid-drag on a reel. */
 export function stretchOf(clip: Pick<Clip, "inPoint" | "outPoint" | "duration">): Slack {
   return { before: Math.max(0, -clip.inPoint), after: Math.max(0, clip.outPoint - clip.duration) };

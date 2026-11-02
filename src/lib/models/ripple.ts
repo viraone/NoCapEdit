@@ -9,7 +9,7 @@
  * moments that were cut away go with them; text, stickers and voice-overs
  * slide to the nearest surviving moment instead of vanishing.
  */
-import type { CaptionCue, Keyframe, Overlay, VideoProject, Voiceover, WordTiming } from "./project";
+import type { CaptionCue, Clip, Keyframe, Overlay, VideoProject, Voiceover, WordTiming } from "./project";
 import { findLayout, layoutClips, locateFrame, toProjectTime, toSourceTime, type ClipLayout } from "./timeline";
 import { clamp } from "@/lib/utils/math";
 
@@ -111,6 +111,24 @@ function rippleOverlay(from: ClipLayout[], to: ClipLayout[], o: Overlay): Overla
 function rippleVoiceover(from: ClipLayout[], to: ClipLayout[], v: Voiceover): Voiceover {
   const m = mapTime(from, to, v.start, "start");
   return m ? { ...v, start: m.time } : { ...v };
+}
+
+/**
+ * Moves captions timed for the `from` clips onto the `to` clips: what a
+ * caption job needs when the video was trimmed or cut while it ran, since
+ * its words are placed on the clips as they were when it started. The same
+ * sequence gives the cues back unchanged; cues of moments cut away are dropped.
+ */
+export function rippleCues(from: Clip[], to: Clip[], cues: CaptionCue[]): CaptionCue[] {
+  const a = layoutClips(from);
+  const b = layoutClips(to);
+  if (!a.length || !b.length || sameSequence(a, b)) return cues;
+  return cues
+    .flatMap((c) => {
+      const r = rippleCue(a, b, c);
+      return r ? [r] : [];
+    })
+    .sort((x, y) => x.start - y.start);
 }
 
 /** True when every clip shows the same source range at the same place, so nothing on the timeline has moved. */

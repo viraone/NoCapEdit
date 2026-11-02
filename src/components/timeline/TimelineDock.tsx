@@ -21,7 +21,7 @@ import { AudioWaveform } from "./AudioWaveform";
 import { useReelStretch, type InOut, type TrimDrag } from "./useReelStretch";
 import { RULER_H, CUE_H, DOCK_CHROME_H, STRIP_OVERSCAN, drawRange, videoLaneHeight, visibleWindow } from "./dockLayout";
 
-const EDGE = 7;
+const EDGE = 10;
 /** Below this width (px) a caption chip has no room for words: it is drawn as a plain bar. */
 const CUE_LABEL_MIN_W = 30;
 /** Vertical inset of a clip block inside the video lane. */
@@ -203,8 +203,8 @@ function CueBlock({ cue, pxPerSec, selected, active, showTranslated }: { cue: Ca
       }}
     >
       {labelled && <span className="truncate">{showTranslated && cue.translatedText ? cue.translatedText : cue.text}</span>}
-      <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize" />
-      <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize" />
+      <span className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" />
+      <span className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" />
     </div>
   );
 }
@@ -413,8 +413,8 @@ function ClipBlock({
           <Trash2 size={13} />
         </button>
       )}
-      <span className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availBefore, "before")} data-trim-handle="l" />
-      <span className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availAfter, "after")} data-trim-handle="r" />
+      <span className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availBefore, "before")} data-trim-handle="l" />
+      <span className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availAfter, "after")} data-trim-handle="r" />
     </div>
   );
 }
@@ -478,6 +478,30 @@ export function TimelineDock() {
   const duration = layouts.length ? layouts[layouts.length - 1].end : 0;
   // Reels: the clip's edges may be dragged out past the media; a release out there cuts more from the source.
   const stretch = useReelStretch();
+  // The Reels panel's "+10 s before / after" buttons: the same as dragging the clip's edge out, done here, where the stretch lives.
+  const stretchRequest = useEditor((s) => s.stretchRequest);
+  const stretchHandled = useRef(0);
+  useEffect(() => {
+    if (!stretchRequest || stretchRequest.nonce === stretchHandled.current) return;
+    stretchHandled.current = stretchRequest.nonce;
+    const only = project.clips.length === 1 ? project.clips[0] : null;
+    const slack = stretch.slack;
+    if (!only || !slack) return;
+    if (stretch.job) {
+      useEditor.getState().setNotice("Wait for the current stretch to finish.");
+      return;
+    }
+    const from = { inPoint: only.inPoint, outPoint: only.outPoint };
+    const to =
+      stretchRequest.side === "before"
+        ? { inPoint: Math.max(-slack.before, only.inPoint - stretchRequest.seconds), outPoint: only.outPoint }
+        : { inPoint: only.inPoint, outPoint: Math.min(only.duration + slack.after, only.outPoint + stretchRequest.seconds) };
+    const { beginTransaction, endTransaction } = useEditor.getState();
+    beginTransaction();
+    const past = stretch.finishTrim({ clipId: only.id, from, to });
+    endTransaction();
+    if (past) void stretch.start(past);
+  }, [stretchRequest, stretch, project.clips]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewW, setViewW] = useState(800);
   // Where the strips were last drawn from. They cover STRIP_OVERSCAN px past the viewport on each

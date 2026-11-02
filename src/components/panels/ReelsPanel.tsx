@@ -10,10 +10,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cx } from "@/lib/utils/cx";
-import { ArrowLeft, Clapperboard, Copy, FolderOpen, KeyRound, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle, Loader2, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clapperboard, Copy, FolderOpen, KeyRound, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle, Loader2, Check } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useReelSlack } from "./shared";
+import { recaptionFromSource } from "@/lib/edit/reelStretch";
 import { DEFAULT_REEL_SETTINGS, isEmptyReel, listReels, loadReelSettings, makeReels, recutReel, saveReelSettings, type ReelProgress, type ReelSettings } from "@/lib/edit/reelMaker";
 import { activeModel, listOllamaModels, loadAiSettings, localAiEnabled, saveAiSettings, type AiSettings } from "@/lib/edit/aiHighlights";
 import { AiModelFields } from "./AiModelFields";
@@ -25,13 +26,16 @@ import { getPreset } from "@/lib/captions/presets";
 import { resetMlWorker } from "@/lib/speech/mlClient";
 import { projectDuration } from "@/lib/models/timeline";
 import type { VideoProject } from "@/lib/models/project";
-import { deleteProject, getProject, getProjectThumb } from "@/lib/storage/db";
+import { deleteProject, getProject, getProjectThumb, saveProject } from "@/lib/storage/db";
 import { formatTime, nowMs } from "@/lib/utils/time";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+
+/** Seconds each "+N s" press in the "More video" section adds to a reel. */
+const STRETCH_STEP = 10;
 
 /** Seconds without any progress report after which the panel says the cut may be stuck. */
 const STALL_NOTICE_SECONDS = 90;
@@ -228,7 +232,7 @@ export function ReelsPanel() {
         setCaptionError("No speech was found in the video, so there is no transcript to read.");
         return;
       }
-      useEditor.getState().update((p) => void applyGeneratedCaptions(p, cuesAtStart, g, language, false));
+      useEditor.getState().update((p) => void applyGeneratedCaptions(p, cuesAtStart, g, language, false, current.clips));
       useEditor.getState().setNotice(`Step 2 of 2: subtitles done (${g.cues.length} captions). Finding the best moments and cutting the reels now.`);
       ready = true;
     } catch (e) {
@@ -279,6 +283,35 @@ export function ReelsPanel() {
       abortRef.current = null;
       setJob(null);
     }
+  };
+  /** Copies the source's captions onto the reel being edited, for the range it shows (one undo step). */
+  const recaptionCurrent = async () => {
+    setError(null);
+    setNote(null);
+    const source = await getProject(listOwner);
+    if (!source) {
+      setError("The source video is no longer on this device.");
+      return;
+    }
+    let n: number | null = null;
+    useEditor.getState().update((p) => void (n = recaptionFromSource(p, source)));
+    if (n === null) setError("Only a one-clip reel can take its captions from the source.");
+    else setNote(`${n} caption${n === 1 ? "" : "s"} copied from the source video. Undo puts the old ones back.`);
+  };
+  /** Copies this video's captions onto every reel cut from it. The reels are saved, so Undo doesn't cover it. */
+  const recaptionAll = async () => {
+    setError(null);
+    setNote(null);
+    let done = 0;
+    for (const r of reels) {
+      if (isEmptyReel(r)) continue;
+      const next = structuredClone(r);
+      if (recaptionFromSource(next, project) === null) continue;
+      await saveProject(next);
+      done++;
+    }
+    await refreshReels();
+    setNote(`Captions copied from this video to ${done} reel${done === 1 ? "" : "s"}.`);
   };
   // The progress card reads top-down: which reel, what step, any detail, the bar, then time and Cancel.
   const jobBlock = job && (
@@ -432,11 +465,30 @@ export function ReelsPanel() {
           </PanelSection>
         )}
         <PanelSection title={`All reels (${reels.length})`}>{reels.length ? reelList() : <p className="rf-read-note">Loading…</p>}</PanelSection>
-        {canStretch && (canStretch.before > 0.05 || canStretch.after > 0.05) && (
-          <PanelSection>
-            <p className="rf-read-note" data-reel-stretch-hint>
-              <b>Drag either end</b> of the clip on the timeline for more. Still there: <b className="rf-mono">{formatTime(canStretch.before)}</b> before, <b className="rf-mono">{formatTime(canStretch.after)}</b> after.
+        {!isEmptyReel(project) && (
+          <PanelSection title="Captions">
+            <p className="rf-read-note">
+              Captions out of step with the speech? <b>Copy them again</b> from the source video&apos;s transcript, for the part this reel shows.
             </p>
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => void recaptionCurrent()} disabled={!!job} data-recaption>
+              <Captions size={13} /> Captions again from the source
+            </Button>
+          </PanelSection>
+        )}
+        {canStretch && (canStretch.before > 0.05 || canStretch.after > 0.05) && (
+          <PanelSection title="More video">
+            <p className="rf-read-note" data-reel-stretch-hint>
+              The source still has <b className="rf-mono">{formatTime(canStretch.before)}</b> before this reel and <b className="rf-mono">{formatTime(canStretch.after)}</b> after. <b>Add some</b> here, or drag either end of the clip on the timeline.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" className="flex-1" disabled={!!job || canStretch.before < 0.5} onClick={() => useEditor.getState().requestStretch("before", Math.min(STRETCH_STEP, canStretch.before))} data-stretch-before>
+                <ArrowLeft size={13} /> +{Math.round(Math.min(STRETCH_STEP, canStretch.before))} s before
+              </Button>
+              <Button variant="secondary" size="sm" className="flex-1" disabled={!!job || canStretch.after < 0.5} onClick={() => useEditor.getState().requestStretch("after", Math.min(STRETCH_STEP, canStretch.after))} data-stretch-after>
+                +{Math.round(Math.min(STRETCH_STEP, canStretch.after))} s after <ArrowRight size={13} />
+              </Button>
+            </div>
+            <p className="rf-read-note">The captions for the new part come from the source. Past the spare video the reel carries, it is cut again from the source; the timeline header shows the progress.</p>
           </PanelSection>
         )}
         {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
@@ -601,7 +653,12 @@ export function ReelsPanel() {
         {reels.length === 0 ? (
           <EmptyState icon={<Clapperboard size={20} />} title="No reels yet" description="Press Make reels; each one shows up here and on the start screen. Double-click a reel to edit it, press its thumbnail to preview." />
         ) : (
-          reelList()
+          <>
+            {reelList()}
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => void recaptionAll()} disabled={!!job || !!captionJob} title="Replaces every reel's captions with this video's, for the part each reel shows" data-recaption-all>
+              <Captions size={13} /> Captions again on all reels
+            </Button>
+          </>
         )}
       </PanelSection>
       {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}

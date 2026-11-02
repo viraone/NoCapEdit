@@ -172,3 +172,17 @@ describe("autosave flush", () => {
     expect(useEditor.getState().pendingAssetIds).toEqual([]);
   });
 });
+
+describe("stretch requests", () => {
+  it("records a request for the timeline to perform, with a fresh nonce each time, and drops it on unload", () => {
+    useEditor.getState().requestStretch("after", 10);
+    const a = useEditor.getState().stretchRequest!;
+    expect(a).toMatchObject({ side: "after", seconds: 10 });
+    useEditor.getState().requestStretch("before", 4);
+    const b = useEditor.getState().stretchRequest!;
+    expect(b).toMatchObject({ side: "before", seconds: 4 });
+    expect(b.nonce).toBeGreaterThanOrEqual(a.nonce);
+    useEditor.getState().unload();
+    expect(useEditor.getState().stretchRequest).toBeNull();
+  });
+});
