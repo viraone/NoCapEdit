@@ -271,7 +271,7 @@ describe("findAiHighlights", () => {
 
       const never = vi.fn(async () => busy());
       vi.stubGlobal("fetch", never);
-      await expect(findAiHighlights(cues, { settings: gem, ...opts, retryDelaysMs: [1, 1, 1] })).rejects.toThrow(/overloaded right now \(503\).*3 tries.*gemini-3\.5-flash-lite/);
+      await expect(findAiHighlights(cues, { settings: gem, ...opts, retryDelaysMs: [1, 1, 1] })).rejects.toThrow(/overloaded right now \(503\).*3 tries/);
       expect(never).toHaveBeenCalledTimes(4);
 
       // A rejected key or a missing model is not retried.
@@ -279,6 +279,32 @@ describe("findAiHighlights", () => {
       vi.stubGlobal("fetch", nope);
       await expect(findAiHighlights(cues, { settings: gem, ...opts, retryDelaysMs: [1, 1, 1] })).rejects.toThrow(/wasn't found/);
       expect(nope).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to gemini-3.5-flash-lite when the chosen model stays overloaded, and says so", async () => {
+      const busy = () => new Response('{"error":{"code":503,"message":"high demand"}}', { status: 503 });
+      const big: AiSettings = { ...gem, geminiModel: "gemini-3.8-flash" };
+      const fetchMock = vi.fn(async (url: string) => (String(url).includes("gemini-3.8-flash") ? busy() : answer(JSON.stringify({ clips: [clip(1, 4, 7, { title: "From lite" })] }))));
+      vi.stubGlobal("fetch", fetchMock);
+      const progress: string[] = [];
+      const out = await findAiHighlights(cues, { settings: big, ...opts, retryDelaysMs: [1, 1, 1], onProgress: (m) => progress.push(m) });
+      expect(out[0]).toMatchObject({ title: "From lite" });
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+      expect((fetchMock.mock.calls[4] as unknown as [string])[0]).toContain("gemini-3.5-flash-lite:generateContent");
+      expect(progress.some((m) => /switching to gemini-3\.5-flash-lite/.test(m))).toBe(true);
+      expect(progress.at(-1)).toBe("gemini-3.5-flash-lite is choosing clips");
+
+      // Both models busy: one plain message naming both.
+      const never = vi.fn(async () => busy());
+      vi.stubGlobal("fetch", never);
+      await expect(findAiHighlights(cues, { settings: big, ...opts, retryDelaysMs: [1] })).rejects.toThrow(/overloaded right now \(503\).*gemini-3\.8-flash or gemini-3\.5-flash-lite/);
+      expect(never).toHaveBeenCalledTimes(4);
+
+      // A model that isn't busy but fails otherwise does not fall back.
+      const gone = vi.fn(async () => new Response('{"error":{"code":404,"message":"x"}}', { status: 404 }));
+      vi.stubGlobal("fetch", gone);
+      await expect(findAiHighlights(cues, { settings: big, ...opts, retryDelaysMs: [1] })).rejects.toThrow(/"gemini-3\.8-flash" wasn't found/);
+      expect(gone).toHaveBeenCalledTimes(1);
     });
 
     it("stops waiting between retries when the user cancels", async () => {
@@ -305,6 +331,38 @@ describe("findAiHighlights", () => {
       expect(geminiRequestBody("sys", "usr").generationConfig).toMatchObject({ responseMimeType: "application/json" });
     });
 
+  });
+
+  describe("DeepSeek provider", () => {
+    const ds: AiSettings = { ...settings, provider: "deepseek", deepseekKey: "sk-ds-test", deepseekModel: "deepseek-chat" };
+    const answer = (content: string) => new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+
+    it("posts to api.deepseek.com and drops to json_object when DeepSeek has no json_schema mode", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('{"error":{"message":"This response_format type is unavailable now"}}', { status: 400 }))
+        .mockResolvedValueOnce(answer(JSON.stringify({ clips: [clip(1, 4, 6, { title: "Best bit" })] })));
+      vi.stubGlobal("fetch", fetchMock);
+      const progress: string[] = [];
+      const out = await findAiHighlights(cues, { settings: ds, ...opts, onProgress: (m) => progress.push(m) });
+      expect(out[0]).toMatchObject({ start: 5, end: 25, title: "Best bit", score: 6 });
+      const [url, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+      expect(url).toBe("https://api.deepseek.com/chat/completions");
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer sk-ds-test");
+      const body = JSON.parse(String(init.body));
+      expect(body.model).toBe("deepseek-chat");
+      expect(body.response_format.type).toBe("json_object");
+      expect(progress[0]).toContain("deepseek-chat at api.deepseek.com");
+    });
+
+    it("names DeepSeek in errors and ignores the OpenAI-compatible key", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })));
+      await expect(findAiHighlights(cues, { settings: ds, ...opts })).rejects.toThrow(/DeepSeek rejected the API key \(401\)/);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 429 })));
+      await expect(findAiHighlights(cues, { settings: ds, ...opts })).rejects.toThrow(/DeepSeek is rate-limiting/);
+      vi.stubGlobal("fetch", vi.fn());
+      await expect(findAiHighlights(cues, { settings: { ...ds, deepseekKey: "", apiKey: "sk-other" }, ...opts })).rejects.toThrow(/Add your DeepSeek API key/);
+    });
   });
 
   describe("xAI provider", () => {
@@ -388,6 +446,10 @@ describe("AI settings", () => {
     const x = loadAiSettings();
     expect(x).toMatchObject({ provider: "xai", xaiKey: "xai-x", xaiModel: "grok-4", model: "qwen3.8:27b" });
     expect(activeModel(x)).toBe("grok-4");
+    store.set("reelflow.ai", JSON.stringify({ provider: "deepseek", deepseekKey: "sk-ds-x" }));
+    const d = loadAiSettings();
+    expect(d).toMatchObject({ provider: "deepseek", deepseekKey: "sk-ds-x", deepseekModel: "deepseek-chat", model: "qwen3.8:27b" });
+    expect(activeModel(d)).toBe("deepseek-chat");
   });
 
   it("parses plain, fenced and broken answers", () => {

@@ -10,7 +10,7 @@
 import type { CaptionCue } from "@/lib/models/project";
 import { sentencesFromCues, type Highlight, type Sentence } from "./highlights";
 
-export type AiProvider = "ollama" | "openai" | "anthropic" | "gemini" | "xai";
+export type AiProvider = "ollama" | "openai" | "anthropic" | "gemini" | "xai" | "deepseek";
 
 export interface AiSettings {
   /** Where the model runs: Ollama on this computer (default, private) or an OpenAI-compatible HTTP API. */
@@ -37,6 +37,10 @@ export interface AiSettings {
   xaiKey: string;
   /** Grok model id, e.g. grok-4. */
   xaiModel: string;
+  /** The user's DeepSeek key; kept in this browser only. */
+  deepseekKey: string;
+  /** DeepSeek model id, e.g. deepseek-chat. */
+  deepseekModel: string;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -52,9 +56,14 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   geminiModel: "gemini-3.5-flash-lite",
   xaiKey: "",
   xaiModel: "grok-4",
+  deepseekKey: "",
+  deepseekModel: "deepseek-chat",
 };
 export const XAI_API = "https://api.x.ai/v1";
+export const DEEPSEEK_API = "https://api.deepseek.com";
 export const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
+/** The Flash model that is rarely busy: a run falls back to it when the chosen Gemini model stays overloaded. */
+const GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite";
 export const ANTHROPIC_API = "https://api.anthropic.com/v1";
 const ANTHROPIC_VERSION = "2023-06-01";
 const SETTINGS_KEY = "reelflow.ai";
@@ -66,7 +75,7 @@ export function loadAiSettings(): AiSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const parsed = raw ? (JSON.parse(raw) as Partial<AiSettings>) : {};
     return {
-      provider: parsed.provider === "openai" || parsed.provider === "anthropic" || parsed.provider === "gemini" || parsed.provider === "xai" ? parsed.provider : "ollama",
+      provider: parsed.provider === "openai" || parsed.provider === "anthropic" || parsed.provider === "gemini" || parsed.provider === "xai" || parsed.provider === "deepseek" ? parsed.provider : "ollama",
       endpoint: str(parsed.endpoint, DEFAULT_AI_SETTINGS.endpoint),
       model: str(parsed.model, DEFAULT_AI_SETTINGS.model),
       apiBase: str(parsed.apiBase, DEFAULT_AI_SETTINGS.apiBase).replace(/\/+$/, ""),
@@ -78,6 +87,8 @@ export function loadAiSettings(): AiSettings {
       geminiModel: str(parsed.geminiModel, DEFAULT_AI_SETTINGS.geminiModel),
       xaiKey: typeof parsed.xaiKey === "string" ? parsed.xaiKey.trim() : "",
       xaiModel: str(parsed.xaiModel, DEFAULT_AI_SETTINGS.xaiModel),
+      deepseekKey: typeof parsed.deepseekKey === "string" ? parsed.deepseekKey.trim() : "",
+      deepseekModel: str(parsed.deepseekModel, DEFAULT_AI_SETTINGS.deepseekModel),
     };
   } catch {
     return { ...DEFAULT_AI_SETTINGS };
@@ -95,6 +106,8 @@ export function activeModel(s: AiSettings): string {
       return s.geminiModel;
     case "xai":
       return s.xaiModel;
+    case "deepseek":
+      return s.deepseekModel;
     default:
       return s.model;
   }
@@ -366,6 +379,13 @@ const findViaOpenAi = (system: string, user: string, opts: FindAiOptions) =>
 const findViaXai = (system: string, user: string, opts: FindAiOptions) =>
   findViaOpenAiCompatible(system, user, opts, { apiBase: XAI_API, apiKey: opts.settings.xaiKey, apiModel: opts.settings.xaiModel, label: "xAI" });
 
+/** DeepSeek's API is OpenAI-compatible too. It has no json_schema mode, so the 400 on that falls through to json_object. */
+const findViaDeepseek = (system: string, user: string, opts: FindAiOptions) =>
+  findViaOpenAiCompatible(system, user, opts, { apiBase: DEEPSEEK_API, apiKey: opts.settings.deepseekKey, apiModel: opts.settings.deepseekModel, label: "DeepSeek" });
+
+/** DeepSeek model ids this key can use (GET /models at api.deepseek.com). */
+export const listDeepseekModels = (apiKey: string, signal?: AbortSignal) => listOpenAiModels(DEEPSEEK_API, apiKey, signal);
+
 /** Grok model ids this key can use (GET /v1/models at api.x.ai). */
 export const listXaiModels = (apiKey: string, signal?: AbortSignal) => listOpenAiModels(XAI_API, apiKey, signal);
 
@@ -548,20 +568,7 @@ export function parseGeminiClips(data: { candidates?: { content?: { parts?: { te
 async function findViaGemini(system: string, user: string, opts: FindAiOptions): Promise<AiClip[]> {
   const { geminiKey, geminiModel } = opts.settings;
   if (!geminiKey) throw new Error("Add your Google AI Studio API key in the Model section first.");
-  opts.onProgress?.(`Sending the transcript to ${geminiModel} at generativelanguage.googleapis.com`);
-  const send = async (plain: boolean): Promise<Response> => {
-    try {
-      return await fetch(`${GEMINI_API}/models/${encodeURIComponent(geminiModel)}:generateContent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-        signal: opts.signal,
-        body: JSON.stringify(geminiRequestBody(system, user, geminiModel, plain)),
-      });
-    } catch (e) {
-      if (opts.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-      throw new Error("Couldn't reach generativelanguage.googleapis.com. Check your connection.", { cause: e });
-    }
-  };
+  const delays = opts.retryDelaysMs ?? [2000, 5000, 10000];
   const errorDetail = async (r: Response): Promise<string> => {
     const text = await r.text().catch(() => "");
     try {
@@ -570,38 +577,65 @@ async function findViaGemini(system: string, user: string, opts: FindAiOptions):
       return text.slice(0, 200);
     }
   };
-  const delays = opts.retryDelaysMs ?? [2000, 5000, 10000];
-  let plain = false;
-  let retries = 0;
-  let res = await send(plain);
-  let detail = "";
-  while (!res.ok) {
-    detail = await errorDetail(res);
-    // A model that doesn't take the thinking setting or the larger cap: ask again the old plain way.
-    if (!plain && res.status === 400 && /thinking|maxOutputTokens|max_output|output token/i.test(detail)) {
-      plain = true;
-      res = await send(plain);
-      continue;
+  /** Asks one model, retrying while Google is busy. Returns the last response, its error text and how many busy retries it took. */
+  const ask = async (model: string) => {
+    opts.onProgress?.(`Sending the transcript to ${model} at generativelanguage.googleapis.com`);
+    const send = async (plain: boolean): Promise<Response> => {
+      try {
+        return await fetch(`${GEMINI_API}/models/${encodeURIComponent(model)}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+          signal: opts.signal,
+          body: JSON.stringify(geminiRequestBody(system, user, model, plain)),
+        });
+      } catch (e) {
+        if (opts.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+        throw new Error("Couldn't reach generativelanguage.googleapis.com. Check your connection.", { cause: e });
+      }
+    };
+    let plain = false;
+    let retries = 0;
+    let res = await send(plain);
+    let detail = "";
+    while (!res.ok) {
+      detail = await errorDetail(res);
+      // A model that doesn't take the thinking setting or the larger cap: ask again the old plain way.
+      if (!plain && res.status === 400 && /thinking|maxOutputTokens|max_output|output token/i.test(detail)) {
+        plain = true;
+        res = await send(plain);
+        continue;
+      }
+      // Google is busy (a 503 on a new model is common): wait a little and ask again, a few times.
+      if (BUSY_STATUSES.has(res.status) && retries < delays.length) {
+        retries++;
+        opts.onProgress?.(`Gemini is busy (${res.status}), trying again in ${Math.round(delays[retries - 1] / 1000)} s (${retries} of ${delays.length})…`);
+        await pause(delays[retries - 1], opts.signal);
+        res = await send(plain);
+        continue;
+      }
+      break;
     }
-    // Google is busy (a 503 on a new model is common): wait a little and ask again, a few times.
-    if (BUSY_STATUSES.has(res.status) && retries < delays.length) {
-      retries++;
-      opts.onProgress?.(`Gemini is busy (${res.status}), trying again in ${Math.round(delays[retries - 1] / 1000)} s (${retries} of ${delays.length})…`);
-      await pause(delays[retries - 1], opts.signal);
-      res = await send(plain);
-      continue;
-    }
-    break;
+    return { res, detail, retries, model };
+  };
+  let attempt = await ask(geminiModel);
+  // Still overloaded after every retry: this run goes to the lighter model instead of failing.
+  if (!attempt.res.ok && BUSY_STATUSES.has(attempt.res.status) && geminiModel !== GEMINI_FALLBACK_MODEL) {
+    opts.onProgress?.(`${geminiModel} is still overloaded (${attempt.res.status}), switching to ${GEMINI_FALLBACK_MODEL} for this run…`);
+    attempt = await ask(GEMINI_FALLBACK_MODEL);
   }
+  const { res, detail, retries, model } = attempt;
   if (!res.ok) {
-    if (BUSY_STATUSES.has(res.status)) throw new Error(`Gemini is overloaded right now (${res.status}) and didn't recover after ${retries} ${retries === 1 ? "try" : "tries"}. Wait a minute and press Make reels again, or pick gemini-3.5-flash-lite, which is rarely busy.`);
+    if (BUSY_STATUSES.has(res.status)) {
+      const tried = model === geminiModel ? `after ${retries} ${retries === 1 ? "try" : "tries"}` : `on ${geminiModel} or ${model}, even after retrying`;
+      throw new Error(`Gemini is overloaded right now (${res.status}) and didn't recover ${tried}. Wait a minute and press Make reels again.`);
+    }
     if (res.status === 400 && /api key/i.test(detail)) throw new Error("Google rejected the API key. Check it in the Model section.");
     if (res.status === 401 || res.status === 403) throw new Error(`Google refused the request (${res.status})${detail ? `: ${detail}` : ""}`);
-    if (res.status === 404) throw new Error(`The model "${geminiModel}" wasn't found (404). Pick one from the list.`);
+    if (res.status === 404) throw new Error(`The model "${model}" wasn't found (404). Pick one from the list.`);
     if (res.status === 429) throw new Error("Gemini is rate-limiting or out of quota (429). Try again in a minute.");
     throw new Error(`Gemini returned ${res.status}${detail ? `: ${detail}` : ""}`);
   }
-  opts.onProgress?.(`${geminiModel} is choosing clips`);
+  opts.onProgress?.(`${model} is choosing clips`);
   return parseGeminiClips((await res.json()) as Parameters<typeof parseGeminiClips>[0]);
 }
 
@@ -633,6 +667,7 @@ export async function findAiHighlights(cues: CaptionCue[], opts: FindAiOptions):
   if (opts.settings.provider === "anthropic") return clipsToHighlights(await findViaAnthropic(system, user, opts), sentences, opts);
   if (opts.settings.provider === "gemini") return clipsToHighlights(await findViaGemini(system, user, opts), sentences, opts);
   if (opts.settings.provider === "xai") return clipsToHighlights(await findViaXai(system, user, opts), sentences, opts);
+  if (opts.settings.provider === "deepseek") return clipsToHighlights(await findViaDeepseek(system, user, opts), sentences, opts);
   const endpoint = opts.settings.endpoint.replace(/\/+$/, "");
   const model = opts.settings.model;
   opts.onProgress?.(`Sending the transcript to ${model}`);

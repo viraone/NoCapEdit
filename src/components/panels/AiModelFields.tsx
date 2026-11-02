@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { withBase } from "@/lib/basePath";
 import { Check, RefreshCw, ShieldCheck } from "lucide-react";
-import { DEFAULT_AI_SETTINGS, listAnthropicModels, listGeminiModels, listOllamaModels, listOpenAiModels, listXaiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
+import { DEFAULT_AI_SETTINGS, listAnthropicModels, listDeepseekModels, listGeminiModels, listOllamaModels, listOpenAiModels, listXaiModels, type AiProvider, type AiSettings } from "@/lib/edit/aiHighlights";
 import { Field, Input } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 
@@ -117,7 +117,8 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
   const anthropic = settings.provider === "anthropic";
   const gemini = settings.provider === "gemini";
   const xai = settings.provider === "xai";
-  const pickProvider = (v: string): AiProvider => (v === "openai" || v === "anthropic" || v === "gemini" || v === "xai" ? v : "ollama");
+  const deepseek = settings.provider === "deepseek";
+  const pickProvider = (v: string): AiProvider => (v === "openai" || v === "anthropic" || v === "gemini" || v === "xai" || v === "deepseek" ? v : "ollama");
   /** The model list belongs to the provider it was loaded for; a key edited since then no longer counts as verified. */
   const cloudModels = cloud.verified?.provider === settings.provider ? cloud.models : null;
   const verifiedFor = (key: string) => cloud.verified?.provider === settings.provider && cloud.verified.key === key;
@@ -134,10 +135,27 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
           <option value="anthropic">Anthropic (Claude)</option>
           <option value="gemini">Google (Gemini)</option>
           <option value="xai">xAI (Grok)</option>
+          <option value="deepseek">DeepSeek</option>
           <option value="openai">OpenAI-compatible API</option>
         </Select>
       </Field>
-      {xai ? (
+      {deepseek ? (
+        <>
+          <Field label="Model" right={refreshLabel("List the DeepSeek models this key can use", () => void cloud.refresh(() => listDeepseekModels(settings.deepseekKey, AbortSignal.timeout(20000)), settings.deepseekKey, "deepseek"), settings.deepseekKey)}>
+            <div className={glow}>
+              <ModelPicker value={settings.deepseekModel} models={cloudModels} onChange={(m) => onChange({ deepseekModel: m })} placeholder={DEFAULT_AI_SETTINGS.deepseekModel} disabled={disabled} />
+            </div>
+            {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
+            {cloud.error && !cloud.pending && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
+          </Field>
+          <Field label="DeepSeek API key" hint="Stored in this browser as you type. Check key only tests it.">
+            <Input type="password" value={settings.deepseekKey} onChange={(e) => onChange({ deepseekKey: e.target.value })} placeholder="sk-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
+          </Field>
+          <p className="rf-read-note" data-ai-disclaimer>
+            Sends the transcript (not the video) to DeepSeek under its terms and is billed to your key, which stays in this browser and is only sent to api.deepseek.com. Get a key at platform.deepseek.com. The Ollama option keeps everything on this computer.
+          </p>
+        </>
+      ) : xai ? (
         <>
           <Field label="Model" right={refreshLabel("List the Grok models this key can use", () => void cloud.refresh(() => listXaiModels(settings.xaiKey, AbortSignal.timeout(20000)), settings.xaiKey, "xai"), settings.xaiKey)}>
             <div className={glow}>
