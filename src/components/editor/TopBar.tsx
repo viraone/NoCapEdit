@@ -11,6 +11,11 @@ import { Toggle } from "@/components/ui/Toggle";
 import { VersionsModal } from "./VersionsModal";
 import { cx } from "@/lib/utils/cx";
 
+/** Keeps a link from leaving the editor while a Make reels run is going. */
+function stayForReelRun(e: { preventDefault(): void }) {
+  if (useEditor.getState().holdForReelRun()) e.preventDefault();
+}
+
 export function TopBar() {
   const project = useEditor((s) => s.project)!;
   const canUndo = useEditor((s) => s.past.length > 0);
@@ -83,7 +88,7 @@ export function TopBar() {
   return (
     <header className="-mx-2.5 -mt-2.5 mb-0.5 flex h-[56px] shrink-0 items-center gap-3 border-b border-white/10 bg-[#141416] px-[16px]" data-top-bar>
       <div className="flex min-w-0 items-center gap-[10px]">
-        <Link href="/" className="flex h-[40px] shrink-0 items-center gap-2 rounded-[10px] border border-white/5 bg-sys-gray5 px-[14px] text-[14px] font-semibold text-white hover:bg-sys-gray4" title="All projects" data-projects-link>
+        <Link href="/" onClick={stayForReelRun} className="flex h-[40px] shrink-0 items-center gap-2 rounded-[10px] border border-white/5 bg-sys-gray5 px-[14px] text-[14px] font-semibold text-white hover:bg-sys-gray4" title="All projects" data-projects-link>
           <ArrowLeft size={17} /> Projects
         </Link>
         <span className="h-[24px] w-px shrink-0 bg-white/10" />
@@ -121,7 +126,7 @@ export function TopBar() {
           )}
         </span>
         {project.sourceProjectId && (
-          <Link href={`/editor?id=${project.sourceProjectId}&tool=reels`} className="flex h-[36px] shrink-0 items-center gap-1.5 rounded-[10px] bg-sys-pink/15 px-[12px] text-[13px] font-semibold text-sys-pink hover:bg-sys-pink/25" title="Back to the source video and the list of all its reels" data-back-to-source>
+          <Link href={`/editor?id=${project.sourceProjectId}&tool=reels`} onClick={stayForReelRun} className="flex h-[36px] shrink-0 items-center gap-1.5 rounded-[10px] bg-sys-pink/15 px-[12px] text-[13px] font-semibold text-sys-pink hover:bg-sys-pink/25" title="Back to the source video and the list of all its reels" data-back-to-source>
             <ArrowLeft size={15} /> All reels
           </Link>
         )}

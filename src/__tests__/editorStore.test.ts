@@ -186,3 +186,28 @@ describe("stretch requests", () => {
     expect(useEditor.getState().stretchRequest).toBeNull();
   });
 });
+
+describe("a Make reels run", () => {
+  it("keeps tools and edit requests from closing the Reels panel, and says why", () => {
+    const s = useEditor.getState();
+    useEditor.setState({ project: createProject({ name: "a" }), tool: "reels", selection: null, notice: null });
+    s.setReelRun(true);
+    s.setTool("trim");
+    s.requestEdit({ kind: "cue", id: "c" });
+    expect(useEditor.getState().tool).toBe("reels");
+    expect(useEditor.getState().notice).toMatch(/still being made/);
+    // Coming to the Reels tool is always fine, as is everything once the run ends.
+    s.setTool("reels");
+    expect(s.holdForReelRun()).toBe(true);
+    s.setReelRun(false);
+    expect(s.holdForReelRun()).toBe(false);
+    s.setTool("trim");
+    expect(useEditor.getState().tool).toBe("trim");
+  });
+
+  it("doesn't outlive the project", () => {
+    useEditor.getState().setReelRun(true);
+    useEditor.getState().unload();
+    expect(useEditor.getState().reelRun).toBe(false);
+  });
+});

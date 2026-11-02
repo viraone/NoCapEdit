@@ -145,6 +145,23 @@ export function ReelsPanel() {
     };
   }, [jobStarted]);
   useEffect(() => () => abortRef.current?.abort(), []);
+  // The run lives in this panel: while it goes, tools and links stay put and closing the tab asks first.
+  const running = !!job || !!captionJob;
+  useEffect(() => {
+    if (!running) return;
+    const { setReelRun } = useEditor.getState();
+    setReelRun(true);
+    const ask = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", ask);
+    return () => {
+      setReelRun(false);
+      window.removeEventListener("beforeunload", ask);
+    };
+  }, [running]);
+  /** Opens another project, unless a run would stop. */
+  const go = (href: string) => {
+    if (!useEditor.getState().holdForReelRun()) router.push(href);
+  };
   const cancelCaptions = () => {
     if (!captionAbortRef.current) return;
     captionAbortRef.current.abort();
@@ -182,7 +199,10 @@ export function ReelsPanel() {
       const dup = result.skipped ? ` ${result.skipped} already existed and ${result.skipped === 1 ? "was" : "were"} skipped.` : "";
       setNote(`${result.made.length} reel${result.made.length === 1 ? "" : "s"} ready.${short}${dup}`);
     } catch (e) {
-      if (!(e instanceof DOMException && e.name === "AbortError")) setError((e instanceof Error ? e.message : String(e)) + (/reach Ollama/i.test(String(e)) ? permissionHint : ""));
+      if (e instanceof DOMException && e.name === "AbortError") {
+        await refreshReels();
+        setNote("Stopped. The reels finished so far are in the list; press Make reels to add the rest.");
+      } else setError((e instanceof Error ? e.message : String(e)) + (/reach Ollama/i.test(String(e)) ? permissionHint : ""));
     } finally {
       abortRef.current = null;
       setJob(null);
@@ -347,7 +367,7 @@ export function ReelsPanel() {
         const shown = current ? project : r;
         const empty = isEmptyReel(r);
         // Land on the Reels tool so the list of siblings and the way back stay in view.
-        const open = () => !current && router.push(`/editor?id=${r.id}&tool=reels`);
+        const open = () => !current && go(`/editor?id=${r.id}&tool=reels`);
         return (
           <li
             key={r.id}
@@ -384,7 +404,7 @@ export function ReelsPanel() {
               )}
             </div>
             {!current && (
-              <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), router.push(`/editor?id=${r.id}&tool=reels`))} title="Open this reel">
+              <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), go(`/editor?id=${r.id}&tool=reels`))} title="Open this reel">
                 <FolderOpen size={13} />
               </Button>
             )}
@@ -393,7 +413,7 @@ export function ReelsPanel() {
                 <RefreshCw size={13} />
               </Button>
             ) : (
-              <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), router.push(`/editor?id=${r.id}&tool=export`))} title="Export this reel">
+              <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), go(`/editor?id=${r.id}&tool=export`))} title="Export this reel">
                 <Share2 size={13} />
               </Button>
             )}
@@ -433,7 +453,7 @@ export function ReelsPanel() {
               <button
                 type="button"
                 className="mt-1.5 flex max-w-full items-center gap-1 text-[12px] text-sys-blue hover:underline"
-                onClick={() => router.push(backHref)}
+                onClick={() => go(backHref)}
                 data-all-reels
                 title={`Back to ${sourceName ? `"${sourceName}"` : "the source video"} and the list of all its reels. The source keeps the full transcript; Make reels there adds to this list.`}
               >

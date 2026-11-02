@@ -43,6 +43,11 @@ export interface EditorState {
   editRequest: (Selection & { nonce: number }) | null;
   /** Set by the Reels panel's "+10 s" buttons; the timeline dock, which owns the stretch, performs it. */
   stretchRequest: { side: "before" | "after"; seconds: number; nonce: number } | null;
+  /**
+   * A Make reels run is going. It lives in the Reels panel and closing the panel
+   * stops it, so tools and links that would close it wait (see holdForReelRun).
+   */
+  reelRun: boolean;
   /** Bumped by "Make reels" in the top-bar menu; the Subtitles panel runs the job. */
   reelsRequest: number;
   /** Progress line of the video import running in this editor (shared by the top bar and the Clips panel), null when idle. */
@@ -68,6 +73,9 @@ export interface EditorState {
   undo(): void;
   redo(): void;
   setTool(tool: ToolId): void;
+  setReelRun(on: boolean): void;
+  /** True while a Make reels run must not be left, after saying so; callers then stay where they are. */
+  holdForReelRun(): boolean;
   setTime(t: number): void;
   seek(t: number): void;
   setPlaying(playing: boolean): void;
@@ -176,6 +184,7 @@ export const useEditor = create<EditorState>()(
     notice: null,
     editRequest: null,
     stretchRequest: null,
+    reelRun: false,
     reelsRequest: 0,
     importStatus: null,
     importError: null,
@@ -219,7 +228,7 @@ export const useEditor = create<EditorState>()(
         clearTimeout(noticeTimer);
         noticeTimer = null;
       }
-      set({ project: null, sourceProject: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, stretchRequest: null, importStatus: null, importError: null, pendingAssetIds: [], notice: null });
+      set({ project: null, sourceProject: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, stretchRequest: null, reelRun: false, importStatus: null, importError: null, pendingAssetIds: [], notice: null });
     },
 
     update(fn, opts = {}) {
@@ -280,7 +289,16 @@ export const useEditor = create<EditorState>()(
       scheduleSave(next, set);
     },
 
-    setTool: (tool) => set({ tool }),
+    setTool(tool) {
+      if (tool !== "reels" && get().holdForReelRun()) return;
+      set({ tool });
+    },
+    setReelRun: (reelRun) => set({ reelRun }),
+    holdForReelRun() {
+      if (!get().reelRun) return false;
+      get().setNotice("Reels are still being made here. Leaving this panel would stop them: wait for them to finish, or press Cancel first.");
+      return true;
+    },
     setTime: (currentTime) => set({ currentTime }),
     seek(t) {
       engine.seek(t);
@@ -315,6 +333,7 @@ export const useEditor = create<EditorState>()(
       set({ tool: "reels", reelsRequest: Date.now() });
     },
     requestEdit(sel) {
+      if (get().holdForReelRun()) return;
       const project = get().project;
       let tool: ToolId = "subtitles";
       if (sel.kind === "overlay") {
