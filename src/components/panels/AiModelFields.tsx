@@ -67,9 +67,9 @@ export function useCloudModels() {
 export const FLASH_MS = 2000;
 
 /**
- * What sits to the right of the Model label. The key and model are stored as
- * they are typed, so there is nothing to "save": this only CHECKS the key and
- * loads the models it can use.
+ * What sits under the key box (and beside the Model label for Ollama). The key
+ * and model are stored as they are typed, so there is nothing to "save": this
+ * only CHECKS the key and loads the models it can use.
  *  - not checked yet: a "Check key" action (or "refresh" with no key, for Ollama)
  *  - checking: "Checking…" with a spinner
  *  - checked: a steady green "Key verified · N models" that stays, plus a small
@@ -125,6 +125,14 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
   const refreshLabel = (title: string, onClick: () => void, apiKey?: string) => (
     <KeyStatus title={title} onClick={onClick} apiKey={apiKey} pending={cloud.pending} verified={!!apiKey && verifiedFor(apiKey)} justVerified={cloud.justVerified} count={cloudModels?.length} disabled={disabled} />
   );
+  /** Under the key box: the check, and what came of it. */
+  const keyCheck = (title: string, onClick: () => void, apiKey?: string) => (
+    <div className="mt-1.5 text-[11px] tabular-nums text-label-2">
+      {refreshLabel(title, onClick, apiKey)}
+      {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
+      {cloud.error && !cloud.pending && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
+    </div>
+  );
   /** The model box glows green once when the list has just loaded. */
   const glow = cloud.justVerified && cloudModels ? "rf-saved-glow rounded-lg" : undefined;
   return (
@@ -141,15 +149,14 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
       </Field>
       {deepseek ? (
         <>
-          <Field label="Model" right={refreshLabel("List the DeepSeek models this key can use", () => void cloud.refresh(() => listDeepseekModels(settings.deepseekKey, AbortSignal.timeout(20000)), settings.deepseekKey, "deepseek"), settings.deepseekKey)}>
+          <Field label="Model">
             <div className={glow}>
               <ModelPicker value={settings.deepseekModel} models={cloudModels} onChange={(m) => onChange({ deepseekModel: m })} placeholder={DEFAULT_AI_SETTINGS.deepseekModel} disabled={disabled} />
             </div>
-            {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
-            {cloud.error && !cloud.pending && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
           <Field label="DeepSeek API key" hint="Stored in this browser as you type. Check key only tests it.">
             <Input type="password" value={settings.deepseekKey} onChange={(e) => onChange({ deepseekKey: e.target.value })} placeholder="sk-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
+            {keyCheck("List the DeepSeek models this key can use", () => void cloud.refresh(() => listDeepseekModels(settings.deepseekKey, AbortSignal.timeout(20000)), settings.deepseekKey, "deepseek"), settings.deepseekKey)}
           </Field>
           <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to DeepSeek under its terms and is billed to your key, which stays in this browser and is only sent to api.deepseek.com. Get a key at platform.deepseek.com. The Ollama option keeps everything on this computer.
@@ -157,15 +164,14 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         </>
       ) : xai ? (
         <>
-          <Field label="Model" right={refreshLabel("List the Grok models this key can use", () => void cloud.refresh(() => listXaiModels(settings.xaiKey, AbortSignal.timeout(20000)), settings.xaiKey, "xai"), settings.xaiKey)}>
+          <Field label="Model">
             <div className={glow}>
               <ModelPicker value={settings.xaiModel} models={cloudModels} onChange={(m) => onChange({ xaiModel: m })} placeholder={DEFAULT_AI_SETTINGS.xaiModel} disabled={disabled} />
             </div>
-            {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
-            {cloud.error && !cloud.pending && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
           <Field label="xAI API key" hint="Stored in this browser as you type. Check key only tests it.">
             <Input type="password" value={settings.xaiKey} onChange={(e) => onChange({ xaiKey: e.target.value })} placeholder="xai-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
+            {keyCheck("List the Grok models this key can use", () => void cloud.refresh(() => listXaiModels(settings.xaiKey, AbortSignal.timeout(20000)), settings.xaiKey, "xai"), settings.xaiKey)}
           </Field>
           <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to xAI under its terms and is billed to your key, which stays in this browser and is only sent to api.x.ai. Get a key at console.x.ai. The Ollama option keeps everything on this computer.
@@ -173,15 +179,14 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         </>
       ) : gemini ? (
         <>
-          <Field label="Model" right={refreshLabel("List the Gemini models this key can use", () => void cloud.refresh(() => listGeminiModels(settings.geminiKey, AbortSignal.timeout(20000)), settings.geminiKey, "gemini"), settings.geminiKey)}>
+          <Field label="Model">
             <div className={glow}>
               <ModelPicker value={settings.geminiModel} models={cloudModels} onChange={(m) => onChange({ geminiModel: m })} placeholder={DEFAULT_AI_SETTINGS.geminiModel} disabled={disabled} />
             </div>
-            {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
-            {cloud.error && !cloud.pending && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
           <Field label="Google AI Studio API key" hint="Stored in this browser as you type. Check key only tests it.">
             <Input type="password" value={settings.geminiKey} onChange={(e) => onChange({ geminiKey: e.target.value })} placeholder="AIza…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
+            {keyCheck("List the Gemini models this key can use", () => void cloud.refresh(() => listGeminiModels(settings.geminiKey, AbortSignal.timeout(20000)), settings.geminiKey, "gemini"), settings.geminiKey)}
           </Field>
           <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to Google under its terms and is billed to your key, which stays in this browser and is only sent to generativelanguage.googleapis.com. Get a free key at aistudio.google.com (<a href={withBase("/docs/#api-key")} target="_blank" rel="noreferrer" className="text-sys-blue hover:underline">step-by-step guide</a>). The Ollama option keeps everything on this computer.
@@ -189,15 +194,14 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
         </>
       ) : anthropic ? (
         <>
-          <Field label="Model" right={refreshLabel("List the Claude models this key can use", () => void cloud.refresh(() => listAnthropicModels(settings.anthropicKey, AbortSignal.timeout(20000)), settings.anthropicKey, "anthropic"), settings.anthropicKey)}>
+          <Field label="Model">
             <div className={glow}>
               <ModelPicker value={settings.anthropicModel} models={cloudModels} onChange={(m) => onChange({ anthropicModel: m })} placeholder={DEFAULT_AI_SETTINGS.anthropicModel} disabled={disabled} />
             </div>
-            {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
-            {cloud.error && !cloud.pending && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
           </Field>
           <Field label="Anthropic API key" hint="Stored in this browser as you type. Check key only tests it.">
             <Input type="password" value={settings.anthropicKey} onChange={(e) => onChange({ anthropicKey: e.target.value })} placeholder="sk-ant-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
+            {keyCheck("List the Claude models this key can use", () => void cloud.refresh(() => listAnthropicModels(settings.anthropicKey, AbortSignal.timeout(20000)), settings.anthropicKey, "anthropic"), settings.anthropicKey)}
           </Field>
           <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to Anthropic under its terms and is billed to your key, which stays in this browser and is only sent to api.anthropic.com. Get a key at console.anthropic.com. The Ollama option keeps everything on this computer.
@@ -206,12 +210,10 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
       ) : openai ? (
         <>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Model" right={refreshLabel("List the models this key can use", () => void cloud.refresh(() => listOpenAiModels(settings.apiBase, settings.apiKey, AbortSignal.timeout(20000)), settings.apiKey, "openai"), settings.apiKey)}>
+            <Field label="Model">
               <div className={glow}>
               <ModelPicker value={settings.apiModel} models={cloudModels} onChange={(m) => onChange({ apiModel: m })} placeholder={DEFAULT_AI_SETTINGS.apiModel} disabled={disabled} />
             </div>
-              {cloud.pending && <p className="rf-read-note mt-1">Listing models…</p>}
-              {cloud.error && !cloud.pending && <p className="mt-1 text-[11px] text-sys-orange">{cloud.error}</p>}
             </Field>
             <Field label="Base URL">
               <Input value={settings.apiBase} onChange={(e) => onChange({ apiBase: e.target.value })} placeholder={DEFAULT_AI_SETTINGS.apiBase} spellCheck={false} disabled={disabled} aria-label="API base URL" />
@@ -219,6 +221,7 @@ export function AiModelFields({ settings, onChange, disabled, permissionHint = "
           </div>
           <Field label="API key">
             <Input type="password" value={settings.apiKey} onChange={(e) => onChange({ apiKey: e.target.value })} placeholder="sk-…" spellCheck={false} autoComplete="off" disabled={disabled} aria-label="API key" />
+            {keyCheck("List the models this key can use", () => void cloud.refresh(() => listOpenAiModels(settings.apiBase, settings.apiKey, AbortSignal.timeout(20000)), settings.apiKey, "openai"), settings.apiKey)}
           </Field>
           <p className="rf-read-note" data-ai-disclaimer>
             Sends the transcript (not the video) to this provider under its terms; your key stays in this browser and is only sent to the base URL above. Works with OpenAI, Groq, OpenRouter, LM Studio and Ollama&apos;s /v1 endpoint. The Ollama option keeps everything on this computer.
