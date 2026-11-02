@@ -97,14 +97,21 @@ export function mergeStretchedCues(existing: CaptionCue[], sourceCues: CaptionCu
   const front = shown.start - range.start;
   const tailAt = shown.end - range.start;
   const near = (a: number, b: number) => Math.abs(a - b) < 0.05;
+  /** A caption the cut shortened gets back the words it lost along with its time. */
+  const restoreText = (e: CaptionCue, c: CaptionCue) => {
+    if (e.text === c.text) return;
+    e.text = c.text;
+    if (c.translatedText) e.translatedText = c.translatedText;
+  };
   const wordsWithin = (c: CaptionCue, from: number, to: number) =>
     c.words?.map((w) => ({ ...w, start: clamp(w.start - range.start, from, to), end: clamp(w.end - range.start, from, to) })).filter((w) => w.end > w.start);
   let added = 0;
   if (front > 1e-6) {
     for (const c of sourceCues) {
       if (c.end <= range.start || c.start >= shown.start) continue;
-      const carried = c.end > shown.start ? cues.find((e) => near(e.start, front) && e.text === c.text) : undefined;
+      const carried = c.end > shown.start ? cues.find((e) => near(e.start, front) && c.text.endsWith(e.text)) : undefined;
       if (carried) {
+        restoreText(carried, c);
         carried.start = Math.max(0, c.start - range.start);
         carried.words = wordsWithin(c, carried.start, carried.end);
       } else {
@@ -116,8 +123,9 @@ export function mergeStretchedCues(existing: CaptionCue[], sourceCues: CaptionCu
   if (range.end > shown.end + 1e-6) {
     for (const c of sourceCues) {
       if (c.start >= range.end || c.end <= shown.end) continue;
-      const carried = c.start < shown.end ? cues.find((e) => near(e.end, tailAt) && e.text === c.text) : undefined;
+      const carried = c.start < shown.end ? cues.find((e) => near(e.end, tailAt) && c.text.startsWith(e.text)) : undefined;
       if (carried) {
+        restoreText(carried, c);
         carried.end = Math.min(range.end, c.end) - range.start;
         carried.words = wordsWithin(c, carried.start, carried.end);
       } else {

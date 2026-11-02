@@ -17,6 +17,8 @@ const EPS = 1e-6;
 /** Shortest caption kept after a cut, seconds. */
 export const MIN_CUE = 0.1;
 const round = (t: number) => Math.round(t * 1e4) / 1e4;
+/** Past the video's end by more than this (a millisecond, well over what `round` can add) is really past it. */
+const PAST_END = 1e-3;
 
 export interface MappedTime {
   time: number;
@@ -36,7 +38,7 @@ export function mapTime(from: ClipLayout[], to: ClipLayout[], t: number, side: "
   const oldEnd = from[from.length - 1].end;
   const newEnd = to[to.length - 1].end;
   // Past the end of the video: keep the same distance past the new end.
-  if (t > oldEnd + EPS) return { time: round(t + (newEnd - oldEnd)), layout: to[to.length - 1] };
+  if (t > oldEnd + PAST_END) return { time: round(t + (newEnd - oldEnd)), layout: to[to.length - 1] };
   const at = Math.max(0, side === "end" ? t - 1e-4 : t);
   const loc = locateFrame(from, at);
   if (!loc) return null;
