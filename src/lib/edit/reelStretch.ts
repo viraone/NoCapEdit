@@ -6,12 +6,13 @@
  * to keep their place in the picture, and the source's captions fill the part
  * that is new.
  *
- * Ranges here are seconds on the source project's timeline, like ReelInfo.
+ * Ranges here are seconds on the source project's timeline, like ReelInfo; the
+ * editor and listReels bring a reel's up to date with reelOnSource first.
  * The reel's media plays one second per source second (reels come from
  * clips at normal speed).
  */
-import type { CaptionCue, Clip, VideoProject } from "@/lib/models/project";
-import { layoutClips, locateFrame, toSourceTime } from "@/lib/models/timeline";
+import type { CaptionCue, Clip, ReelInfo, VideoProject } from "@/lib/models/project";
+import { layoutClips, locateFrame, reelOnSource, reelOrigin, toSourceTime } from "@/lib/models/timeline";
 import { getAsset } from "@/lib/storage/db";
 import { importVideo } from "@/lib/media/import";
 import { clamp } from "@/lib/utils/math";
@@ -44,6 +45,8 @@ export function reelSourceRange(source: Pick<VideoProject, "clips">, reel: Pick<
   const at = reel.reel.start + 0.01;
   const loc = locateFrame(layoutClips(source.clips), at);
   if (!loc || at > loc.primary.end) return null;
+  // The clip it came from is gone from the source: what sits there now is other video.
+  if (reel.reel.sourceAssetId && loc.primary.clip.assetId !== reel.reel.sourceAssetId) return null;
   return { start: loc.primary.start, end: loc.primary.end };
 }
 
@@ -69,6 +72,7 @@ export function reelSlack(reel: VideoProject, source: VideoProject | null): Slac
  * this isn't a one-clip reel of that source.
  */
 export function recaptionFromSource(reel: VideoProject, source: VideoProject): number | null {
+  if (reel.reel) reel.reel = reelOnSource(reel.reel, source.clips);
   if (!reelSlack(reel, source)) return null;
   const media = reelMedia(reel)!;
   const c = reel.clips[0];
@@ -156,6 +160,8 @@ export interface StretchApply {
   range: Range;
   /** The source project's captions, for the parts that are new. */
   sourceCues: CaptionCue[];
+  /** Where the new media was cut from (StretchCut.origin). */
+  origin?: Pick<ReelInfo, "sourceOffset" | "sourceAssetId">;
 }
 
 export interface StretchStats {
@@ -236,7 +242,7 @@ export function applyReelStretch(p: VideoProject, o: StretchApply): StretchStats
   // Project-time shift: positive when video came back before the old start.
   shiftTimeline(p, shown.start - o.range.start);
   const revealed = applyReelReveal(p, { shown, range: o.range, sourceCues: o.sourceCues })!;
-  p.reel = { ...p.reel, media: o.media };
+  p.reel = { ...p.reel, ...o.origin, media: o.media };
   return { ...revealed, droppedCleanAudio: !!old.audioAssetId };
 }
 
@@ -256,6 +262,7 @@ export interface StretchCut {
   blob: Blob;
   media: Range;
   range: Range;
+  origin: Pick<ReelInfo, "sourceOffset" | "sourceAssetId">;
 }
 
 const abortError = () => new DOMException("Cancelled", "AbortError");
@@ -288,5 +295,5 @@ export async function stretchReel(o: StretchOptions): Promise<StretchCut> {
   const file = new File([blob], `${o.reel.name.replace(/[\\/:*?"<>|]+/g, " ")}.mp4`, { type: "video/mp4" });
   const { clip } = await importVideo(file, o.reel.id, (m) => o.onProgress?.(m, null), o.assetId);
   if (o.signal?.aborted) throw abortError();
-  return { clip, blob, media, range };
+  return { clip, blob, media, range, origin: reelOrigin(layout) };
 }

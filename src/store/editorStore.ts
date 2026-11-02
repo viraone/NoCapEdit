@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { normalizeProject, type VideoProject } from "@/lib/models/project";
 import { rippleTimeline } from "@/lib/models/ripple";
+import { reelOnSource } from "@/lib/models/timeline";
 import { getProject, listProjectAssets, saveProject } from "@/lib/storage/db";
 import { engine } from "@/lib/playback/engine";
 import { sameProject } from "@/lib/utils/same";
@@ -201,6 +202,8 @@ export const useEditor = create<EditorState>()(
         const assetUrls: Record<string, string> = {};
         for (const a of assets) assetUrls[a.id] = URL.createObjectURL(a.blob);
         const sourceProject = project.sourceProjectId ? ((await getProject(project.sourceProjectId)) ?? null) : null;
+        // The source may have been trimmed since the reel was cut; its ranges follow.
+        if (project.reel && sourceProject) project.reel = reelOnSource(project.reel, sourceProject.clips);
         set({ project, sourceProject, assetUrls, loading: false, past: [], future: [], currentTime: 0, isPlaying: false, selection: null, tool: "clips" });
         return true;
       } catch (e) {

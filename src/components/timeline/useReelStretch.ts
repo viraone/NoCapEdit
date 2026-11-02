@@ -98,7 +98,7 @@ export function useReelStretch() {
       if (useEditor.getState().project?.id !== reel.id) return;
       state.registerAsset(assetId, cut.blob);
       let stats: StretchStats | null = null;
-      state.update((p) => void (stats = applyReelStretch(p, { fresh: cut.clip, media: cut.media, range: cut.range, sourceCues: source.cues })));
+      state.update((p) => void (stats = applyReelStretch(p, { fresh: cut.clip, media: cut.media, range: cut.range, sourceCues: source.cues, origin: cut.origin })));
       state.setNotice(stats ? stretchNotice(stats) : "Couldn't stretch this reel: it no longer has a single clip.");
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) state.setNotice(`Couldn't bring back more of the video: ${e instanceof Error ? e.message : String(e)}`);

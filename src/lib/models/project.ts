@@ -316,6 +316,15 @@ export interface ReelInfo {
    * exactly start..end.
    */
   media?: { start: number; end: number };
+  /**
+   * Source file seconds minus the source timeline seconds above, when those
+   * were written. Trimming the source moves its timeline under them;
+   * reelOnSource uses this to bring them back. Absent on reels cut before it
+   * existed: their ranges are taken as they stand.
+   */
+  sourceOffset?: number;
+  /** The source's video file the reel was cut from; set together with sourceOffset. */
+  sourceAssetId?: string;
 }
 
 /** The post written for the video: what to paste when it is shared. */

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyReelReveal, applyReelStretch, mergeStretchedCues, recaptionFromSource, reelMedia, reelSlack, reelSourceRange, stretchOf } from "@/lib/edit/reelStretch";
 import { createClip, createProject, type CaptionCue, type ReelInfo, type VideoProject } from "@/lib/models/project";
 import { rippleTimeline } from "@/lib/models/ripple";
+import { reelOnSource } from "@/lib/models/timeline";
 
 const clip = (duration: number, extra: Partial<ReturnType<typeof createClip>> = {}) => ({
   ...createClip({ assetId: "src", name: "c", duration, width: 1920, height: 1080, hasAudio: true }),
@@ -237,5 +238,61 @@ describe("recaptionFromSource", () => {
     reel.clips = [reel.clips[0], clip(5)];
     expect(recaptionFromSource(reel, src)).toBeNull();
     expect(recaptionFromSource(createProject({ name: "plain" }), src)).toBeNull();
+  });
+});
+
+describe("a reel whose source was trimmed after it was cut", () => {
+  // Cut with 5 s off the source's start: source file second = timeline second + 5.
+  const cutReel = (): VideoProject => {
+    const p = createProject({ id: "reel_prj", name: "Show · Reel 1 · t", sourceProjectId: "src_prj", reel: { ...info, media: { start: 80, end: 140 }, sourceOffset: 5, sourceAssetId: "src" } });
+    p.clips = [clip(60, { assetId: "reel_media", inPoint: 10, outPoint: 50 })];
+    return p;
+  };
+  // Then 3 s more came off, with the captions rippled along: the moment at timeline 95 is at 92 now.
+  const trimmed = () => {
+    const src = createProject({ id: "src_prj", name: "Show", clips: [clip(300, { inPoint: 8 })] });
+    src.cues = [cue("said at the reel's start", 87, 89), cue("before it", 80, 82), cue("just past the end", 128, 129)];
+    return src;
+  };
+
+  it("moves the reel's ranges with the source's timeline", () => {
+    const moved = reelOnSource(cutReel().reel!, trimmed().clips);
+    expect(moved).toMatchObject({ start: 87, end: 127, media: { start: 77, end: 137 }, sourceOffset: 8 });
+    // Asking again changes nothing, and the same file second comes out either way.
+    expect(reelOnSource(moved, trimmed().clips)).toBe(moved);
+    expect(moved.start + moved.sourceOffset!).toBe(info.start + 5);
+  });
+
+  it("copies the captions said in the reel's own picture", () => {
+    const reel = cutReel();
+    expect(recaptionFromSource(reel, trimmed())).toBe(1);
+    expect(reel.cues.map((c) => [c.text, c.start, c.end])).toEqual([["said at the reel's start", 0, 2]]);
+  });
+
+  it("measures the slack on the source as it is now", () => {
+    const reel = cutReel();
+    const src = trimmed();
+    reel.reel = reelOnSource(reel.reel!, src.clips);
+    expect(reelSlack(reel, src)).toEqual({ before: 77, after: 292 - 137 });
+  });
+
+  it("follows the clip when the source was cut in two or reordered", () => {
+    const a = clip(300, { outPoint: 50 });
+    const b = clip(300, { id: "second", inPoint: 80 });
+    expect(reelOnSource(cutReel().reel!, [a, b])).toMatchObject({ start: 65, end: 105, sourceOffset: 30 });
+    expect(reelOnSource(cutReel().reel!, [b, a])).toMatchObject({ start: 15, end: 55, sourceOffset: 80 });
+  });
+
+  it("leaves reels with no origin, or whose part of the file is gone, as they are", () => {
+    expect(reelOnSource(info, trimmed().clips)).toBe(info);
+    const reel = cutReel();
+    expect(reelOnSource(reel.reel!, [clip(300, { assetId: "other" })])).toBe(reel.reel);
+    expect(reelSlack(reel, createProject({ id: "src_prj", name: "Show", clips: [clip(300, { assetId: "other" })] }))).toBeNull();
+  });
+
+  it("records where a stretch's new media came from", () => {
+    const reel = legacyReel();
+    applyReelStretch(reel, { fresh: clip(60, { assetId: "new" }), media: { start: 80, end: 140 }, range: { start: 90, end: 130 }, sourceCues: [], origin: { sourceOffset: 8, sourceAssetId: "src" } });
+    expect(reel.reel).toMatchObject({ sourceOffset: 8, sourceAssetId: "src", media: { start: 80, end: 140 } });
   });
 });

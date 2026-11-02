@@ -1,4 +1,4 @@
-import type { Clip } from "./project";
+import type { Clip, ReelInfo } from "./project";
 
 /** Output duration of a clip after trimming and speed. */
 export function clipOutputDuration(clip: Clip): number {
@@ -79,6 +79,40 @@ export function toSourceTime(layout: ClipLayout, t: number): number {
 /** Source (file) time -> project time. */
 export function toProjectTime(layout: ClipLayout, sourceTime: number): number {
   return layout.start + (sourceTime - layout.clip.inPoint) / layout.clip.speed;
+}
+
+/** What to store on a reel cut from this clip so its ranges can follow the source's timeline later. */
+export function reelOrigin(layout: ClipLayout): Pick<ReelInfo, "sourceOffset" | "sourceAssetId"> {
+  return { sourceOffset: layout.clip.inPoint - layout.start, sourceAssetId: layout.clip.assetId };
+}
+
+/**
+ * A reel's ranges on the source timeline as it is now. A trim or cut on the
+ * source moves its timeline under the seconds the reel stored, while the
+ * reel's own media file stays what it was, so they are worked out again from
+ * where the reel sits in the source's file. Reels come from clips at normal
+ * speed, so the shift is the same across the range. Returns `info` itself when
+ * nothing moved, the reel has no origin (cut before it was recorded), or the
+ * part of the file it came from is no longer in the source.
+ */
+export function reelOnSource(info: ReelInfo, clips: Clip[]): ReelInfo {
+  const { sourceOffset, sourceAssetId } = info;
+  if (sourceOffset === undefined || !sourceAssetId) return info;
+  const from = info.start + sourceOffset;
+  const to = info.end + sourceOffset;
+  const pieces = layoutClips(clips).filter((l) => l.clip.assetId === sourceAssetId);
+  const piece = pieces.find((l) => from >= l.clip.inPoint && from < l.clip.outPoint) ?? pieces.find((l) => from < l.clip.outPoint && to > l.clip.inPoint);
+  if (!piece) return info;
+  const origin = reelOrigin(piece);
+  const by = sourceOffset - origin.sourceOffset!;
+  if (Math.abs(by) < 1e-9) return info;
+  return {
+    ...info,
+    ...origin,
+    start: info.start + by,
+    end: info.end + by,
+    ...(info.media ? { media: { start: info.media.start + by, end: info.media.end + by } } : {}),
+  };
 }
 
 /** Finds the layout that owns a clip id. */

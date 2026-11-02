@@ -9,7 +9,7 @@
  */
 import { createClip, createProject, type CaptionCue, type Clip, type ReelInfo, type VideoProject } from "@/lib/models/project";
 import { getFormat } from "@/lib/models/formats";
-import { layoutClips, locateFrame, toSourceTime } from "@/lib/models/timeline";
+import { layoutClips, locateFrame, reelOnSource, reelOrigin, toSourceTime } from "@/lib/models/timeline";
 import { fitZoom } from "@/lib/models/clipOps";
 import { deleteProject, getAsset, listProjects, saveProject } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
@@ -108,7 +108,11 @@ export function isEmptyReel(p: Pick<VideoProject, "reel" | "clips">): boolean {
 /** Reels already cut from `sourceId`, in order. */
 export async function listReels(sourceId: string): Promise<VideoProject[]> {
   const all = await listProjects();
-  return all.filter((p) => p.sourceProjectId === sourceId && p.reel).sort((a, b) => (a.reel!.index ?? 0) - (b.reel!.index ?? 0));
+  const source = all.find((p) => p.id === sourceId);
+  return all
+    .filter((p) => p.sourceProjectId === sourceId && p.reel)
+    .map((p) => (source ? { ...p, reel: reelOnSource(p.reel!, source.clips) } : p))
+    .sort((a, b) => (a.reel!.index ?? 0) - (b.reel!.index ?? 0));
 }
 
 /** What the reel maker is doing right now, for the Reels panel's progress card. */
@@ -275,7 +279,7 @@ async function fillReel(source: VideoProject, reel: VideoProject, o: Pick<MakeRe
   }
   reel.clips = [finished];
   reel.cues = cuesForRange(source.cues, shown.start, shown.end);
-  reel.reel = { ...info, end: shown.end, media: covered };
+  reel.reel = { ...info, ...reelOrigin(layout), end: shown.end, media: covered };
   await saveProject(reel);
   await updateProjectThumbnail(reel.id, blob, inPoint + Math.min(1, (outPoint - inPoint) / 2));
   return reel;
@@ -292,7 +296,8 @@ async function makeReel(source: VideoProject, h: Highlight, index: number, o: Ma
   reel.subtitleStyle = structuredClone(source.subtitleStyle);
   reel.captions = structuredClone(source.captions);
   reel.sourceProjectId = source.id;
-  reel.reel = { index, title, score: h.score, hook: h.hook, start, end };
+  const at = locateFrame(layouts, start + 0.01);
+  reel.reel = { index, title, score: h.score, hook: h.hook, start, end, ...(at ? reelOrigin(at.primary) : {}) };
   await saveProject(reel);
   // Every step reports with this reel's place in the run, so the panel can say "Cutting reel 4 of 12".
   const onProgress: ReelProgressFn = (p) => o.onProgress?.({ ...p, reel: { n: run.n, of: run.of, title } });
@@ -315,7 +320,9 @@ export interface RecutOptions {
 export async function recutReel(o: RecutOptions): Promise<VideoProject> {
   if (!o.reel.reel || o.reel.sourceProjectId !== o.source.id) throw new Error("This project isn't a reel of that video.");
   if (!o.source.clips.length) throw new Error("The source video has no clips to cut from.");
-  return fillReel(o.source, structuredClone(o.reel), o);
+  const reel = structuredClone(o.reel);
+  reel.reel = reelOnSource(reel.reel!, o.source.clips);
+  return fillReel(o.source, reel, o);
 }
 
 /** Finds the best moments with the chosen model (Ollama by default) and cuts each into its own reel project. */
