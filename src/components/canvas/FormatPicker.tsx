@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, Ghost, Music2, Play, AtSign, Eye } from "lucide-react";
 import { FRAME_FORMATS, getFormat, type FrameFormat } from "@/lib/models/formats";
+import type { Clip } from "@/lib/models/project";
 import { useEditor } from "@/store/editorStore";
 import { cx } from "@/lib/utils/cx";
 
@@ -104,9 +105,17 @@ export function filterFormats(query: string, formats: FrameFormat[] = FRAME_FORM
   });
 }
 
+/** Whether moving between these formats changes the frame's shape while a clip follows a face. */
+export function followsStale(clips: Clip[], from: FrameFormat, to: FrameFormat): boolean {
+  const sameShape = Math.abs(from.width / from.height - to.width / to.height) < 1e-3;
+  return !sameShape && clips.some((c) => c.reframe?.keyframes.length);
+}
+
 export function FormatPicker() {
   const project = useEditor((s) => s.project)!;
   const update = useEditor((s) => s.update);
+  const setNotice = useEditor((s) => s.setNotice);
+  const setTool = useEditor((s) => s.setTool);
   const format = getFormat(project.formatId);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -132,12 +141,19 @@ export function FormatPicker() {
     setOpen(true);
   };
   const choose = (f: FrameFormat) => {
+    // A followed path is worked out for the frame's shape, so a new shape needs a new scan.
+    const stale = followsStale(project.clips, format, f);
     update((p) => {
       p.formatId = f.id;
       // A guide that's showing follows the new format; one that's off stays off.
       if (p.safeZone !== "none") p.safeZone = f.safeZone;
+      if (stale) for (const c of p.clips) c.reframe = null;
     });
     setOpen(false);
+    if (stale) {
+      setNotice(`The frame is now ${f.ratio}, so the face has to be followed again: press Reframe for me.`);
+      setTool("reframe");
+    }
   };
   const toggleSafe = () => update((p) => void (p.safeZone = p.safeZone === "none" ? (getFormat(p.formatId).safeZone === "none" ? "reels" : getFormat(p.formatId).safeZone) : "none"));
 

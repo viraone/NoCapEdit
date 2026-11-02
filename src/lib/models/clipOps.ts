@@ -1,5 +1,5 @@
 /** Clip edits shared by the Clips panel, Trim panel and timeline (operate on a draft project). */
-import { ZOOM_MIN, type VideoProject } from "./project";
+import { setManualPan, ZOOM_MIN, type Clip, type VideoProject } from "./project";
 import { layoutClips, locateFrame, toSourceTime, type ClipLayout } from "./timeline";
 import { uid } from "@/lib/utils/id";
 
@@ -112,6 +112,18 @@ export function cutAfter(p: VideoProject, time: number): boolean {
 }
 
 /** Zoom at which the whole source is visible inside the frame ("Fit"). */
+export function fillFrame(clip: Clip): void {
+  clip.zoom = 1;
+  setManualPan(clip, { x: 0, y: 0 });
+}
+
+/** Shows the whole picture. A followed path would slide it around inside the frame, so following stops; Undo brings it back. */
+export function fitFrame(clip: Clip, fit: number): void {
+  clip.zoom = fit;
+  clip.pan = { x: 0, y: 0 };
+  clip.reframe = null;
+}
+
 export function fitZoom(source: { width: number; height: number }, frame: { width: number; height: number }): number {
   const cover = Math.max(frame.width / source.width, frame.height / source.height);
   const contain = Math.min(frame.width / source.width, frame.height / source.height);

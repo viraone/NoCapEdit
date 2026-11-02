@@ -63,6 +63,8 @@ export interface MotionTrack {
 export interface Reframe {
   keyframes: Keyframe[];
   label?: string;
+  /** Where the user moved the picture from the followed path, as a fraction of the frame size. */
+  offset?: { x: number; y: number };
 }
 
 /** Any new asset reference on Clip, Overlay, Voiceover or MusicTrack must also be handled in remapAssetIds. */
@@ -558,8 +560,23 @@ export function overlayCenter(ov: Overlay, t: number): { x: number; y: number } 
   return { x: ov.x, y: ov.y };
 }
 
-/** Pan of a clip at a given source time (auto-reframe keyframes override the static pan). */
+/** Pan of a clip at a given source time (auto-reframe keyframes, plus the user's offset, override the static pan). */
 export function clipPanAt(clip: Clip, sourceTime: number): { x: number; y: number } {
-  if (clip.reframe && clip.reframe.keyframes.length) return positionAt(clip.reframe.keyframes, sourceTime);
+  if (clip.reframe && clip.reframe.keyframes.length) {
+    const p = positionAt(clip.reframe.keyframes, sourceTime);
+    const off = clip.reframe.offset;
+    return off ? { x: p.x + off.x, y: p.y + off.y } : p;
+  }
   return clip.pan;
+}
+
+/** The pan the user moves by hand: the offset from the followed path while the clip follows a face, else the static pan. */
+export function manualPan(clip: Clip): { x: number; y: number } {
+  if (clip.reframe && clip.reframe.keyframes.length) return clip.reframe.offset ?? { x: 0, y: 0 };
+  return clip.pan;
+}
+
+export function setManualPan(clip: Clip, pan: { x: number; y: number }): void {
+  if (clip.reframe && clip.reframe.keyframes.length) clip.reframe.offset = pan;
+  else clip.pan = pan;
 }

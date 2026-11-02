@@ -4,8 +4,8 @@ import { Scissors, ArrowRightToLine, ArrowLeftToLine, Snail, PersonStanding, Rab
 import { useEditor } from "@/store/editorStore";
 import { useProject, useTargetClip, useSliderTx, useReelSlack } from "./shared";
 import { layoutClips, findLayout, toSourceTime } from "@/lib/models/timeline";
-import { SPEED_MAX, SPEED_MIN, TRANSITIONS, ZOOM_MAX, type Clip, type TransitionType } from "@/lib/models/project";
-import { cutAfter, cutBefore, fitZoom, minZoom, splitClipAt } from "@/lib/models/clipOps";
+import { manualPan, setManualPan, SPEED_MAX, SPEED_MIN, TRANSITIONS, ZOOM_MAX, type Clip, type TransitionType } from "@/lib/models/project";
+import { cutAfter, cutBefore, fillFrame, fitFrame, fitZoom, minZoom, splitClipAt } from "@/lib/models/clipOps";
 import { getFormat } from "@/lib/models/formats";
 import { getAsset, putAsset, getPeaks } from "@/lib/storage/db";
 import { applyRemovals, findFillerWords, findSilences, mergeRanges, totalDuration, DEFAULT_FILLERS, OPTIONAL_FILLERS, DEFAULT_SILENCE, type TimeRange } from "@/lib/edit/magicCut";
@@ -335,8 +335,8 @@ export function TrimPanel() {
         <TileGrid cols={4}>
           <Tile icon={<ZoomOut size={16} />} label="Out" onClick={() => edit((c) => void (c.zoom = Math.max(minZoom(fit), Math.round((c.zoom - 0.1) * 10) / 10)))} />
           <Tile icon={<ZoomIn size={16} />} label="In" onClick={() => edit((c) => void (c.zoom = Math.min(ZOOM_MAX, Math.round((c.zoom + 0.1) * 10) / 10)))} />
-          <Tile icon={<Maximize size={16} />} label="Fill" active={Math.abs(clip.zoom - 1) < 1e-6} onClick={() => edit((c) => void ((c.zoom = 1), (c.pan = { x: 0, y: 0 })))} />
-          <Tile icon={<Minimize size={16} />} label="Fit" active={Math.abs(clip.zoom - fit) < 1e-6} onClick={() => edit((c) => void ((c.zoom = fit), (c.pan = { x: 0, y: 0 })))} />
+          <Tile icon={<Maximize size={16} />} label="Fill" active={Math.abs(clip.zoom - 1) < 1e-6} onClick={() => edit(fillFrame)} />
+          <Tile icon={<Minimize size={16} />} label="Fit" active={Math.abs(clip.zoom - fit) < 1e-6} onClick={() => edit((c) => fitFrame(c, fit))} />
         </TileGrid>
       </PanelSection>
 
@@ -452,8 +452,8 @@ export function TrimPanel() {
               onChange={(v) => edit((c) => void (c.zoom = Math.max(minZoom(fit), v)), false)}
               {...tx}
             />
-            <Slider label="Pan X" value={clip.pan.x} min={-1} max={1} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => void (c.pan.x = v), false)} {...tx} />
-            <Slider label="Pan Y" value={clip.pan.y} min={-1} max={1} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => void (c.pan.y = v), false)} {...tx} />
+            <Slider label="Pan X" value={manualPan(clip).x} min={-1} max={1} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => setManualPan(c, { ...manualPan(c), x: v }), false)} {...tx} />
+            <Slider label="Pan Y" value={manualPan(clip).y} min={-1} max={1} step={0.005} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => edit((c) => setManualPan(c, { ...manualPan(c), y: v }), false)} {...tx} />
             <p className="rf-read-note">With the Trim tool active you can also drag the video in the preview to pan it.</p>
           </PanelSection>
           <PanelSection title="Transition">
@@ -527,9 +527,14 @@ export function TrimPanel() {
             {clip.reframe ? (
               <div className="flex items-center justify-between rf-read-face rounded-lg border border-sys-green/40 bg-sys-green/10 px-2 py-1.5 text-[13px] text-sys-green">
                 <span>Following the subject ({clip.reframe.keyframes.length} keyframes)</span>
-                <Button variant="ghost" size="xs" onClick={() => edit((c) => void (c.reframe = null))}>
-                  <Undo2 size={11} /> Static
-                </Button>
+                <span className="flex shrink-0 gap-1">
+                  <Button variant="ghost" size="xs" onClick={runReframe} disabled={!!job} title="Scan this clip again">
+                    <RotateCcw size={11} /> Again
+                  </Button>
+                  <Button variant="ghost" size="xs" onClick={() => edit((c) => void (c.reframe = null))}>
+                    <Undo2 size={11} /> Static
+                  </Button>
+                </span>
               </div>
             ) : (
               job?.kind !== "reframe" && (

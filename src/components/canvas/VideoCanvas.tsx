@@ -9,7 +9,7 @@ import { CanvasRenderer } from "@/components/CanvasRenderer";
 import { getFormat, SAFE_ZONES } from "@/lib/models/formats";
 import { layoutClips, locateFrame } from "@/lib/models/timeline";
 import { clamp } from "@/lib/utils/math";
-import { ZOOM_MAX, ZOOM_MIN } from "@/lib/models/project";
+import { manualPan, setManualPan, ZOOM_MAX, ZOOM_MIN } from "@/lib/models/project";
 import { Button } from "@/components/ui/Button";
 import { SafeZoneGuide } from "./SafeZoneGuide";
 
@@ -177,7 +177,8 @@ export function VideoCanvas() {
         // selection, and the Trim tool keeps selecting the clip on press.
         const clip = loc.primary.clip;
         if (tool === "trim") select({ kind: "clip", id: clip.id });
-        dragRef.current = { kind: "pan", id: clip.id, elKind: null, startX: e.clientX, startY: e.clientY, origin: { x: clip.pan.x, y: clip.pan.y, size: clip.zoom, rect: null }, alt: false, moved: false };
+        const pan = manualPan(clip);
+        dragRef.current = { kind: "pan", id: clip.id, elKind: null, startX: e.clientX, startY: e.clientY, origin: { x: pan.x, y: pan.y, size: clip.zoom, rect: null }, alt: false, moved: false };
         beginTransaction();
         e.currentTarget.setPointerCapture(e.pointerId);
         return;
@@ -199,10 +200,7 @@ export function VideoCanvas() {
       update(
         (p) => {
           const c = p.clips.find((c) => c.id === d.id);
-          if (c) {
-            c.pan.x = clamp(d.origin.x + dx / fw, -1, 1);
-            c.pan.y = clamp(d.origin.y + dy / fh, -1, 1);
-          }
+          if (c) setManualPan(c, { x: clamp(d.origin.x + dx / fw, -1, 1), y: clamp(d.origin.y + dy / fh, -1, 1) });
         },
         { history: false },
       );

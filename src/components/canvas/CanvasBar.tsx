@@ -7,7 +7,7 @@ import { useEditor } from "@/store/editorStore";
 import { useTargetClip } from "@/components/panels/shared";
 import { getFormat } from "@/lib/models/formats";
 import { ZOOM_MAX, type Clip } from "@/lib/models/project";
-import { fitZoom, minZoom } from "@/lib/models/clipOps";
+import { fillFrame, fitFrame, fitZoom, minZoom } from "@/lib/models/clipOps";
 import { CAPTION_PRESETS } from "@/lib/captions/presets";
 import { cx } from "@/lib/utils/cx";
 
@@ -45,10 +45,10 @@ export function CanvasBar() {
         </button>
       </div>
 
-      <button type="button" className="pill" data-active={clip && Math.abs(zoom - 1) < 1e-6 ? "true" : "false"} disabled={!clip} onClick={() => edit((c) => void ((c.zoom = 1), (c.pan = { x: 0, y: 0 })))}>
+      <button type="button" className="pill" data-active={clip && Math.abs(zoom - 1) < 1e-6 ? "true" : "false"} disabled={!clip} onClick={() => edit(fillFrame)}>
         <Maximize size={14} /> Fill
       </button>
-      <button type="button" className="pill" data-active={clip && Math.abs(zoom - fit) < 1e-6 ? "true" : "false"} disabled={!clip} onClick={() => edit((c) => void ((c.zoom = fit), (c.pan = { x: 0, y: 0 })))}>
+      <button type="button" className="pill" data-active={clip && Math.abs(zoom - fit) < 1e-6 ? "true" : "false"} disabled={!clip} onClick={() => edit((c) => fitFrame(c, fit))}>
         <Minimize size={14} /> Fit
       </button>
 
