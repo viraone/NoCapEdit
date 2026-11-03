@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 /**
  * Whether this is desktop Google Chrome, the only browser with the built-in AI the Post tool uses.
@@ -12,10 +12,13 @@ export function isDesktopChrome(ua: string, brands?: { brand: string }[]): boole
 
 /** True in desktop Chrome. False on the server and on first paint, so the page renders the same everywhere before it knows. */
 export function useIsDesktopChrome(): boolean {
-  const [yes, setYes] = useState(false);
-  useEffect(() => {
+  const getSnapshot = () => {
+    if (typeof window === "undefined") return false;
     const nav = navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } };
-    setYes(isDesktopChrome(nav.userAgent, nav.userAgentData?.brands));
-  }, []);
-  return yes;
+    return isDesktopChrome(nav.userAgent, nav.userAgentData?.brands);
+  };
+
+  const subscribe = () => () => {};
+
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
