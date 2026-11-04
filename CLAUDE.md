@@ -7,10 +7,12 @@ local-only and never committed) or to DeepSeek (`/pass-to-deepseek`). Claude wri
 The rules are the ones in `~/Developer/beezer/CLAUDE.md` ("Qwen Gateway — operating rules"); this is what differs here.
 
 ## Who gets what
-- **Qwen** (free, local, about 20 s): one or two files under ~30 KB with a pattern to copy. A test in
-  `src/__tests__`, a pure helper in `src/lib`, a copy or string change, a CSS tweak in one component. It writes
-  whole files back, so never give it `src/components/mobile/MobileEditor.tsx` (67 KB),
-  `src/components/timeline/TimelineDock.tsx` (42 KB), or any file it would have to rewrite from memory.
+- **Qwen** (free, local, about 20 s): one or two files with a pattern to copy. A test in
+  `src/__tests__`, a pure helper in `src/lib`, a copy or string change, a CSS tweak in one component. Since
+  2026-11-04 it edits files with SEARCH/REPLACE blocks instead of rewriting them, so a small, well-specified
+  change in `src/components/mobile/MobileEditor.tsx` (67 KB) or `src/components/timeline/TimelineDock.tsx`
+  (42 KB) is fine to give it; what still rules a file out is the list below, not its size. When the gate fails,
+  the retry automatically gets the files the errors name, and a failed task is undone by the gateway.
 - **DeepSeek** (`run.sh`): routine work bigger than two files, or that needs reading around the code. Its ask mode
   (`~/.claude/skills/pass-to-deepseek/ask.sh ~/Desktop/Projects/reelflowWeb "<question>"`, read-only) answers
   "where is X / how does Y work" so Claude does not read source to write a spec.
