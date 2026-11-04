@@ -9,6 +9,7 @@ import { getAsset } from "@/lib/storage/db";
 import { loadImages } from "@/lib/export/images";
 import { exportProject, plannedSegments, DEFAULT_EXPORT_OPTIONS, outputFrame, type ExportOptions, type ExportProgress, type ExportResult } from "@/lib/ffmpeg/exporter";
 import { requestDiskSink, supportsDiskStreaming, type OutputSink } from "@/lib/ffmpeg/sinks";
+import { acquireWakeLock } from "@/lib/mobile/share";
 import { setSingleThreadPreference, singleThreadPreferred, subscribeSingleThreadPreference, supportsMultithread, type FFmpegInfo } from "@/lib/ffmpeg/loader";
 import { ffmpegEngine, RESOLUTION_PRESETS, type X264Preset } from "@/lib/ffmpegEngine";
 import { GlTransitionRenderer } from "@/lib/gl/transitions";
@@ -103,6 +104,8 @@ export function ExportPanel() {
     abortRef.current = controller;
     setProgress({ stage: "preparing", progress: 0, message: "Starting" });
     setEngine(null);
+    // A long export should not be interrupted by the screen going to sleep.
+    const releaseLock = await acquireWakeLock();
     try {
       const imageIds = project.overlays.filter((o) => o.kind === "image").map((o) => (o as { assetId: string }).assetId);
       const images = await loadImages([...new Set(imageIds)]);
@@ -127,6 +130,7 @@ export function ExportPanel() {
       if (e instanceof DOMException && e.name === "AbortError") setError("Export cancelled.");
       else setError(e instanceof Error ? e.message : String(e));
     } finally {
+      releaseLock();
       abortRef.current = null;
       setProgress(null);
     }
@@ -290,7 +294,7 @@ export function ExportPanel() {
           </p>
           {singleThreadForced && (
             <p className="flex items-center gap-1.5 text-sys-orange">
-              Multi-threaded engine unavailable on this device.
+              Multi-threaded engine is off after a stall.
               <button type="button" className="underline hover:text-white" onClick={retryMultithread} disabled={running}>
                 Try it again
               </button>

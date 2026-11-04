@@ -275,6 +275,37 @@ export const WATCHDOG_SECONDS = 40;
  * preset at 4K legitimately logs nothing until x264/x265 fills its lookahead.
  */
 export const SINGLE_THREAD_WATCHDOG_SECONDS = 180;
+/** How long the engine gets to speak up after the silence limit is passed, before it is called hung. */
+export const WATCHDOG_CONFIRM_SECONDS = 6;
+
+/**
+ * Decides when silence means a dead engine. Passing the limit only raises a
+ * suspicion: a Mac waking from sleep or a tab coming back from being frozen
+ * runs this check before the worker's waiting log lines arrive, and a working
+ * engine must not be killed for that. It is hung only if it is still silent
+ * at a later check. A hidden tab's timers can run once a minute, which only
+ * delays the verdict, so a real hang is still caught there.
+ */
+export class SilenceWatch {
+  private suspectedAt: number | null = null;
+  private readonly limitMs: number;
+  private readonly confirmMs: number;
+
+  constructor(limitMs: number, confirmMs = WATCHDOG_CONFIRM_SECONDS * 1000) {
+    this.limitMs = limitMs;
+    this.confirmMs = confirmMs;
+  }
+
+  /** True once the engine has been silent past the limit and through the confirmation wait. */
+  isHung(now: number, lastLogAt: number): boolean {
+    if (now - lastLogAt <= this.limitMs) {
+      this.suspectedAt = null;
+      return false;
+    }
+    if (this.suspectedAt === null) this.suspectedAt = now;
+    return now - this.suspectedAt >= this.confirmMs;
+  }
+}
 
 const watchdogChecks: ReturnType<typeof setInterval>[] = [];
 
@@ -373,7 +404,9 @@ export class FFmpegEngine {
   private logs: string[] = [];
   private capture: ((line: string) => void) | null = null;
   private lastLogAt = 0;
-  /** Set after a hang (and remembered in localStorage): every later load uses the single-threaded core. */
+  /** A threaded encode has finished in this session, so a later stall is bad luck and not a sign this device can't run that core. */
+  private threadedProven = false;
+  /** Set after a hang (remembered in localStorage unless threadedProven): every later load uses the single-threaded core. */
   preferSingleThread = singleThreadPreferred();
   private logHandler = ({ message }: { message: string }) => {
     this.logs.push(message);
@@ -481,9 +514,14 @@ export class FFmpegEngine {
     // Watchdog: ffmpeg logs at least every second or so while working, so long
     // silence means the worker is dead or deadlocked. The single-threaded core
     // gets a much longer leash (slow presets are quiet while filling lookahead).
-    const limit = (multithreaded ? WATCHDOG_SECONDS : SINGLE_THREAD_WATCHDOG_SECONDS) * 1000;
+    const silence = new SilenceWatch((multithreaded ? WATCHDOG_SECONDS : SINGLE_THREAD_WATCHDOG_SECONDS) * 1000);
+    let lastCheck = performance.now();
+    let longestCheckGap = 0;
     const watchdog = setInterval(() => {
-      if (performance.now() - this.lastLogAt > limit) {
+      const now = performance.now();
+      longestCheckGap = Math.max(longestCheckGap, now - lastCheck);
+      lastCheck = now;
+      if (silence.isHung(now, this.lastLogAt)) {
         hung = true;
         this.cancel();
       }
@@ -504,10 +542,12 @@ export class FFmpegEngine {
       return code;
     } catch (e) {
       if (hung) {
+        this.recordStall(multithreaded, finalArgs, longestCheckGap);
         if (multithreaded) {
-          // Never wait for this watchdog again on this device.
+          // The rest of this session stays single-threaded. Only a core that has
+          // never finished an encode here is written off for later sessions too.
           this.preferSingleThread = true;
-          setSingleThreadPreference(true);
+          if (!this.threadedProven) setSingleThreadPreference(true);
         }
         throw new FFmpegHungError(multithreaded);
       }
@@ -530,6 +570,26 @@ export class FFmpegEngine {
       // A failed command makes the threaded core call abort(); its worker pool is
       // then unusable, so recycle the instance for the next call.
       if (code !== 0 && multithreaded) this.cancel();
+    }
+  }
+
+  /** Keeps what the engine was doing when it hung (the worker and its logs go away), in the console and in localStorage as reelflow.lastStall. */
+  private recordStall(multithreaded: boolean, args: string[], longestCheckGapMs: number) {
+    const report = {
+      at: new Date().toISOString(),
+      multithreaded,
+      threadedProven: this.threadedProven,
+      hidden: typeof document !== "undefined" && document.hidden,
+      // Far above the 2 s check interval: the tab was throttled or frozen, or the computer slept.
+      longestCheckGapSeconds: Math.round(longestCheckGapMs / 1000),
+      args: args.join(" "),
+      logs: this.logs.slice(-20),
+    };
+    console.warn("[ffmpeg] stalled", report);
+    try {
+      localStorage.setItem("reelflow.lastStall", JSON.stringify(report));
+    } catch {
+      /* storage unavailable */
     }
   }
 
@@ -602,7 +662,9 @@ export class FFmpegEngine {
             // kept: the render resumes from this part instead of starting over.
             if (!(e instanceof FFmpegHungError) || resumed || signal?.aborted) throw e;
             resumed = true;
-            notice = `Video engine stalled; restarting${e.multithreaded ? " single-threaded" : ""} from part ${seg.index + 1}`;
+            notice = e.multithreaded
+              ? `The fast video engine stalled at part ${seg.index + 1}. The parts already done are kept; carrying on from there with the slower engine`
+              : `The video engine stalled at part ${seg.index + 1}. The parts already done are kept; carrying on from there`;
             onProgress({ stage: "loading", progress: seg.start / job.duration, message: notice });
             await yieldToUI();
             info = await this.load((message) => onProgress({ stage: "loading", progress: seg.start / job.duration, message }));
@@ -650,6 +712,7 @@ export class FFmpegEngine {
       });
       check();
       if (code !== 0) throw new Error(`ffmpeg exited with code ${code}${label}.\n${this.recentLogs()}`);
+      if (this.info?.multithreaded) this.threadedProven = true;
       onProgress({ stage: "writing", progress: seg.end / job.duration, message: `Writing${label}` });
       let data = (await this.instance.readFile(output)) as Uint8Array;
       if (job.fragmented) {
