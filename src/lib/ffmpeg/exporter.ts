@@ -59,6 +59,8 @@ export interface ExportOptions {
   captionSource: "original" | "translated";
   includeOverlays: boolean;
   sidecars: boolean;
+  /** Light denoise, lanczos scaling and a touch of sharpening in the exported file (not the preview). */
+  enhance: boolean;
   /** Target length of each streamed segment (0 = single pass). */
   segmentSeconds: number;
   renderMode: "auto" | "filters" | "compositor";
@@ -77,6 +79,7 @@ export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
   captionSource: "original",
   includeOverlays: true,
   sidecars: true,
+  enhance: false,
   segmentSeconds: 20,
   renderMode: "auto",
   intermediate: "jpeg",
@@ -469,6 +472,7 @@ async function runExport(
           voiceovers,
           tsOffset: fragmented ? seg.start : 0,
           audioTailTrim: fragmented && !isLast ? AAC_PRIMING_SECONDS : 0,
+          enhance: opts.enhance,
         };
         const files: ExportFiles = { clips: clipPaths, clipAudio, overlayList, framesPattern, music: musicFile, musicParts, voiceovers: voFiles, output: ctx.output };
         const { graph, vout, aout } = buildFilterGraph(plan);

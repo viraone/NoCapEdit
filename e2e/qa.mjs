@@ -61,9 +61,18 @@ async function makeContext(opts = {}) {
   const console_ = [];
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
-  page.on("console", (m) => {
-    const text = m.text();
-    console_.push({ t: Date.now(), type: m.type(), text: text.slice(0, 400) });
+  page.on("console", async (m) => {
+    let text = m.text();
+    // The engine logs each command as an object; keep its argument string so a check can see which filters ran.
+    if (text.startsWith("[ffmpeg] exec")) {
+      try {
+        const o = await m.args()[1]?.jsonValue();
+        if (o?.args) text = `[ffmpeg] exec ${o.args}`;
+      } catch {
+        /* keep the plain text */
+      }
+    }
+    console_.push({ t: Date.now(), type: m.type(), text: text.slice(0, text.startsWith("[ffmpeg] exec") ? 6000 : 400) });
     if (m.type() === "error") errors.push(`console.error: ${text.slice(0, 300)}`);
   });
   return { context, page, console_, errors };
@@ -161,10 +170,11 @@ async function addClip(page, file) {
   await wait(300);
 }
 
-async function setOff(page, name) {
+async function setToggle(page, name, on) {
   const toggle = page.getByRole("switch", { name });
-  if ((await toggle.count()) && (await toggle.first().getAttribute("aria-checked")) === "true") await toggle.first().click();
+  if ((await toggle.count()) && ((await toggle.first().getAttribute("aria-checked")) === "true") !== on) await toggle.first().click();
 }
+const setOff = (page, name) => setToggle(page, name, false);
 
 // ---------------------------------------------------------------------------
 // pages: console errors + static files
@@ -349,12 +359,13 @@ function validate(file) {
   return { fragmented: check.fragmented, moofs: check.moofCount, elst: check.elst, tracks, offsets: sync.pairs.map((p) => p.offsetMs), meanOffsetMs: sync.meanOffsetMs, driftMs: sync.driftMs, frames, bframes, decode };
 }
 
-async function runExport(page, console_, { label, resolution, segments, renderMode, preset = "ultrafast" }) {
+async function runExport(page, console_, { label, resolution, segments, renderMode, preset = "ultrafast", enhance = false }) {
   await tool(page, "Export");
   await page.getByLabel("Resolution").selectOption(resolution);
   await page.getByLabel("Encoder speed").selectOption(preset);
   await page.getByLabel("Segment length").selectOption(String(segments));
   await page.getByLabel("Render path").selectOption(renderMode);
+  await setToggle(page, /Enhance picture/, enhance);
   await setOff(page, /Burn in captions/);
   await setOff(page, /Also save/);
   await setOff(page, /Stream to a file/);
@@ -390,12 +401,13 @@ async function runExport(page, console_, { label, resolution, segments, renderMo
   });
   const timeline = progress.map((p) => ({ dt: +((p.t - startedPerf) / 1000).toFixed(2), m: p.m }));
   const ff = console_.slice(logStart).filter((l) => l.text.startsWith("[ffmpeg]")).map((l) => ({ dt: +((l.t - started) / 1000).toFixed(2), m: l.text.slice(9, 140) }));
+  const execs = console_.slice(logStart).filter((l) => l.text.startsWith("[ffmpeg] exec ")).map((l) => l.text.slice(14));
   const engineLine = (await aside(page).innerText()).match(/(Encoding with|Last export used|Multi-threaded|Single-threaded)[^\n]*/)?.[0];
   const mp4 = downloads.find((d) => d.suggestedFilename().endsWith(".mp4"));
   const file = mp4 ? join(outDir, `${label}.mp4`) : null;
   if (mp4) await mp4.saveAs(file);
   const panelTail = (await aside(page).innerText()).match(/Rendered in[^\n]*|exited with code[^\n]*|Error[^\n]*/)?.[0];
-  return { label, elapsed, timeline, ff, engineLine, file, panelTail, summary };
+  return { label, elapsed, timeline, ff, execs, engineLine, file, panelTail, summary };
 }
 
 function engineTiming(run) {
@@ -421,6 +433,9 @@ async function testExport() {
   for (const cfg of [
     { label: "filters-10s", resolution: "720", segments: 10, renderMode: "filters" },
     { label: "compositor-10s", resolution: "720", segments: 10, renderMode: "compositor" },
+    // Enhance (denoise, lanczos, unsharp) on both paths: proves the wasm build has the filters and the file still splices.
+    { label: "enhance-filters-10s", resolution: "720", segments: 10, renderMode: "filters", enhance: true },
+    { label: "enhance-compositor-10s", resolution: "720", segments: 10, renderMode: "compositor", enhance: true },
   ]) {
     const run = await runExport(page, console_, cfg);
     runs[cfg.label] = run;
@@ -436,6 +451,10 @@ async function testExport() {
     record(`export.${cfg.label}.engine`, engineOk && promptOk, { isolated, timing, engineLine: run.engineLine, elapsed: run.elapsed, panel: run.panelTail, summary: run.summary });
     const syncOk = !!val && val.fragmented && val.offsets.length === 8 && val.offsets.every((o) => Math.abs(o) <= 1) && Object.values(val.tracks).every((t) => t.contiguous) && val.frames === 750 && val.bframes === 0 && val.decode === "";
     record(`export.${cfg.label}.file`, syncOk, val ?? { error: "no download", panel: run.panelTail });
+    // The Enhance toggle must reach ffmpeg: its filters in every encode command when on, in none when off.
+    const encodes = run.execs.filter((a) => / -filter_complex /.test(a));
+    const enhanced = encodes.filter((a) => /hqdn3d/.test(a) && /unsharp/.test(a)).length;
+    record(`export.${cfg.label}.enhance`, encodes.length > 0 && enhanced === (cfg.enhance ? encodes.length : 0), { encodes: encodes.length, enhanced, sample: encodes[0]?.replace(/.*-filter_complex /, "").slice(0, 160) });
   }
   const unexpected = errors.filter((e) => !/favicon/.test(e));
   record("export.console", unexpected.length === 0, { errors: unexpected.slice(0, 10) });

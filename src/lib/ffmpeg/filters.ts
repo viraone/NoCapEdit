@@ -91,6 +91,8 @@ export interface ExportPlan {
   tsOffset?: number;
   /** Seconds removed from the end of the audio (one AAC frame before a splice point). */
   audioTailTrim?: number;
+  /** Light denoise, lanczos scaling and a final sharpen (export only). */
+  enhance?: boolean;
 }
 
 /** AAC encoder priming (samples) that the next spliced segment carries at its head. */
@@ -125,6 +127,13 @@ export const QUALITY_PROFILES: Record<"draft" | "balanced" | "high", QualityProf
 
 const AUDIO_RATE = 48000;
 const AFORMAT = `aformat=sample_fmts=fltp:sample_rates=${AUDIO_RATE}:channel_layouts=stereo`;
+
+/**
+ * Enhance export option: a light temporal denoise run at source size (before
+ * any scaling) and a light sharpen run at output size.
+ */
+export const ENHANCE_DENOISE = "hqdn3d=1.5:1.5:6:6";
+export const ENHANCE_SHARPEN = "unsharp=5:5:0.8:5:5:0";
 
 /** Formats a number for a filter argument (no exponent notation). */
 export const num = (n: number, decimals = 4): string => {
@@ -177,16 +186,19 @@ function videoChain(plan: ExportPlan, c: ClipInputPlan, i: number): string {
   const dur = num(c.layout.duration);
   const hdr = c.hdr ? `${hdrToSdrChain(c.color)},` : "";
   const grade = lookFilters(c).map((f) => `${f},`).join("");
-  const head = `[${c.inputIndex}:v]${hdr}${grade}setpts=(PTS-STARTPTS)/${num(clip.speed, 6)},fps=${plan.fps}`;
+  // Denoise before the scale so it works on the source pixels, not the enlarged ones.
+  const denoise = plan.enhance ? `${ENHANCE_DENOISE},` : "";
+  const head = `[${c.inputIndex}:v]${hdr}${grade}${denoise}setpts=(PTS-STARTPTS)/${num(clip.speed, 6)},fps=${plan.fps}`;
   const tail = `format=yuv420p,trim=duration=${dur},setpts=PTS-STARTPTS[v${i}]`;
+  const scaleFlags = plan.enhance ? "lanczos" : "bicubic";
   const crop = cropRegion(c.placement, c.source, { width: plan.width, height: plan.height });
   if (crop) {
-    return `${head},crop=${crop.w}:${crop.h}:${crop.x}:${crop.y},scale=${plan.width}:${plan.height}:flags=bicubic,setsar=1,${tail}`;
+    return `${head},crop=${crop.w}:${crop.h}:${crop.x}:${crop.y},scale=${plan.width}:${plan.height}:flags=${scaleFlags},setsar=1,${tail}`;
   }
   const dw = Math.max(2, Math.round(c.placement.dw));
   const dh = Math.max(2, Math.round(c.placement.dh));
   return (
-    `${head},scale=${dw}:${dh}:flags=bicubic,setsar=1[vs${i}];` +
+    `${head},scale=${dw}:${dh}:flags=${scaleFlags},setsar=1[vs${i}];` +
     `color=c=${(clip.background ?? "#000000").replace("#", "0x")}:s=${plan.width}x${plan.height}:r=${plan.fps}:d=${dur}[bg${i}];` +
     `[bg${i}][vs${i}]overlay=x=${Math.round(c.placement.dx)}:y=${Math.round(c.placement.dy)}:shortest=1,${tail}`
   );
@@ -264,7 +276,10 @@ export function buildFilterGraph(plan: ExportPlan): { graph: string; vout: strin
   // A final fps pass regularises timestamps (xfade/overlay can leave sub-frame jitter).
   // The one-frame clone covers a last clip whose video stream ends a frame before its nominal duration (xfade then
   // ends early and fps drops its last buffered frame); the output -t cuts the surplus frame when there is none.
-  parts.push(`[${v}]format=yuv420p,fps=${plan.fps},tpad=stop_mode=clone:stop_duration=${num(1 / plan.fps, 6)}[vout]`);
+  // Enhance sharpens here, on the assembled output frame. The compositor path has no per-clip videoChain, so its
+  // frames (already at output size) are denoised here too.
+  const enhance = plan.enhance ? `${plan.framesInput !== null ? `${ENHANCE_DENOISE},` : ""}${ENHANCE_SHARPEN},` : "";
+  parts.push(`[${v}]${enhance}format=yuv420p,fps=${plan.fps},tpad=stop_mode=clone:stop_duration=${num(1 / plan.fps, 6)}[vout]`);
 
   const mixInputs = [a];
   if (plan.music) {

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createClip } from "@/lib/models/project";
 import { layoutClips } from "@/lib/models/timeline";
 import { computePlacement } from "@/lib/models/placement";
-import { buildExportArgs, buildFilterGraph, buildInputArgs, cropRegion, speedFilters, splitMusicSeek, type ExportFiles, type ExportPlan } from "@/lib/ffmpeg/filters";
+import { buildExportArgs, buildFilterGraph, buildInputArgs, cropRegion, ENHANCE_DENOISE, ENHANCE_SHARPEN, speedFilters, splitMusicSeek, type ExportFiles, type ExportPlan } from "@/lib/ffmpeg/filters";
+import { DEFAULT_EXPORT_OPTIONS } from "@/lib/ffmpeg/exporter";
 
 const frame = { width: 1080, height: 1920 };
 function plan(clips: ReturnType<typeof createClip>[], extra: Partial<ExportPlan> = {}): ExportPlan {
@@ -107,6 +108,32 @@ describe("buildFilterGraph", () => {
   it("overlays the caption layer when present", () => {
     const { graph } = buildFilterGraph(plan([clip(3)], { overlayInput: 1 }));
     expect(graph).toContain("[v0][1:v]overlay=x=0:y=0:eof_action=repeat[vov]");
+  });
+  it("leaves scaling bicubic and adds no denoise or sharpening when Enhance is off", () => {
+    for (const enhance of [undefined, false]) {
+      const { graph } = buildFilterGraph(plan([clip(3)], enhance === undefined ? {} : { enhance }));
+      expect(graph).toContain("flags=bicubic");
+      expect(graph).not.toContain("hqdn3d");
+      expect(graph).not.toContain("unsharp");
+    }
+  });
+  it("denoises before scaling, scales with lanczos and sharpens the output when Enhance is on", () => {
+    const { graph } = buildFilterGraph(plan([clip(3)], { enhance: true }));
+    expect(graph).toContain("flags=lanczos");
+    expect(graph).not.toContain("flags=bicubic");
+    expect(graph).toContain(`${ENHANCE_DENOISE},setpts=(PTS-STARTPTS)`);
+    expect(graph).toContain(`[v0]${ENHANCE_SHARPEN},format=yuv420p`);
+  });
+  it("denoises and sharpens compositor frames in the final pass", () => {
+    const { graph } = buildFilterGraph(plan([clip(3)], { framesInput: 2, enhance: true }));
+    expect(graph).toContain(`[vbase]${ENHANCE_DENOISE},${ENHANCE_SHARPEN},format=yuv420p`);
+    expect(graph.match(/hqdn3d/g)).toHaveLength(1);
+  });
+});
+
+describe("DEFAULT_EXPORT_OPTIONS", () => {
+  it("leaves Enhance off by default", () => {
+    expect(DEFAULT_EXPORT_OPTIONS.enhance).toBe(false);
   });
 });
 

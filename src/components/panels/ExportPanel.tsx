@@ -237,6 +237,7 @@ export function ExportPanel() {
         )}
         <Toggle checked={opts.includeOverlays} onChange={(v) => set({ includeOverlays: v })} label="Include text and stickers" disabled={running} />
         <Toggle checked={opts.sidecars} onChange={(v) => set({ sidecars: v })} label="Also save .srt, .vtt and .txt" description="WebVTT includes word timings and speaker voices" disabled={running} />
+        <Toggle checked={opts.enhance} onChange={(v) => set({ enhance: v })} label="Enhance picture" description="Light denoise, sharper scaling and a touch of sharpening. Shows in the exported file only, not the preview. Slower." disabled={running} />
       </PanelSection>
       <PanelSection title="Delivery">
         <Toggle
