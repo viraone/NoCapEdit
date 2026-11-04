@@ -436,6 +436,9 @@ async function testExport() {
     // Enhance (denoise, lanczos, unsharp) on both paths: proves the wasm build has the filters and the file still splices.
     { label: "enhance-filters-10s", resolution: "720", segments: 10, renderMode: "filters", enhance: true },
     { label: "enhance-compositor-10s", resolution: "720", segments: 10, renderMode: "compositor", enhance: true },
+    // 4K from a 1080p source with the default encoder speed: the encoder's memory at this size is what breaks first.
+    { label: "4k-10s", resolution: "2160", segments: 10, renderMode: "filters", preset: "veryfast" },
+    { label: "enhance-4k-10s", resolution: "2160", segments: 10, renderMode: "filters", preset: "veryfast", enhance: true },
   ]) {
     const run = await runExport(page, console_, cfg);
     runs[cfg.label] = run;

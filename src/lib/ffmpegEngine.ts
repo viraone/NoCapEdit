@@ -261,10 +261,13 @@ const abortError = () => new DOMException("Render cancelled", "AbortError");
  */
 export class FFmpegHungError extends Error {
   readonly multithreaded: boolean;
-  constructor(multithreaded: boolean, message?: string) {
+  /** What the engine did, for the notice on the export panel ("stalled", "ran out of memory"). */
+  readonly why: string;
+  constructor(multithreaded: boolean, message?: string, why = "stalled") {
     super(message ?? (multithreaded ? "The multi-threaded video engine stopped responding." : "The video engine stopped responding."));
     this.name = "FFmpegHungError";
     this.multithreaded = multithreaded;
+    this.why = why;
   }
 }
 
@@ -539,6 +542,13 @@ export class FFmpegEngine {
           watchdogChecks.push(check);
         }),
       ]);
+      // The threaded core's heap is a fixed block (see scripts/copy-ffmpeg.mjs); a frame size it cannot hold ends
+      // the command with -1 and an "Aborted(OOM)" line. The standard core's heap grows, so the job carries on there
+      // for the rest of this session. Nothing is remembered: the next page load tries the fast engine again.
+      if (code !== 0 && multithreaded && /Aborted\(OOM\)|out of memory/i.test(this.recentLogs(30))) {
+        this.preferSingleThread = true;
+        throw new FFmpegHungError(true, "The multi-threaded video engine ran out of memory; retrying single-threaded.", "ran out of memory");
+      }
       return code;
     } catch (e) {
       if (hung) {
@@ -663,8 +673,8 @@ export class FFmpegEngine {
             if (!(e instanceof FFmpegHungError) || resumed || signal?.aborted) throw e;
             resumed = true;
             notice = e.multithreaded
-              ? `The fast video engine stalled at part ${seg.index + 1}. The parts already done are kept; carrying on from there with the slower engine`
-              : `The video engine stalled at part ${seg.index + 1}. The parts already done are kept; carrying on from there`;
+              ? `The fast video engine ${e.why} at part ${seg.index + 1}. The parts already done are kept; carrying on from there with the slower engine`
+              : `The video engine ${e.why} at part ${seg.index + 1}. The parts already done are kept; carrying on from there`;
             onProgress({ stage: "loading", progress: seg.start / job.duration, message: notice });
             await yieldToUI();
             info = await this.load((message) => onProgress({ stage: "loading", progress: seg.start / job.duration, message }));
