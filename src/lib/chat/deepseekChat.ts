@@ -1,8 +1,13 @@
 import { DEEPSEEK_API } from "@/lib/edit/aiHighlights";
+import type { AgentAction } from "./toolTypes";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  /** Edits the assistant made while answering, shown under its reply. Never sent to the API. */
+  actions?: AgentAction[];
+  /** True once the user has undone those edits with the Undo button. */
+  undone?: boolean;
 }
 
 export const CHAT_SYSTEM_PROMPT: string =
