@@ -8,6 +8,7 @@ import { splitClipAt, captionsClearedNotice, removeClip } from "@/lib/models/cli
 import { removeMusicSelection, removedMusicNotice } from "@/lib/models/musicTrim";
 import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
+import { ChatPanel } from "@/components/chat/ChatPanel";
 import { useFitPictureToSong, useStillLength } from "@/components/panels/useStillLength";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { ToolRail } from "@/components/panels/ToolRail";
@@ -87,6 +88,7 @@ export function EditorShell() {
   const tool = useEditor((s) => s.tool);
   const project = useEditor((s) => s.project);
   const assetUrls = useEditor((s) => s.assetUrls);
+  const chatOpen = useEditor((s) => s.chatOpen);
   useFitPictureToSong();
 
   useEffect(() => {
@@ -197,30 +199,35 @@ export function EditorShell() {
       <StillLengthStrip />
       <ImportErrorStrip />
       <div className="flex min-h-0 flex-1 gap-3">
-        <div className="flex shrink-0 gap-3">
-          <ToolRail />
-          <aside className="rf-panel card flex w-[24rem] flex-col overflow-y-auto">
-            {tool === "clips" && <ClipsPanel />}
-            {tool === "trim" && <TrimPanel />}
-            {tool === "subtitles" && <SubtitlesPanel />}
-            {tool === "transcript" && <TranscriptPanel />}
-            {tool === "style" && <StylePanel />}
-            {tool === "text" && <TextPanel />}
-            {tool === "picture" && <PicturePanel />}
-            {tool === "music" && <MusicPanel />}
-            {tool === "reels" && <ReelsPanel />}
-            {tool === "post" && <PostPanel />}
-            {tool === "reframe" && <ReframePanel />}
-            {tool === "export" && <ExportPanel />}
-          </aside>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex min-h-0 flex-1 gap-3">
+            <div className="flex shrink-0 gap-3">
+              <ToolRail />
+              <aside className="rf-panel card flex w-[24rem] flex-col overflow-y-auto">
+                {tool === "clips" && <ClipsPanel />}
+                {tool === "trim" && <TrimPanel />}
+                {tool === "subtitles" && <SubtitlesPanel />}
+                {tool === "transcript" && <TranscriptPanel />}
+                {tool === "style" && <StylePanel />}
+                {tool === "text" && <TextPanel />}
+                {tool === "picture" && <PicturePanel />}
+                {tool === "music" && <MusicPanel />}
+                {tool === "reels" && <ReelsPanel />}
+                {tool === "post" && <PostPanel />}
+                {tool === "reframe" && <ReframePanel />}
+                {tool === "export" && <ExportPanel />}
+              </aside>
+            </div>
+            <main className="flex min-w-0 flex-1 flex-col gap-2">
+              <VideoCanvas />
+              <CanvasBar />
+            </main>
+          </div>
+          <TimelineResizeHandle />
+          <TimelineDock />
         </div>
-        <main className="flex min-w-0 flex-1 flex-col gap-2">
-          <VideoCanvas />
-          <CanvasBar />
-        </main>
+        {chatOpen && <ChatPanel />}
       </div>
-      <TimelineResizeHandle />
-      <TimelineDock />
     </div>
   );
 }

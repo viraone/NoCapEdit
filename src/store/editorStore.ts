@@ -29,6 +29,7 @@ export interface EditorState {
   txSnapshot: VideoProject | null;
   saveState: "saved" | "saving" | "dirty";
   tool: ToolId;
+  chatOpen: boolean;
   currentTime: number;
   isPlaying: boolean;
   selection: Selection | null;
@@ -73,6 +74,7 @@ export interface EditorState {
   undo(): void;
   redo(): void;
   setTool(tool: ToolId): void;
+  setChatOpen(open: boolean): void;
   setReelRun(on: boolean): void;
   /** True while a Make reels run must not be left, after saying so; callers then stay where they are. */
   holdForReelRun(): boolean;
@@ -174,6 +176,7 @@ export const useEditor = create<EditorState>()(
     txSnapshot: null,
     saveState: "saved",
     tool: "clips",
+    chatOpen: false,
     currentTime: 0,
     isPlaying: false,
     selection: null,
@@ -292,6 +295,9 @@ export const useEditor = create<EditorState>()(
     setTool(tool) {
       if (tool !== "reels" && get().holdForReelRun()) return;
       set({ tool });
+    },
+    setChatOpen(chatOpen) {
+      set({ chatOpen });
     },
     setReelRun: (reelRun) => set({ reelRun }),
     holdForReelRun() {

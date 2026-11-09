@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History } from "lucide-react";
+import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History, MessageSquare } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useImportClips } from "@/components/panels/useImportClips";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
@@ -21,6 +21,7 @@ export function TopBar() {
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
   const saveState = useEditor((s) => s.saveState);
+  const chatOpen = useEditor((s) => s.chatOpen);
   const { undo, redo, update, setTool } = useEditor.getState();
   const { onFiles, busy } = useImportClips();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -202,6 +203,9 @@ export function TopBar() {
           e.target.value = "";
           if (files.length) onFiles(files);
         }} />
+        <Button variant={chatOpen ? "outline" : "secondary"} size="bar" aria-pressed={chatOpen} onClick={() => useEditor.getState().setChatOpen(!chatOpen)}>
+          <MessageSquare size={17} /> Chat
+        </Button>
         <Button variant="secondary" size="bar" onClick={() => fileRef.current?.click()} disabled={busy}>
           <Upload size={17} /> Import clips
         </Button>
