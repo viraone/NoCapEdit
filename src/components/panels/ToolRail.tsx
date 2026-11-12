@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, Sparkles, TextSelect } from "lucide-react";
+import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, TextSelect } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
 import { cx } from "@/lib/utils/cx";
 
@@ -16,8 +16,8 @@ const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentTyp
   { id: "music", label: "Music", hint: "Music, sound effects and voice-over", icon: Music, color: "#64d2ff" },
   { id: "reels", label: "Reels", hint: "Cut the best moments into short reels", icon: Clapperboard, color: "#ff375f" },
   { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
-  { id: "post", label: "Post", hint: "Write this week's Rickshaw Instagram post and copy it", icon: Sparkles, color: "#5e5ce6" },
-  // Reframe is not on the rail: cutting a reel follows the face by itself. The panel still opens from ?tool=reframe.
+  // Reframe and Post are not on the rail: cutting a reel follows the face by itself, and Post was taken off the rail.
+  // Their panels still open from ?tool=reframe and ?tool=post.
 ];
 
 /**
