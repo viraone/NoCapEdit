@@ -135,6 +135,12 @@ export interface AgentRunOptions {
   onAction?: (a: AgentAction) => void;
   signal?: AbortSignal;
   maxRounds?: number;
+  /**
+   * Run only the first tool call of each step and answer the others "not run". Every call in a step was planned against
+   * the same old project, so after the first edit the times in the rest are wrong, and a call that needs the result of
+   * an earlier one (a cut that needs the transcript) would run blind.
+   */
+  oneToolPerStep?: boolean;
 }
 
 export async function runAgent(o: AgentRunOptions): Promise<{ text: string; actions: AgentAction[]; hitLimit: boolean }> {
@@ -153,8 +159,18 @@ export async function runAgent(o: AgentRunOptions): Promise<{ text: string; acti
       content: res.content,
       tool_calls: res.toolCalls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.arguments } })),
     });
+    let ranOne = false;
     for (const c of res.toolCalls) {
       if (o.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      if (o.oneToolPerStep && ranOne) {
+        messages.push({
+          role: "tool",
+          tool_call_id: c.id,
+          content: JSON.stringify({ ok: false, message: "Not run. Only one tool runs per step because the project changes after each one. Read the updated project description, then call this again if it is still needed." }),
+        });
+        continue;
+      }
+      ranOne = true;
       let args: unknown;
       let result: ToolResult;
       const trimmedArgs = c.arguments.trim();

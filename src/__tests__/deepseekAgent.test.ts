@@ -230,6 +230,41 @@ describe("runAgent", () => {
     expect(res.hitLimit).toBe(false);
   });
 
+  it("runs only the first tool call of a step when oneToolPerStep is on", async () => {
+    const callModel = vi
+      .fn()
+      .mockResolvedValueOnce({
+        content: "",
+        toolCalls: [
+          { id: "call_1", name: "transcribe", arguments: "{}" },
+          { id: "call_2", name: "cut_ranges", arguments: '{"ranges":[{"start":0,"end":9}]}' },
+          { id: "call_3", name: "cut_ranges", arguments: '{"ranges":[{"start":0,"end":9}]}' },
+        ],
+      })
+      .mockResolvedValueOnce({ content: "read the transcript", toolCalls: [] });
+    const runTool = vi.fn().mockResolvedValue({ ok: true, message: "ok", label: "Transcribed" });
+    const actions: AgentAction[] = [];
+    const res = await runAgent({ history: [], callModel, runTool, oneToolPerStep: true, onAction: (a) => actions.push(a) });
+    expect(runTool).toHaveBeenCalledTimes(1);
+    expect(runTool).toHaveBeenCalledWith("transcribe", {});
+    expect(actions).toEqual([{ label: "Transcribed", ok: true }]);
+    const second = callModel.mock.calls[1][0] as ApiMessage[];
+    const toolMessages = second.filter((m) => m.role === "tool");
+    expect(toolMessages.map((m) => (m as { tool_call_id: string }).tool_call_id)).toEqual(["call_1", "call_2", "call_3"]);
+    expect(JSON.parse((toolMessages[1] as { content: string }).content)).toMatchObject({ ok: false });
+    expect(res.text).toBe("read the transcript");
+  });
+
+  it("runs every tool call of a step when oneToolPerStep is off", async () => {
+    const callModel = vi
+      .fn()
+      .mockResolvedValueOnce({ content: "", toolCalls: [{ id: "a", name: "x", arguments: "{}" }, { id: "b", name: "y", arguments: "{}" }] })
+      .mockResolvedValueOnce({ content: "done", toolCalls: [] });
+    const runTool = vi.fn().mockResolvedValue({ ok: true, message: "ok" });
+    await runAgent({ history: [], callModel, runTool });
+    expect(runTool).toHaveBeenCalledTimes(2);
+  });
+
   it("hits the limit when the model always asks for tools", async () => {
     const callModel = vi.fn().mockResolvedValue({
       content: "",

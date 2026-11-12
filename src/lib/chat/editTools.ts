@@ -18,7 +18,7 @@ export const EDIT_TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "cut_ranges",
-      description: "Removes these time ranges from the reel and closes the gaps. Use it to cut out speech, mistakes or any part.",
+      description: "Removes these time ranges from the reel and closes the gaps. Put EVERY part to remove in this one call; the times are the reel as it is right now. Never call it twice for the same part. Use it to cut out speech, mistakes or any part.",
       parameters: {
         type: "object",
         properties: {

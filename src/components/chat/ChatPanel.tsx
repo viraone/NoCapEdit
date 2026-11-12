@@ -131,6 +131,7 @@ export function ChatPanel() {
         callModel,
         runTool,
         signal: controller.signal,
+        oneToolPerStep: true,
         onRound: (round) => {
           if (round > 0) updateLast((last) => (last.content && !last.content.endsWith("\n\n") ? { ...last, content: last.content + "\n\n" } : last));
         },
