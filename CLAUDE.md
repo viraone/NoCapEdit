@@ -7,6 +7,8 @@ local-only and never committed) or to DeepSeek (`/pass-to-deepseek`). Claude wri
 The rules are the ones in `~/Developer/beezer/CLAUDE.md` ("Qwen Gateway — operating rules"); this is what differs here.
 
 ## Who gets what
+
+> **Studio first (since 2026-11-07; overrides the "one or two files", "two files or fewer" and file-size limits below).** The worker called Qwen below is now DeepSeek V4-Flash running on the Mac Studio; the MacBook Qwen is retired. Viradeth paid for the Studio and wants it used as much as possible, so try it FIRST for all routine coding: up to about six files and 150 KB listed in total, with a clear spec and an existing pattern to copy (it edits with SEARCH/REPLACE, so a long file under that total is fine). Use cloud DeepSeek (`/pass-to-deepseek`) only when the task needs reading around the code, runs commands, is bigger than that, or the Studio failed twice; then escalate with the Studio's failing gate output in the brief, and fix it by hand only if cloud DeepSeek fails too.
 - **Qwen** (free, local, about 20 s): one or two files with a pattern to copy. A test in
   `src/__tests__`, a pure helper in `src/lib`, a copy or string change, a CSS tweak in one component. Since
   2026-11-04 it edits files with SEARCH/REPLACE blocks instead of rewriting them, so a small, well-specified
