@@ -21,6 +21,7 @@ import type { CaptionCue, SubtitleStyle } from "@/lib/models/project";
 import { CaptionLayer } from "@/lib/mobile/captionLayer";
 import { isIOS, resampleLinear } from "@/lib/mobile/audio";
 import { BlobFileSink } from "@/lib/mobile/blobFileSink";
+import { estimatedVideoBitrate } from "@/lib/mobile/exportBudget";
 import { cropRect, DEFAULT_REFRAME, outputFrame, placeWholeFrame, type Reframe } from "@/lib/mobile/reframe";
 
 export interface LiteProgress {
@@ -61,6 +62,9 @@ export interface LiteExportResult {
   width: number;
   height: number;
   audio: "aac" | "ffmpeg" | "none";
+  /** The source had audio, but the fallback mux failed, so the export is
+   * silent. The file itself is still usable. */
+  audioDropped?: boolean;
   seconds: number;
   /** Which exporter produced it: the WebCodecs decode pipeline
    * (lib/mobile/fastExport.ts) or this file's real-time playback capture. */
@@ -151,7 +155,7 @@ function chunkBytes(chunk: EncodedVideoChunk | EncodedAudioChunk): Uint8Array {
   chunk.copyTo(data);
   return data;
 }
-function safeDuration(chunk: EncodedVideoChunk | EncodedAudioChunk, fallbackUs: number): number {
+export function safeDuration(chunk: EncodedVideoChunk | EncodedAudioChunk, fallbackUs: number): number {
   const d = chunk.duration;
   return typeof d === "number" && Number.isFinite(d) && d >= 0 ? d : fallbackUs;
 }
@@ -161,7 +165,7 @@ function safeDuration(chunk: EncodedVideoChunk | EncodedAudioChunk, fallbackUs: 
  * that is not this 2-byte form (ffmpeg reads it as "object type 0, 0
  * channels"), so the muxer is always given a synthesised one. */
 const AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
-function aacSpecificConfig(sampleRate: number, channels: number): Uint8Array {
+export function aacSpecificConfig(sampleRate: number, channels: number): Uint8Array {
   const freqIndex = AAC_RATES.indexOf(sampleRate);
   if (freqIndex === -1) throw new Error(`Unsupported AAC sample rate ${sampleRate}`);
   const objectType = 2; // AAC LC
@@ -327,7 +331,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
       videoError = e;
     },
   });
-  const bitrate = Math.min(12_000_000, Math.max(2_500_000, Math.round(width * height * fps * 0.1)));
+  const bitrate = estimatedVideoBitrate(width, height, fps);
   const videoConfig: VideoEncoderConfig = {
     codec,
     width,
@@ -417,6 +421,7 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
 
   // No AudioEncoder (or unsupported config): keep the original audio via a
   // tiny ffmpeg mux. Single-threaded on purpose — no isolation needed.
+  let audioDropped = false;
   if (audioMode === "none") {
     try {
       progress({ phase: "mux", progress: null, message: "Adding audio" });
@@ -424,10 +429,11 @@ export async function exportCaptionedVideo(opts: LiteExportOptions): Promise<Lit
       audioMode = "ffmpeg";
     } catch (e) {
       console.warn("Audio mux fallback failed; exporting video only", e);
+      audioDropped = true;
     }
   }
 
-  return { blob, width, height, audio: audioMode, seconds: duration, engine: "realtime" };
+  return { blob, width, height, audio: audioMode, audioDropped, seconds: duration, engine: "realtime" };
 }
 
 async function muxOriginalAudio(videoOnly: Blob, source: Blob): Promise<Blob> {

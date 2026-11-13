@@ -10,8 +10,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cx } from "@/lib/utils/cx";
-import { ArrowLeft, ArrowRight, Clapperboard, Copy, FolderOpen, KeyRound, Share2, Trash2, Square, Captions, Play, RefreshCw, AlertTriangle, Loader2, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clapperboard, Copy, KeyRound, Square, Captions, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
 import { ReelPreview } from "./ReelPreview";
+import { ReelCard } from "./reels/ReelCard";
+import { StepStrip } from "./reels/StepStrip";
+import { STALL_NOTICE_SECONDS, STRETCH_STEP } from "./reels/constants";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useReelSlack } from "./shared";
 import { recaptionFromSource } from "@/lib/edit/reelStretch";
@@ -24,7 +27,6 @@ import { DEFAULT_WHISPER_MODEL } from "@/lib/speech/transcriber";
 import { CAPTION_RULES } from "@/lib/speech/captionBuilder";
 import { getPreset } from "@/lib/captions/presets";
 import { resetMlWorker } from "@/lib/speech/mlClient";
-import { projectDuration } from "@/lib/models/timeline";
 import type { VideoProject } from "@/lib/models/project";
 import { deleteProject, getProject, getProjectThumb, saveProject } from "@/lib/storage/db";
 import { formatTime, nowMs } from "@/lib/utils/time";
@@ -33,12 +35,6 @@ import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-
-/** Seconds each "+N s" press in the "More video" section adds to a reel. */
-const STRETCH_STEP = 10;
-
-/** Seconds without any progress report after which the panel says the cut may be stuck. */
-const STALL_NOTICE_SECONDS = 90;
 
 export function ReelsPanel() {
   const project = useProject();
@@ -365,74 +361,26 @@ export function ReelsPanel() {
         const current = isReel && r.id === project.id;
         // The reel being edited reads its length and start from the live project, so a trim or stretch shows at once.
         const shown = current ? project : r;
-        const empty = isEmptyReel(r);
         // Land on the Reels tool so the list of siblings and the way back stay in view.
         const open = () => !current && go(`/editor?id=${r.id}&tool=reels`);
         return (
-          <li
+          <ReelCard
             key={r.id}
-            data-reel={r.id}
-            data-current={current || undefined}
-            className={`flex items-center gap-2 rounded-lg border p-2 select-none ${current ? "border-sys-blue bg-sys-blue/10" : "cursor-pointer border-sys-gray4 bg-sys-gray5 hover:border-sys-gray3"}`}
-            title={current ? "You're editing this reel" : isReel ? "Click to open this reel" : "Double-click to open this reel in the editor; press the thumbnail to preview it here"}
-            onClick={isReel ? open : undefined}
-            onDoubleClick={open}
-          >
-            <button type="button" className="group relative h-14 w-9 shrink-0 overflow-hidden rounded bg-sys-gray6" onClick={(e) => (e.stopPropagation(), !empty && setPreview(r))} aria-label={empty ? "This reel is empty" : "Play this reel"} disabled={empty}>
-              {thumbs[r.id] ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={thumbs[r.id]} alt="" className="h-full w-full object-cover" />
-              ) : null}
-              <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-white opacity-80 group-hover:opacity-100">
-                {empty ? <AlertTriangle size={14} className="text-sys-orange" /> : <Play size={14} fill="currentColor" />}
-              </span>
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-[12px] font-semibold">
-                {/* The title gives way; the badge is never cut short. */}
-                <span className="min-w-0 truncate">{r.reel?.title}</span>
-                {current && <span className="shrink-0 rounded bg-sys-blue px-1 py-px text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
-              </p>
-              {empty ? (
-                <p className="text-[11px] text-sys-orange" data-reel-empty>
-                  Reel {r.reel?.index} · empty: the cut didn&apos;t finish
-                </p>
-              ) : (
-                <p className="text-[11px] tabular-nums text-label-2">
-                  Reel {r.reel?.index} · {r.reel?.score}/10 · {formatTime(projectDuration(shown.clips))} · from {formatTime(shown.reel?.start ?? 0)}
-                </p>
-              )}
-            </div>
-            {!current && (
-              <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), go(`/editor?id=${r.id}&tool=reels`))} title="Open this reel">
-                <FolderOpen size={13} />
-              </Button>
-            )}
-            {empty ? (
-              <Button variant="ghost" size="iconSm" className="text-sys-orange" onClick={(e) => (e.stopPropagation(), void recut(r))} title="Cut this reel again from the source" disabled={!!job} data-recut>
-                <RefreshCw size={13} />
-              </Button>
-            ) : (
-              <Button variant="ghost" size="iconSm" onClick={(e) => (e.stopPropagation(), go(`/editor?id=${r.id}&tool=export`))} title="Export this reel">
-                <Share2 size={13} />
-              </Button>
-            )}
-            {!current && (
-              <Button
-                variant="ghost"
-                size="iconSm"
-                className="text-sys-red"
-                title="Delete this reel"
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  await deleteProject(r.id);
-                  void refreshReels();
-                }}
-              >
-                <Trash2 size={13} />
-              </Button>
-            )}
-          </li>
+            reel={r}
+            shown={shown}
+            current={current}
+            thumb={thumbs[r.id]}
+            isReel={isReel}
+            busy={!!job}
+            onOpen={open}
+            onExport={() => go(`/editor?id=${r.id}&tool=export`)}
+            onPreview={() => setPreview(r)}
+            onRecut={recut}
+            onDelete={async () => {
+              await deleteProject(r.id);
+              void refreshReels();
+            }}
+          />
         );
       })}
     </ul>
@@ -683,40 +631,5 @@ export function ReelsPanel() {
       </PanelSection>
       {preview && <ReelPreview reel={preview} onClose={() => setPreview(null)} />}
     </>
-  );
-}
-
-/**
- * The two-step strip on the Make reels cards: which step is under way (blue,
- * spinning), which is done (green tick) and which is still to come (grey).
- */
-function StepStrip({ step }: { step: 1 | 2 }) {
-  const steps: { n: 1 | 2; label: string }[] = [
-    { n: 1, label: "Subtitles" },
-    { n: 2, label: "Reels" },
-  ];
-  return (
-    <ol className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" aria-label={`Step ${step} of 2`} data-step-strip={step}>
-      {steps.map((st, i) => {
-        const state = st.n < step ? "done" : st.n === step ? "now" : "next";
-        return (
-          <li key={st.n} className="contents">
-            {i > 0 && <span className="h-px w-3 bg-sys-gray3" aria-hidden />}
-            <span
-              className={cx(
-                "flex items-center gap-1 rounded-full px-2 py-0.5",
-                state === "now" && "bg-sys-blue text-white",
-                state === "done" && "bg-sys-green/20 text-sys-green",
-                state === "next" && "bg-sys-gray4 text-label-2",
-              )}
-              data-step-state={state}
-            >
-              {state === "done" ? <Check size={11} aria-hidden /> : state === "now" ? <Loader2 size={11} className="animate-spin" aria-hidden /> : null}
-              {st.n}. {st.label}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
   );
 }

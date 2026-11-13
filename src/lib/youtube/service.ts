@@ -147,6 +147,8 @@ export async function downloadYouTube(
   const title = decodeURIComponent(res.headers.get("X-Video-Title") || "") || defaultTitle(link.source);
   const duration = Number(res.headers.get("X-Video-Duration")) || 0;
   const total = Number(res.headers.get("Content-Length")) || null;
+  // Keep the chunks as they arrive and hand them straight to the File: joining
+  // them into one buffer first would hold the whole video in memory twice.
   const chunks: Uint8Array[] = [];
   let loaded = 0;
   onProgress?.(0, total);
@@ -160,11 +162,17 @@ export async function downloadYouTube(
         loaded += value.length;
         onProgress?.(loaded, total);
       }
-    } else chunks.push(new Uint8Array(await res.arrayBuffer()));
+    } else {
+      const whole = new Uint8Array(await res.arrayBuffer());
+      chunks.push(whole);
+      loaded = whole.length;
+      onProgress?.(loaded, total);
+    }
   } catch (e) {
     if (signal?.aborted) throw new YouTubeServiceError("Cancelled", "cancelled");
     throw new YouTubeServiceError(e instanceof Error ? `The download stopped early: ${e.message}` : "The download stopped early.", "rejected");
   }
+  if (!loaded) throw new YouTubeServiceError("The download helper sent an empty file. Try again.", "rejected");
   if (total && loaded < total) throw new YouTubeServiceError("The download stopped before the whole video arrived. Try again.", "rejected");
   const type = format === "mp3" ? "audio/mpeg" : "video/mp4";
   return { file: new File(chunks as BlobPart[], `${title}.${format}`, { type }), title, duration };

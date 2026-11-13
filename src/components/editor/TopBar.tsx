@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History } from "lucide-react";
+import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History, AlertTriangle } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useImportClips } from "@/components/panels/useImportClips";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
@@ -21,7 +21,8 @@ export function TopBar() {
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
   const saveState = useEditor((s) => s.saveState);
-  const { undo, redo, update, setTool } = useEditor.getState();
+  const journalFailed = useEditor((s) => s.journalFailed);
+  const { undo, redo, update, setTool, saveNow } = useEditor.getState();
   const { onFiles, busy } = useImportClips();
   const fileRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
@@ -119,12 +120,32 @@ export function TopBar() {
             <>
               <Check size={14} className="text-sys-green" /> Saved
             </>
-          ) : (
+          ) : saveState === "saving" ? (
             <>
               <Loader2 size={14} className="animate-spin" /> Saving…
             </>
+          ) : saveState === "error" ? (
+            <>
+              <AlertTriangle size={14} className="text-sys-orange" />
+              <span className="text-sys-orange">Couldn’t save — retrying</span>
+              <button
+                type="button"
+                className="rounded-[6px] border border-sys-orange/40 px-[6px] py-[1px] text-[11.5px] font-semibold text-sys-orange hover:bg-sys-orange/15"
+                onClick={() => saveNow()}
+                data-retry-save
+              >
+                Retry now
+              </button>
+            </>
+          ) : (
+            <>Unsaved</>
           )}
         </span>
+        {journalFailed && (
+          <span className="flex shrink-0 items-center gap-1 text-[11.5px] text-sys-orange" data-journal-warning>
+            <AlertTriangle size={13} /> Offline backup is full — keep this tab open until it says Saved
+          </span>
+        )}
         {project.sourceProjectId && (
           <Link href={`/editor?id=${project.sourceProjectId}&tool=reels`} onClick={stayForReelRun} className="flex h-[36px] shrink-0 items-center gap-1.5 rounded-[10px] bg-sys-pink/15 px-[12px] text-[13px] font-semibold text-sys-pink hover:bg-sys-pink/25" title="Back to the source video and the list of all its reels" data-back-to-source>
             <ArrowLeft size={15} /> All reels

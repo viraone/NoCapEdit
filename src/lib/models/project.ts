@@ -67,6 +67,9 @@ export interface Reframe {
   offset?: { x: number; y: number };
 }
 
+/** What the import learned about a clip's own sound (see lib/media/import.ts). */
+export type AudioStatus = "ok" | "none" | "failed";
+
 /** Any new asset reference on Clip, Overlay, Voiceover or MusicTrack must also be handled in remapAssetIds. */
 export interface Clip {
   id: string;
@@ -78,6 +81,16 @@ export interface Clip {
   width: number;
   height: number;
   hasAudio: boolean;
+  /**
+   * What the import found about the sound: "ok" (read fine), "none" (no audio track),
+   * "failed" (the file has an audio track the browser could not read). Absent on clips
+   * saved before this existed; `hasAudio` says what those mean.
+   */
+  audioStatus?: AudioStatus;
+  /** Why the audio track could not be read, kept for the clip's tooltip. */
+  audioError?: string;
+  /** The import could not build the preview strip (filmstrip). The clip still plays and exports. */
+  previewUnavailable?: boolean;
   inPoint: number;
   outPoint: number;
   /** Playback speed 0.25x to 4x. */
@@ -444,7 +457,10 @@ export function unusedAssetIds(assetIds: string[], project: VideoProject, pendin
   return assetIds.filter((id) => !keep.has(id));
 }
 
-export function createClip(init: Pick<Clip, "assetId" | "name" | "duration" | "width" | "height" | "hasAudio">): Clip {
+export function createClip(
+  init: Pick<Clip, "assetId" | "name" | "duration" | "width" | "height" | "hasAudio"> &
+    Partial<Pick<Clip, "audioStatus" | "audioError" | "previewUnavailable">>,
+): Clip {
   return {
     id: uid("clip"),
     inPoint: 0,

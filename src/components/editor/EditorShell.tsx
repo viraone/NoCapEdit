@@ -27,8 +27,8 @@ import { CanvasBar } from "@/components/canvas/CanvasBar";
 import { VideoCanvas } from "@/components/canvas/VideoCanvas";
 import { TimelineDock } from "@/components/timeline/TimelineDock";
 import { TimelineResizeHandle } from "@/components/timeline/TimelineResizeHandle";
-import { isNativeKeyOwner, isTextEntryTarget, isUndoRedoChord } from "./keyTargets";
-import { createFocusModality, isActivatableTarget } from "./spaceShortcut";
+import { shortcutFor } from "@/lib/shortcuts";
+import { focusModality, isActivatableTarget } from "./spaceShortcut";
 
 /** True while a modal dialog (Recorder, New project, Delete project?) is open. */
 function modalOpen(): boolean {
@@ -106,7 +106,9 @@ export function EditorShell() {
   }, [project, assetUrls]);
 
   useEffect(() => {
-    const modality = createFocusModality();
+    // One tracker for the whole app: controls that emulate a button (a timeline
+    // clip) read the same instance to tell keyboard focus from a click.
+    const modality = focusModality;
     const onPointerDown = () => modality.pointerDown();
     const onPointerUp = () => modality.pointerUp();
     const onFocusIn = () => modality.focusIn();
@@ -121,62 +123,75 @@ export function EditorShell() {
       if (e.key === "Tab") modality.tab();
       // A dialog (Recorder, New project, Delete project?) owns every shortcut while it is open.
       if (modalOpen()) return;
-      if (isTextEntryTarget(e.target)) return;
-      if (isNativeKeyOwner(e.target) && !isUndoRedoChord(e)) return;
+      // The key map (with the text-field guards) lives in src/lib/shortcuts.ts.
+      const action = shortcutFor(e);
+      if (!action) return;
       const s = useEditor.getState();
-      const mod = e.metaKey || e.ctrlKey;
-      // Same action as the "Split at playhead" button (Clips / Trim panels).
-      const splitAtPlayhead = () => {
-        let ok = false;
-        s.update((p) => void (ok = splitClipAt(p, s.currentTime) !== null));
-        s.setNotice(ok ? "Split the clip at the playhead." : "Move the playhead inside a clip to split it.");
-      };
-      if (e.code === "Space") {
-        if (e.defaultPrevented) return;
-        // A keyboard-focused control (Tab, or a scripted .focus()) gets its own
-        // native Space activation; a pointer-focused one keeps toggling playback.
-        if (isActivatableTarget(e.target) && !modality.isPointerFocused()) return;
-        e.preventDefault();
-        engine.toggle();
-      } else if (e.key.toLowerCase() === "s" && !mod && !e.altKey) {
-        e.preventDefault();
-        splitAtPlayhead();
-      } else if (mod && e.key.toLowerCase() === "b") {
-        e.preventDefault();
-        splitAtPlayhead();
-      } else if (mod && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        if (e.shiftKey) s.redo();
-        else s.undo();
-      } else if (mod && e.key.toLowerCase() === "y") {
-        e.preventDefault();
-        s.redo();
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        const sel = s.selection;
-        if (!sel) return;
-        e.preventDefault();
-        let cleared = 0;
-        let music = null as "piece" | "song" | null;
-        s.update((p) => {
-          if (sel.kind === "music") music = removeMusicSelection(p, Number(sel.id));
-          if (sel.kind === "cue") p.cues = p.cues.filter((c) => c.id !== sel.id);
-          if (sel.kind === "overlay") p.overlays = p.overlays.filter((o) => o.id !== sel.id);
-          if (sel.kind === "clip") cleared = removeClip(p, sel.id).clearedCaptions;
-          if (sel.kind === "voiceover") p.voiceovers = p.voiceovers.filter((v) => v.id !== sel.id);
-        });
-        s.select(null);
-        if (music) s.setNotice(removedMusicNotice(music));
-        if (cleared) s.setNotice(captionsClearedNotice(cleared));
-      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        e.preventDefault();
-        const step = e.shiftKey ? 1 : 1 / 30;
-        s.seek(s.currentTime + (e.key === "ArrowLeft" ? -step : step));
-      } else if (e.key === "Home") {
-        s.seek(0);
-      } else if (e.key === "End") {
-        s.seek(engine.duration);
-      } else if (e.key === "Escape") {
-        s.select(null);
+      switch (action) {
+        case "play-pause":
+          // A keyboard-focused control (Tab, or a scripted .focus()) gets its own
+          // native Space activation; a pointer-focused one keeps toggling playback.
+          if (isActivatableTarget(e.target) && !modality.isPointerFocused()) return;
+          e.preventDefault();
+          engine.toggle();
+          break;
+        case "split-at-playhead":
+          // Same action as the "Split at playhead" button (Clips / Trim panels).
+          e.preventDefault();
+          {
+            let ok = false;
+            s.update((p) => void (ok = splitClipAt(p, s.currentTime) !== null));
+            s.setNotice(ok ? "Split the clip at the playhead." : "Move the playhead inside a clip to split it.");
+          }
+          break;
+        case "undo":
+          e.preventDefault();
+          s.undo();
+          break;
+        case "redo":
+          e.preventDefault();
+          s.redo();
+          break;
+        case "remove-selection": {
+          const sel = s.selection;
+          if (!sel) break;
+          e.preventDefault();
+          let cleared = 0;
+          let music = null as "piece" | "song" | null;
+          s.update((p) => {
+            if (sel.kind === "music") music = removeMusicSelection(p, Number(sel.id));
+            if (sel.kind === "cue") p.cues = p.cues.filter((c) => c.id !== sel.id);
+            if (sel.kind === "overlay") p.overlays = p.overlays.filter((o) => o.id !== sel.id);
+            if (sel.kind === "clip") cleared = removeClip(p, sel.id).clearedCaptions;
+            if (sel.kind === "voiceover") p.voiceovers = p.voiceovers.filter((v) => v.id !== sel.id);
+          });
+          s.select(null);
+          if (music) s.setNotice(removedMusicNotice(music));
+          if (cleared) s.setNotice(captionsClearedNotice(cleared));
+          break;
+        }
+        case "seek-back":
+        case "seek-forward": {
+          e.preventDefault();
+          const step = e.shiftKey ? 1 : 1 / 30;
+          s.seek(s.currentTime + (action === "seek-back" ? -step : step));
+          break;
+        }
+        case "seek-start":
+          s.seek(0);
+          break;
+        case "seek-end":
+          s.seek(engine.duration);
+          break;
+        case "clear-selection":
+          s.select(null);
+          break;
+        case "zoom-in":
+        case "zoom-out":
+          // The same 1.4× step the timeline's Zoom buttons use.
+          e.preventDefault();
+          s.setTimelineZoom(s.timelineZoom * (action === "zoom-in" ? 1.4 : 1 / 1.4));
+          break;
       }
     };
     window.addEventListener("keydown", onKey);

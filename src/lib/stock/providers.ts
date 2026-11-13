@@ -137,9 +137,16 @@ export async function searchStock(provider: StockProvider, query: string, orient
 
 /** Downloads the rendition as a File so it can go through the normal import path. */
 export async function downloadStock(item: StockVideo, onProgress?: (loaded: number, total: number | null) => void): Promise<File> {
-  const res = await fetch(item.url);
+  let res: Response;
+  try {
+    res = await fetch(item.url);
+  } catch {
+    throw new Error("Could not reach the provider to download this clip. Check your connection and try again.");
+  }
   if (!res.ok) throw new Error(`Download failed (${res.status}). The provider may block cross-origin downloads for this file.`);
   const total = Number(res.headers.get("content-length")) || null;
+  // Keep the chunks as they arrive and hand them straight to the File: joining
+  // them into one buffer first would hold the whole clip in memory twice.
   const chunks: Uint8Array[] = [];
   let loaded = 0;
   const reader = res.body?.getReader();
@@ -151,7 +158,13 @@ export async function downloadStock(item: StockVideo, onProgress?: (loaded: numb
       loaded += value.length;
       onProgress?.(loaded, total);
     }
-  } else chunks.push(new Uint8Array(await res.arrayBuffer()));
+  } else {
+    const whole = new Uint8Array(await res.arrayBuffer());
+    chunks.push(whole);
+    loaded = whole.length;
+    onProgress?.(loaded, total);
+  }
+  if (!loaded) throw new Error("The download came back empty. Try another clip.");
   const name = `${item.provider}-${item.id.replace(/^[a-z]+-/, "")}.mp4`;
   return new File(chunks as BlobPart[], name, { type: "video/mp4" });
 }

@@ -10,11 +10,14 @@ import { mlRequest, type MlProgress } from "@/lib/speech/mlClient";
 import { rememberMlDevice, type MlDevice } from "@/lib/speech/mlDevice";
 import { uid } from "@/lib/utils/id";
 
-export interface MatteFrames {
+export interface MatteHeader {
   width: number;
   height: number;
   fps: number;
   count: number;
+}
+
+export interface MatteFrames extends MatteHeader {
   /** count × width × height alpha bytes. */
   masks: Uint8Array;
 }
@@ -26,11 +29,49 @@ export function encodeMatte(m: MatteFrames): Blob {
   return new Blob([len, header, zlibSync(m.masks, { level: 6 })], { type: "application/octet-stream" });
 }
 
+function positiveInt(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v > 0;
+}
+
+/** Reads the JSON header at the start of an encoded matte and checks its size fields. */
+export function parseMatteHeader(buf: Uint8Array): { header: MatteHeader; offset: number } {
+  if (buf.length < 4) throw new Error("The matte file is empty or damaged.");
+  const len = new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(0);
+  const offset = 4 + len;
+  if (offset > buf.length) throw new Error("The matte file is damaged: its header is cut off.");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder().decode(buf.subarray(4, offset)));
+  } catch {
+    throw new Error("The matte file is damaged: its header is not readable.");
+  }
+  const h = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  if (!positiveInt(h.width) || !positiveInt(h.height) || !positiveInt(h.count) || typeof h.fps !== "number" || !Number.isFinite(h.fps) || h.fps <= 0) {
+    throw new Error("The matte file is damaged: its header has an invalid size.");
+  }
+  return { header: { width: h.width, height: h.height, fps: h.fps, count: h.count }, offset };
+}
+
+/** Number of alpha bytes the header says the masks should hold. */
+export function matteByteLength(h: MatteHeader): number {
+  const bytes = h.count * h.width * h.height;
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) throw new Error("The matte file is damaged: its header asks for an impossible size.");
+  return bytes;
+}
+
 export async function decodeMatte(blob: Blob): Promise<MatteFrames> {
   const buf = new Uint8Array(await blob.arrayBuffer());
-  const hlen = new DataView(buf.buffer).getUint32(0);
-  const header = JSON.parse(new TextDecoder().decode(buf.subarray(4, 4 + hlen)));
-  const masks = unzlibSync(buf.subarray(4 + hlen));
+  const { header, offset } = parseMatteHeader(buf);
+  const expected = matteByteLength(header);
+  // Decode straight into the final array. Letting fflate allocate and grow its
+  // own output adds another full copy, plus an output-sized buffer while it
+  // grows. The spare byte reveals a stream that holds more masks than the
+  // header promises; fflate would otherwise truncate it silently.
+  const out = new Uint8Array(expected + 1);
+  const masks = unzlibSync(buf.subarray(offset), { out });
+  if (masks.length !== expected) {
+    throw new Error(masks.length > expected ? "The matte file is damaged: it holds more masks than its header says." : "The matte file is damaged: it holds fewer masks than its header says.");
+  }
   return { ...header, masks };
 }
 

@@ -195,12 +195,12 @@ export function FormatPicker() {
   };
 
   return (
-    <div ref={rootRef} className="relative">
-      <button type="button" className="pill" onClick={() => (open ? setOpen(false) : openPicker())} aria-haspopup="listbox" aria-expanded={open} aria-label="Frame format" data-format-pill>
+    <div ref={rootRef} className="relative min-w-0 max-w-full">
+      <button type="button" className="pill max-w-full" onClick={() => (open ? setOpen(false) : openPicker())} aria-haspopup="listbox" aria-expanded={open} aria-label="Frame format" data-format-pill>
         <PlatformBadge format={format} size={18} />
-        <span>{displayName(format)}</span>
-        <span className="text-label-2">({format.ratio})</span>
-        <ChevronDown size={14} className={cx("text-label-2 transition-transform", open && "rotate-180")} />
+        <span className="min-w-0 truncate">{displayName(format)}</span>
+        <span className="shrink-0 text-label-2">({format.ratio})</span>
+        <ChevronDown size={14} className={cx("shrink-0 text-label-2 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
         <div

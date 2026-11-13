@@ -1,8 +1,9 @@
 /** Import flows: everything is stored in IndexedDB on the user's device. */
-import { createClip, type Clip } from "@/lib/models/project";
+import { createClip, type AudioStatus, type Clip } from "@/lib/models/project";
 import { putAsset, putPeaks, putThumbs, putProjectThumb } from "@/lib/storage/db";
 import { uid } from "@/lib/utils/id";
 import { decodeAudio, peaksFromSamples } from "@/lib/ffmpeg/waveform";
+import { audioStatusFor, findAudioTrack } from "./audioStatus";
 import { probeAudio, probeImage, probeVideo } from "./probe";
 import { captureFrame, generateFilmstrip } from "./thumbnails";
 import { emitAssetReady } from "./events";
@@ -30,17 +31,31 @@ export async function importVideo(
 
   onStatus?.("Analysing audio and frames");
   let hasAudio = true;
+  let audioStatus: AudioStatus = "ok";
+  let audioError: string | undefined;
+  let previewUnavailable = false;
   const audioTask = (async () => {
     if (still) {
       hasAudio = false;
+      audioStatus = audioStatusFor({ still: true });
       return;
     }
-    if (file.size > MAX_DECODE_BYTES) return;
+    if (file.size > MAX_DECODE_BYTES) {
+      // Too big to decode: keep assuming it has sound, as before.
+      audioStatus = audioStatusFor({ skipped: true });
+      return;
+    }
     const decoded = await decodeAudio(file).catch(() => null);
     if (!decoded) {
+      // decodeAudio returns nothing both for a silent file and for one it cannot read;
+      // the container's track list says which, so a broken track is not called silence.
+      const track = await findAudioTrack(file);
+      audioStatus = audioStatusFor({ decoded: false, containerHasAudio: track.kind === "unknown" ? null : track.kind === "track" });
       hasAudio = false;
+      if (track.kind === "track") audioError = `The browser could not read this file's audio${track.codec ? ` (${track.codec})` : ""}.`;
       return;
     }
+    audioStatus = audioStatusFor({ decoded: true });
     const peaks = peaksFromSamples(decoded.samples, decoded.sampleRate, 50);
     await putPeaks({ assetId, peaks: peaks.peaks, perSecond: peaks.perSecond, duration: peaks.duration });
     emitAssetReady("peaks", assetId);
@@ -59,7 +74,10 @@ export async function importVideo(
       await putThumbs(rec);
       emitAssetReady("thumbs", assetId);
     })
-    .catch(() => undefined);
+    .catch(() => {
+      // The strip is only a preview: the import carries on, and the clip says it has none.
+      previewUnavailable = true;
+    });
   await Promise.all([audioTask, thumbTask]);
 
   const clip = createClip({
@@ -69,6 +87,9 @@ export async function importVideo(
     width: info.width,
     height: info.height,
     hasAudio,
+    audioStatus,
+    audioError,
+    previewUnavailable,
   });
   return { clip, assetId, blob: file };
 }

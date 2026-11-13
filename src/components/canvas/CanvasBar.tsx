@@ -32,7 +32,7 @@ export function CanvasBar() {
   const safeOn = project.safeZone !== "none";
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 pb-1">
+    <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-center gap-2 pb-1">
       <FormatPicker />
 
       <div className="pill gap-1 px-1.5">
@@ -45,21 +45,38 @@ export function CanvasBar() {
         </button>
       </div>
 
-      <button type="button" className="pill" data-active={clip && Math.abs(zoom - 1) < 1e-6 ? "true" : "false"} disabled={!clip} onClick={() => edit(fillFrame)}>
+      <button
+        type="button"
+        className="pill"
+        data-active={clip && Math.abs(zoom - 1) < 1e-6 ? "true" : "false"}
+        disabled={!clip}
+        onClick={() => edit(fillFrame)}
+        title="Fill the frame with the picture, cropping what doesn't fit and centring it"
+        aria-label="Fill the frame with the picture, cropping what doesn't fit and centring it"
+      >
         <Maximize size={14} /> Fill
       </button>
-      <button type="button" className="pill" data-active={clip && Math.abs(zoom - fit) < 1e-6 ? "true" : "false"} disabled={!clip} onClick={() => edit((c) => fitFrame(c, fit))}>
+      <button
+        type="button"
+        className="pill"
+        data-active={clip && Math.abs(zoom - fit) < 1e-6 ? "true" : "false"}
+        disabled={!clip}
+        onClick={() => edit((c) => fitFrame(c, fit))}
+        title="Fit the whole picture, with empty space around it; face following stops"
+        aria-label="Fit the whole picture, with empty space around it; face following stops"
+      >
         <Minimize size={14} /> Fit
       </button>
 
-      <label className="pill cursor-pointer">
+      <label className="pill cursor-pointer" title="Change the look of the captions">
         <span className="font-bold">Aa</span>
         <select
           className="cursor-pointer appearance-none bg-transparent pr-6 font-semibold focus:outline-none"
           style={chWidth(presetLabel)}
           value={project.subtitleStyle.presetId}
           onChange={(e) => update((p) => void (p.subtitleStyle.presetId = e.target.value))}
-          aria-label="Caption style"
+          aria-label={`Caption style: ${presetLabel}`}
+          title="Change the look of the captions"
         >
           {CAPTION_PRESETS.map((p) => (
             <option key={p.id} value={p.id}>
@@ -75,13 +92,22 @@ export function CanvasBar() {
         className={cx("pill")}
         data-active={safeOn ? "true" : "false"}
         onClick={() => update((p) => void (p.safeZone = p.safeZone === "none" ? (getFormat(p.formatId).safeZone === "none" ? "reels" : getFormat(p.formatId).safeZone) : "none"))}
-        title={safeOn ? "Hide the platform safe zone" : "Show the platform safe zone"}
+        title={safeOn ? "Hide the safe zone guide" : "Show where the platform's buttons and captions cover the video"}
+        aria-label={safeOn ? "Safe zone: hide the guide" : "Safe zone: show where the platform's buttons and captions cover the video"}
         aria-pressed={safeOn}
       >
         {safeOn ? <Eye size={14} /> : <EyeOff size={14} />} Safe zone
       </button>
 
-      <button type="button" className="pill" data-active={phone ? "true" : "false"} onClick={() => setPhone(true)} title="See the post on an iPhone 16 Pro Max in the Instagram app" disabled={!clip}>
+      <button
+        type="button"
+        className="pill"
+        data-active={phone ? "true" : "false"}
+        onClick={() => setPhone(true)}
+        title="Preview the post on a phone, as it looks in the Instagram app"
+        aria-label="Phone preview: see the post as it looks in the Instagram app"
+        disabled={!clip}
+      >
         <Smartphone size={14} /> Phone
       </button>
       {phone && <PhonePreview onClose={() => setPhone(false)} />}

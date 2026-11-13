@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { Scissors, ArrowRightToLine, ArrowLeftToLine, Snail, PersonStanding, Rabbit, Zap, SquareSplitHorizontal, Circle, Moon, ZoomOut, ZoomIn, Maximize, Minimize, ChevronDown, Wand2, Square, ScanFace, Undo2 } from "lucide-react";
+import { Scissors, ArrowRightToLine, ArrowLeftToLine, ZoomOut, ZoomIn, Maximize, Minimize, ChevronDown, Wand2, Square, ScanFace, Undo2 } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useTargetClip, useSliderTx, useReelSlack } from "./shared";
 import { layoutClips, findLayout, toSourceTime } from "@/lib/models/timeline";
@@ -33,22 +33,9 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useMlDevice } from "./useMlDevice";
 import { FeedbackSection } from "./FeedbackSection";
 import { StillLengthSection } from "./StillLengthSection";
+import { BackgroundPicker } from "./trim/BackgroundPicker";
+import { QUICK_TRANSITIONS, SPEEDS } from "./trim/constants";
 import { mlDeviceLabel } from "@/lib/speech/mlDevice";
-
-const SPEEDS: { value: number; label: string; icon: React.ReactNode }[] = [
-  { value: 0.5, label: "0.5×", icon: <Snail size={16} /> },
-  { value: 1, label: "1×", icon: <PersonStanding size={16} /> },
-  { value: 1.5, label: "1.5×", icon: <Rabbit size={16} /> },
-  { value: 2, label: "2×", icon: <Zap size={16} /> },
-];
-
-const QUICK_TRANSITIONS: { id: TransitionType; label: string; icon: React.ReactNode }[] = [
-  { id: "none", label: "Cut", icon: <SquareSplitHorizontal size={16} /> },
-  { id: "fade", label: "Dissolve", icon: <Circle size={16} /> },
-  { id: "fadeblack", label: "Fade", icon: <Moon size={16} /> },
-];
-
-const BACKGROUNDS = ["#000000", "#1c1c1e", "#2f3a4a", "#1d2b53", "#4a1942", "#1f3d2b", "#f1e3c8", "#ffffff"];
 
 export function TrimPanel() {
   const project = useProject();
@@ -266,7 +253,7 @@ export function TrimPanel() {
 
       <PanelSection title="Cut at the playhead">
         <TileGrid cols={3}>
-          <Tile icon={<Scissors size={16} />} label="Split" onClick={doSplit} />
+          <Tile icon={<Scissors size={16} />} label="Split" onClick={doSplit} title="Split the clip at the playhead (S)" />
           <Tile icon={<ArrowRightToLine size={16} />} label="Cut before" onClick={doCutBefore} />
           <Tile icon={<ArrowLeftToLine size={16} />} label="Cut after" onClick={doCutAfter} />
         </TileGrid>
@@ -392,18 +379,7 @@ export function TrimPanel() {
       </PanelSection>
 
       <PanelSection title={`Background  ${clip.background === "#000000" ? "Black" : clip.background === "#ffffff" ? "White" : clip.background.toUpperCase()}`}>
-        <div className="flex flex-wrap items-center gap-2">
-          {BACKGROUNDS.map((color) => (
-            <button
-              key={color}
-              type="button"
-              aria-label={`Background ${color}`}
-              onClick={() => edit((c) => void (c.background = color))}
-              className={cx("h-6 w-6 rounded-full border-2 transition-transform hover:scale-110", clip.background.toLowerCase() === color ? "border-sys-blue" : "border-white/20")}
-              style={{ background: color }}
-            />
-          ))}
-        </div>
+        <BackgroundPicker value={clip.background} onChange={(color) => edit((c) => void (c.background = color))} />
         <p className="rf-read-note">
           <b>Zoom Out past 1×</b> shrinks the picture and leaves bands above and below in this colour. On the feed, Instagram crops 9:16 to 4:5, so the bands mostly get cut off.
         </p>

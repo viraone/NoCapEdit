@@ -61,3 +61,10 @@ export function createFocusModality(): FocusModality {
     isPointerFocused: () => pointerFocused,
   };
 }
+
+/**
+ * The app-wide tracker: EditorShell feeds it from pointer/focus events, and
+ * controls that emulate a button (a timeline clip) read it so Space after a
+ * click still means play/pause while Space from the keyboard activates them.
+ */
+export const focusModality = createFocusModality();

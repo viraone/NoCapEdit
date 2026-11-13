@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Mic, Square, Trash2, Merge, Scissors, Anchor, Plus, Languages, FileUp, Play } from "lucide-react";
+import { Sparkles, Mic, Square, Plus, Languages, FileUp, Play } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
+import { CueRow } from "./subtitles/CueRow";
 import { engine } from "@/lib/playback/engine";
 import type { CaptionCue, WordTiming } from "@/lib/models/project";
 import { buildCues, cuesEditedSince, mergeCues, regroupCues, splitCue, sortCues, CAPTION_RULES } from "@/lib/speech/captionBuilder";
@@ -26,46 +27,16 @@ import { formatTime, nowMs } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection, EmptyState } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
-import { Field, inputClass } from "@/components/ui/Field";
+import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { Toggle } from "@/components/ui/Toggle";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { NumberInput } from "@/components/ui/NumberInput";
 
 interface Job {
   kind: "transcribe" | "translate" | "dictate";
   message: string;
   progress: number | null;
   partial?: string;
-}
-
-function CueText({ value, onCommit, placeholder, className, focusNonce }: { value: string; onCommit: (v: string) => void; placeholder?: string; className?: string; focusNonce?: number }) {
-  const [text, setText] = useState(value);
-  const [prevValue, setPrevValue] = useState(value);
-  if (prevValue !== value) {
-    setPrevValue(value);
-    setText(value);
-  }
-  const ref = useRef<HTMLInputElement>(null);
-  // A canvas double-click asks for the caret here with the text selected.
-  useEffect(() => {
-    if (!focusNonce) return;
-    ref.current?.focus();
-    ref.current?.select();
-  }, [focusNonce]);
-  return (
-    <input
-      ref={ref}
-      data-content-editor="cue"
-      className={cx(inputClass, "h-7 text-[13px]", className)}
-      value={text}
-      placeholder={placeholder}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => text !== value && onCommit(text)}
-      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-      onClick={(e) => e.stopPropagation()}
-    />
-  );
 }
 
 export function SubtitlesPanel() {
@@ -602,50 +573,25 @@ export function SubtitlesPanel() {
           <EmptyState title="No captions yet" description="Generate them from speech, import an .srt file or add cues by hand." />
         ) : (
           <div ref={listRef} className="space-y-1.5">
-            {sorted.map((cue, i) => {
-              const selected = selection?.kind === "cue" && selection.id === cue.id;
-              const active = activeCueId === cue.id;
-              return (
-                <div
-                  key={cue.id}
-                  data-cue={cue.id}
-                  className={cx("rounded-md border px-2 py-1.5", active ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray4", selected && "ring-1 ring-sys-blue")}
-                  onClick={() => select({ kind: "cue", id: cue.id })}
-                >
-                  <div className="mb-1 flex items-center gap-1 text-[10px] tabular-nums text-label-2">
-                    <button type="button" className="rounded p-0.5 hover:bg-sys-gray4 hover:text-white" onClick={(e) => (e.stopPropagation(), seek(cue.start))} title="Jump to cue">
-                      <Play size={10} />
-                    </button>
-                    <NumberInput value={cue.start} min={0} max={cue.end - 0.1} className="h-5 w-16 px-1 text-[10px]" onCommit={(v) => editCue(cue.id, (c) => void (c.start = v))} />
-                    <span>→</span>
-                    <NumberInput value={cue.end} min={cue.start + 0.1} className="h-5 w-16 px-1 text-[10px]" onCommit={(v) => editCue(cue.id, (c) => void (c.end = v))} />
-                    <span className="ml-auto flex items-center">
-                      <button type="button" className="rounded p-0.5 hover:bg-sys-gray4 hover:text-white" title="Split in the middle" onClick={(e) => (e.stopPropagation(), splitMiddle(cue.id))}>
-                        <Scissors size={11} />
-                      </button>
-                      <button type="button" className="rounded p-0.5 hover:bg-sys-gray4 hover:text-white disabled:opacity-30" title="Merge with next" disabled={i === sorted.length - 1} onClick={(e) => (e.stopPropagation(), mergeWithNext(cue.id))}>
-                        <Merge size={11} />
-                      </button>
-                      <button
-                        type="button"
-                        className={cx("rounded p-0.5 hover:bg-sys-gray4 hover:text-white", cue.anchor && "text-sys-yellow")}
-                        title={cue.anchor ? "Detached: click to follow the global position again" : "Detach: give this cue its own position (or Alt-drag it on the preview)"}
-                        onClick={(e) => (e.stopPropagation(), editCue(cue.id, (c) => void (c.anchor = c.anchor ? null : { x: project.subtitleStyle.x, y: project.subtitleStyle.y })))}
-                      >
-                        <Anchor size={11} />
-                      </button>
-                      <button type="button" className="rounded p-0.5 text-sys-red hover:bg-sys-gray4" title="Delete" onClick={(e) => (e.stopPropagation(), removeCue(cue.id))}>
-                        <Trash2 size={11} />
-                      </button>
-                    </span>
-                  </div>
-                  <CueText value={cue.text} onCommit={(v) => editCue(cue.id, (c) => void (c.text = v))} focusNonce={editRequest?.kind === "cue" && editRequest.id === cue.id ? editRequest.nonce : undefined} />
-                  {project.captions.showTranslated && (
-                    <CueText className="mt-1 text-label-2" value={cue.translatedText ?? ""} placeholder="Translation" onCommit={(v) => editCue(cue.id, (c) => void (c.translatedText = v))} />
-                  )}
-                </div>
-              );
-            })}
+            {sorted.map((cue, i) => (
+              <CueRow
+                key={cue.id}
+                cue={cue}
+                last={i === sorted.length - 1}
+                active={activeCueId === cue.id}
+                selected={selection?.kind === "cue" && selection.id === cue.id}
+                showTranslated={project.captions.showTranslated}
+                focusNonce={editRequest?.kind === "cue" && editRequest.id === cue.id ? editRequest.nonce : undefined}
+                anchorX={project.subtitleStyle.x}
+                anchorY={project.subtitleStyle.y}
+                onSelect={() => select({ kind: "cue", id: cue.id })}
+                onSeek={seek}
+                onEdit={(fn) => editCue(cue.id, fn)}
+                onSplit={() => splitMiddle(cue.id)}
+                onMerge={() => mergeWithNext(cue.id)}
+                onRemove={() => removeCue(cue.id)}
+              />
+            ))}
           </div>
         )}
       </PanelSection>

@@ -1,35 +1,21 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, ArrowLeftRight, MessageSquare, AudioLines, Trash2 } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Music, Captions, Film, AudioLines } from "lucide-react";
 import { TransportBar } from "@/components/canvas/TransportBar";
 import { useEditor } from "@/store/editorStore";
 import { layoutClips, type ClipLayout } from "@/lib/models/timeline";
-import type { CaptionCue, Clip } from "@/lib/models/project";
-import { captionsClearedNotice, removeClip, reorderClip, splitClipAt, splitTarget } from "@/lib/models/clipOps";
+import { captionsClearedNotice, removeClip, splitClipAt, splitTarget } from "@/lib/models/clipOps";
 import { playCutSound } from "@/lib/audio/uiSounds";
 import { formatTime } from "@/lib/utils/time";
 import { clamp } from "@/lib/utils/math";
 import { musicLoops, musicSpan } from "@/lib/models/musicTrim";
-import { MusicLane } from "./MusicLane";
-import { cx } from "@/lib/utils/cx";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { Filmstrip, loadThumbs, type Loaded } from "./Filmstrip";
-import { toSourceTime } from "@/lib/models/timeline";
-import { stretchOf, type Slack } from "@/lib/edit/reelStretch";
-import { AudioWaveform } from "./AudioWaveform";
-import { useReelStretch, type InOut, type TrimDrag } from "./useReelStretch";
-import { RULER_H, CUE_H, DOCK_CHROME_H, STRIP_OVERSCAN, drawRange, videoLaneHeight, visibleWindow } from "./dockLayout";
-
-const EDGE = 10;
-/** Below this width (px) a caption chip has no room for words: it is drawn as a plain bar. */
-const CUE_LABEL_MIN_W = 30;
-/** Vertical inset of a clip block inside the video lane. */
-const CLIP_PAD = 4;
-/** Pointer travel before a press on a clip body becomes a reorder drag. */
-const DRAG_THRESHOLD = 8;
-/** Pointer travel that turns a click on a clip into a drag, so it no longer cuts. */
-const CLICK_SLOP = 3;
+import { useReelStretch } from "./useReelStretch";
+import { RULER_H, CUE_H, DOCK_CHROME_H, STRIP_OVERSCAN, drawRange, videoLaneHeight } from "./dockLayout";
+import { ClipBlock } from "./ClipBlock";
+import { CueLane, AudioLane, MusicRow, Ruler, Playhead, HoverPreview } from "./lanes";
+import { CLIP_PAD, EDGE } from "./laneConstants";
 
 /** Whether a click at project time `t` (x px into the lane) would cut a clip: on a clip, clear of its trim handles. */
 function cuttableAt(layouts: ClipLayout[], t: number, pxPerSec: number): ClipLayout | null {
@@ -38,417 +24,6 @@ function cuttableAt(layouts: ClipLayout[], t: number, pxPerSec: number): ClipLay
   const x = t * pxPerSec;
   if (x - target.start * pxPerSec <= EDGE || target.end * pxPerSec - x <= EDGE) return null;
   return target;
-}
-
-/** Insertion slot for a pointer at project time t: the number of clips whose middle lies before it. */
-function insertionIndex(layouts: ClipLayout[], t: number): number {
-  let k = 0;
-  for (const l of layouts) if ((l.start + l.end) / 2 < t) k++;
-  return k;
-}
-
-/**
- * Where the media and any stretched-out part sit inside a clip block `width`
- * px wide. While a reel's edge is dragged past its media, the block grows and
- * the part with no media yet is drawn as a ghost on that side.
- */
-function stretchGeometry(clip: Clip, width: number, pxPerSec: number) {
-  const st = stretchOf(clip);
-  const left = Math.min(width, (st.before / clip.speed) * pxPerSec);
-  const right = Math.min(width - left, (st.after / clip.speed) * pxPerSec);
-  return { left, right, mediaW: Math.max(0, width - left - right), inPoint: Math.max(0, clip.inPoint), outPoint: Math.min(clip.duration, clip.outPoint), ...st };
-}
-
-/** Striped placeholder for the seconds a drag is pulling back from the source video. */
-function StretchGhost({ side, width, seconds }: { side: "l" | "r"; width: number; seconds: number }) {
-  return (
-    <div
-      className={cx("pointer-events-none absolute inset-y-0 flex items-center justify-center overflow-hidden text-[12px] font-semibold text-white", side === "l" ? "left-0" : "right-0")}
-      style={{ width, backgroundImage: "repeating-linear-gradient(135deg, rgba(10,132,255,0.45) 0 5px, rgba(10,132,255,0.12) 5px 10px)" }}
-      data-stretch-ghost={side}
-      title="This part comes back from the source video when you let go"
-    >
-      {width > 40 && <span className="rounded bg-black/60 px-1 py-0.5 tabular-nums">+{seconds.toFixed(1)} s</span>}
-    </div>
-  );
-}
-
-/** Tooltip for a trim handle: how much can still be dragged out on that side. */
-function handleTitle(seconds: number, side: "before" | "after"): string {
-  return seconds > 0.05 ? `Drag out to bring back up to ${formatTime(seconds)} ${side} this` : "Drag to trim";
-}
-
-function rulerLabel(t: number, fine: boolean): string {
-  if (fine) return formatTime(t, true);
-  if (t < 60) return `${Math.round(t)}s`;
-  return formatTime(t, false);
-}
-
-function Ruler({ pxPerSec, duration, width }: { pxPerSec: number; duration: number; width: number }) {
-  const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
-  const major = steps.find((s) => s * pxPerSec >= 72) ?? 600;
-  const minor = major / (major >= 1 ? 4 : 2);
-  const ticks: { t: number; major: boolean }[] = [];
-  const end = Math.max(duration, width / pxPerSec);
-  for (let t = 0; t <= end + 1e-6; t += minor) {
-    const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6;
-    ticks.push({ t: Math.round(t * 1000) / 1000, major: isMajor });
-  }
-  return (
-    <div className="relative border-b border-sys-gray5" style={{ height: RULER_H }}>
-      {ticks.map((tick) => (
-        <div key={tick.t} className="absolute bottom-0" style={{ left: tick.t * pxPerSec }}>
-          <div className={cx("w-px bg-sys-gray3", tick.major ? "h-3" : "h-1.5")} />
-          {tick.major && <span className="absolute bottom-3 left-1 text-[12px] font-semibold leading-none tabular-nums text-white/75">{rulerLabel(tick.t, major < 1)}</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Playhead({ pxPerSec, scrollRef, height }: { pxPerSec: number; scrollRef: React.RefObject<HTMLDivElement | null>; height: number }) {
-  const currentTime = useEditor((s) => s.currentTime);
-  const isPlaying = useEditor((s) => s.isPlaying);
-  const seek = useEditor((s) => s.seek);
-  const x = currentTime * pxPerSec;
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || !isPlaying) return;
-    const view = el.clientWidth;
-    if (x < el.scrollLeft || x > el.scrollLeft + view - 24) el.scrollLeft = Math.max(0, x - view * 0.15);
-  }, [x, isPlaying, scrollRef]);
-  const dragging = useRef(false);
-  const timeAt = (clientX: number) => {
-    const el = scrollRef.current!;
-    const r = el.getBoundingClientRect();
-    return (clientX - r.left + el.scrollLeft) / pxPerSec;
-  };
-  return (
-    <div
-      className="absolute top-0 z-20 w-0"
-      style={{ left: x, height }}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        dragging.current = true;
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }}
-      onPointerMove={(e) => dragging.current && seek(timeAt(e.clientX))}
-      onPointerUp={(e) => {
-        dragging.current = false;
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      }}
-    >
-      <div className="absolute -left-2 top-0 h-3 w-4 cursor-ew-resize rounded-b-sm bg-sys-blue" />
-      <div className="absolute left-0 top-0 h-full w-px bg-sys-blue" />
-    </div>
-  );
-}
-
-function CueBlock({ cue, pxPerSec, selected, active, showTranslated }: { cue: CaptionCue; pxPerSec: number; selected: boolean; active: boolean; showTranslated: boolean }) {
-  const { update, beginTransaction, endTransaction, select, seek, setTool } = useEditor.getState();
-  const drag = useRef<{ mode: "move" | "l" | "r"; startX: number; start: number; end: number; moved: boolean } | null>(null);
-  const width = Math.max(4, (cue.end - cue.start) * pxPerSec);
-  // Zoomed out, a caption is a few px wide: letters cut to "i…" mean nothing, a bar shows where speech is.
-  const labelled = width >= CUE_LABEL_MIN_W;
-  return (
-    <div
-      className={cx(
-        "rf-read-face absolute top-1 flex h-[26px] cursor-grab items-center overflow-hidden border text-[13px] leading-none select-none",
-        labelled ? "rounded-md px-1.5" : "rounded-[3px]",
-        active ? "border-sys-blue bg-sys-blue/30 text-white" : "border-sys-teal/50 bg-sys-teal/15 text-white",
-        selected && "ring-1 ring-sys-blue",
-      )}
-      style={{ left: cue.start * pxPerSec, width }}
-      title={cue.text}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        const r = e.currentTarget.getBoundingClientRect();
-        const lx = e.clientX - r.left;
-        const mode = lx < EDGE ? "l" : lx > r.width - EDGE ? "r" : "move";
-        drag.current = { mode, startX: e.clientX, start: cue.start, end: cue.end, moved: false };
-        select({ kind: "cue", id: cue.id });
-        beginTransaction();
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        const d = drag.current;
-        if (!d) return;
-        const dt = (e.clientX - d.startX) / pxPerSec;
-        if (Math.abs(e.clientX - d.startX) > 2) d.moved = true;
-        update(
-          (p) => {
-            const c = p.cues.find((c) => c.id === cue.id);
-            if (!c) return;
-            if (d.mode === "move") {
-              const shift = Math.max(-d.start, dt);
-              c.start = d.start + shift;
-              c.end = d.end + shift;
-              c.words = c.words?.map((w) => ({ ...w, start: w.start + (c.start - cue.start), end: w.end + (c.start - cue.start) }));
-            } else if (d.mode === "l") c.start = clamp(d.start + dt, 0, d.end - 0.1);
-            else c.end = Math.max(d.start + 0.1, d.end + dt);
-          },
-          { history: false },
-        );
-      }}
-      onPointerUp={(e) => {
-        const d = drag.current;
-        drag.current = null;
-        endTransaction();
-        e.currentTarget.releasePointerCapture(e.pointerId);
-        if (d && !d.moved) seek(cue.start);
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        setTool("subtitles");
-      }}
-    >
-      {labelled && <span className="truncate">{showTranslated && cue.translatedText ? cue.translatedText : cue.text}</span>}
-      <span className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" />
-      <span className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" />
-    </div>
-  );
-}
-
-function ClipBlock({
-  layout,
-  layouts,
-  pxPerSec,
-  laneH,
-  selected,
-  active,
-  onDropIndicator,
-  slack,
-  onTrimEnd,
-  onStretch,
-  view,
-  onCut,
-  cutHover,
-  onRemove,
-  cutSide,
-}: {
-  layout: ClipLayout;
-  layouts: ClipLayout[];
-  pxPerSec: number;
-  /** Height of the video lane; the block fills it minus CLIP_PAD on each side. */
-  laneH: number;
-  selected: boolean;
-  active: boolean;
-  /** x (px) of the insertion slot while a reorder drag is in progress, null when none. */
-  onDropIndicator: (x: number | null) => void;
-  /** On a reel: seconds of the source video the edges may be dragged out past the media on each side. Null: the edges stop at the media. */
-  slack: Slack | null;
-  /** An edge drag ended (inside its undo transaction); returns the in/out points to cut from the source when it went past the media. */
-  onTrimEnd: (drag: TrimDrag) => InOut | null;
-  /** Cuts the wider range from the source, after the transaction closed. */
-  onStretch: (req: InOut) => void;
-  /** Timeline range (px) being drawn: the filmstrip only gets a canvas for its part of it. */
-  view: { from: number; to: number };
-  /** A click (no drag) on the body at project time t: cut the clip there. */
-  onCut: (t: number) => void;
-  /** The pointer is over a spot a click would cut: the arrow replaces the grab hand. */
-  cutHover: boolean;
-  /** The trash button on the block was clicked: remove this clip. */
-  onRemove: () => void;
-  /** Set right after a cut on the half this block is: which way it pulls apart (see .rf-cut animations). */
-  cutSide?: string;
-}) {
-  const { update, beginTransaction, endTransaction, select, setTool } = useEditor.getState();
-  const { clip } = layout;
-  const width = Math.max(6, layout.duration * pxPerSec);
-  const blockH = laneH - CLIP_PAD * 2;
-  const geo = stretchGeometry(clip, width, pxPerSec);
-  const strip = visibleWindow(layout.start * pxPerSec + geo.left, geo.mediaW, view);
-  // How much can still be dragged out on each side: the media's own slack, then the source past it.
-  const availBefore = clip.inPoint + (slack?.before ?? 0);
-  const availAfter = clip.duration - clip.outPoint + (slack?.after ?? 0);
-  /** Hands a finished edge drag to the dock: where it began and where the edges are now (maybe past the media). */
-  const finishTrim = (from: InOut): InOut | null => {
-    const now = useEditor.getState().project?.clips.find((c) => c.id === clip.id);
-    if (!now) return null;
-    return onTrimEnd({ clipId: clip.id, from, to: { inPoint: now.inPoint, outPoint: now.outPoint } });
-  };
-  // The waveform keeps its 28-of-68 share of the block as the lane grows, within sane bounds.
-  const drag = useRef<{ mode: "l" | "r" | "none" | "reorder"; startX: number; inPoint: number; outPoint: number; slot: number | null; onTag: boolean; wasSelected: boolean } | null>(null);
-  const [dragging, setDragging] = useState(false);
-  /** Project time under the pointer, measured against the lane so scrolling is accounted for. */
-  const laneTime = (e: React.PointerEvent<HTMLDivElement>) => {
-    const lane = e.currentTarget.parentElement!;
-    return (e.clientX - lane.getBoundingClientRect().left) / pxPerSec;
-  };
-  const slotX = (k: number) => (k < layouts.length ? layouts[k].start : layouts[layouts.length - 1].end) * pxPerSec;
-  return (
-    <div
-      className={cx(
-        "group absolute top-1 overflow-hidden rounded-lg border-2 bg-sys-gray6 select-none",
-        dragging ? "cursor-grabbing opacity-60" : cutHover ? "cursor-default" : "cursor-grab",
-        // Blue means selected: what Remove and Delete act on. The clip under the playhead only gets a faint outline.
-        selected ? "border-sys-blue ring-2 ring-sys-blue/40" : active ? "border-white/30" : "border-sys-gray4",
-      )}
-      style={{ left: layout.start * pxPerSec, width, height: blockH }}
-      data-clip={clip.id}
-      data-cut={cutSide}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        const r = e.currentTarget.getBoundingClientRect();
-        const lx = e.clientX - r.left;
-        const mode = lx < EDGE ? "l" : lx > r.width - EDGE ? "r" : "none";
-        // Whether this press only selects: the first click on a clip selects it, the next one cuts.
-        const wasSelected = selected;
-        select({ kind: "clip", id: clip.id });
-        // Where the press began: the block captures the pointer, so the release no longer says.
-        drag.current = { mode, startX: e.clientX, inPoint: clip.inPoint, outPoint: clip.outPoint, slot: null, onTag: (e.target as Element).closest("[data-clip-tag]") !== null, wasSelected };
-        e.currentTarget.setPointerCapture(e.pointerId);
-        if (mode !== "none") beginTransaction();
-      }}
-      onPointerMove={(e) => {
-        const d = drag.current;
-        if (!d) return;
-        if (d.mode === "none") {
-          if (Math.abs(e.clientX - d.startX) < DRAG_THRESHOLD) return;
-          // Past the threshold a press on the body becomes a reorder drag (one undo step).
-          d.mode = "reorder";
-          beginTransaction();
-          setDragging(true);
-        }
-        if (d.mode === "reorder") {
-          const k = insertionIndex(layouts, laneTime(e));
-          d.slot = k;
-          onDropIndicator(slotX(k));
-          return;
-        }
-        const dt = ((e.clientX - d.startX) / pxPerSec) * clip.speed;
-        update(
-          (p) => {
-            const c = p.clips.find((c) => c.id === clip.id);
-            if (!c) return;
-            // A reel's edges may run past its media into the source's slack; the ghost shows how far.
-            if (d.mode === "l") c.inPoint = clamp(d.inPoint + dt, -(slack?.before ?? 0), d.outPoint - 0.1);
-            else c.outPoint = clamp(d.outPoint + dt, d.inPoint + 0.1, c.duration + (slack?.after ?? 0));
-          },
-          // Captions and the rest follow the picture, measured from where the drag began.
-          { history: false, ripple: true },
-        );
-      }}
-      onPointerUp={(e) => {
-        const d = drag.current;
-        drag.current = null;
-        try {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        } catch {
-          /* not captured */
-        }
-        if (!d) return;
-        if (d.mode === "none") {
-          // A click, not a drag: on a clip that was already selected, cut here. The first click only selects it.
-          // Touch has no hover to show where, so it only selects. The name tag and a Shift / Option / ⌘ click only select.
-          const selectOnly = !d.wasSelected || e.shiftKey || e.altKey || e.metaKey || d.onTag;
-          if (!selectOnly && e.pointerType !== "touch" && e.button === 0 && Math.abs(e.clientX - d.startX) <= CLICK_SLOP) onCut(laneTime(e));
-          return;
-        }
-        let stretch: InOut | null = null;
-        if (d.mode === "reorder") {
-          setDragging(false);
-          onDropIndicator(null);
-          if (d.slot !== null) {
-            // Slot k counts the dragged clip itself when it sits before the slot.
-            const to = d.slot > layout.index ? d.slot - 1 : d.slot;
-            update((p) => void reorderClip(p, clip.id, to), { ripple: true });
-          }
-        } else stretch = finishTrim({ inPoint: d.inPoint, outPoint: d.outPoint });
-        endTransaction();
-        if (stretch) onStretch(stretch);
-      }}
-      onPointerCancel={() => {
-        const d = drag.current;
-        drag.current = null;
-        if (d?.mode === "reorder") {
-          setDragging(false);
-          onDropIndicator(null);
-        } else if (d && d.mode !== "none") finishTrim({ inPoint: d.inPoint, outPoint: d.outPoint });
-        if (d && d.mode !== "none") endTransaction();
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        setTool("trim");
-      }}
-    >
-      <div className="absolute inset-y-0" style={{ left: geo.left, width: geo.mediaW }}>
-        <Filmstrip assetId={clip.assetId} inPoint={geo.inPoint} outPoint={geo.outPoint} width={geo.mediaW} height={blockH} visible={strip} />
-      </div>
-      {geo.left > 0 && <StretchGhost side="l" width={geo.left} seconds={geo.before} />}
-      {geo.right > 0 && <StretchGhost side="r" width={geo.right} seconds={geo.after} />}
-      <div
-        className="absolute left-1 top-1 flex cursor-pointer items-center gap-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[12px] font-semibold text-white hover:bg-black/85 hover:ring-1 hover:ring-white/40"
-        data-clip-tag={clip.id}
-        title="Select this clip. Click the clip once to select it, and click it again where you want to cut."
-      >
-        <span className="max-w-32 truncate">{clip.name}</span>
-        <span className="text-white/70">{formatTime(layout.duration)}</span>
-        {clip.speed !== 1 && <span className="text-sys-yellow">{clip.speed}×</span>}
-      </div>
-      {layout.transitionOut > 0 && (
-        <div className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-sys-purple/80 px-1 text-[11px] text-white" title={`${clip.transition.type} ${clip.transition.duration}s`}>
-          <ArrowLeftRight size={9} /> {clip.transition.type}
-        </div>
-      )}
-      {width >= 44 && (
-        <button
-          type="button"
-          className={cx(
-            "absolute right-2 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-black/70 text-white/85 shadow transition-opacity hover:bg-sys-red hover:text-white focus-visible:opacity-100",
-            selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-          )}
-          title="Remove this clip"
-          aria-label={`Remove ${clip.name}`}
-          data-clip-remove={clip.id}
-          // Its own press: no select, no drag, no cut.
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-        >
-          <Trash2 size={13} />
-        </button>
-      )}
-      <span className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availBefore, "before")} data-trim-handle="l" />
-      <span className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize bg-white/0 hover:bg-white/30" title={handleTitle(availAfter, "after")} data-trim-handle="r" />
-    </div>
-  );
-}
-
-/** Floating frame preview while hovering the video lane. */
-function HoverPreview({ x, time, layout }: { x: number; time: number; layout: ClipLayout }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [thumbs, setThumbs] = useState<Loaded | null>(null);
-  useEffect(() => {
-    let alive = true;
-    loadThumbs(layout.clip.assetId).then((t) => alive && setThumbs(t));
-    return () => {
-      alive = false;
-    };
-  }, [layout.clip.assetId]);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !thumbs) return;
-    const { img, rec } = thumbs;
-    const w = 160;
-    const h = Math.round((rec.frameHeight / rec.frameWidth) * w);
-    canvas.width = w;
-    canvas.height = h;
-    const st = toSourceTime(layout, time);
-    const idx = Math.max(0, Math.min(rec.count - 1, Math.floor((st / Math.max(0.001, rec.duration)) * rec.count)));
-    canvas.getContext("2d")?.drawImage(img, idx * rec.frameWidth, 0, rec.frameWidth, rec.frameHeight, 0, 0, w, h);
-  }, [thumbs, time, layout]);
-  if (!thumbs) return null;
-  return (
-    <div className="pointer-events-none absolute z-30 -translate-x-1/2 overflow-hidden rounded-lg border border-sys-gray3 bg-black shadow-xl" style={{ left: x, bottom: "100%", marginBottom: 6 }}>
-      <canvas ref={canvasRef} className="block" />
-      <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[12px] tabular-nums text-white">{formatTime(time)}</span>
-    </div>
-  );
 }
 
 export function TimelineDock() {
@@ -460,7 +35,6 @@ export function TimelineDock() {
   const seek = useEditor((s) => s.seek);
   const select = useEditor((s) => s.select);
   const setTool = useEditor((s) => s.setTool);
-  const hasCues = project.cues.length > 0;
   const activeCueId = useEditor((s) => {
     const t = s.currentTime;
     return s.project?.cues.find((c) => t >= c.start && t < c.end)?.id ?? null;
@@ -587,10 +161,6 @@ export function TimelineDock() {
     setNotice(cleared ? captionsClearedNotice(cleared) : "Removed the clip. Undo brings it back.");
   };
   const [dropX, setDropX] = useState<number | null>(null);
-  /** clientX where a press on an audio block began, so a click (not a drag) cuts. */
-  const audioPress = useRef<number | null>(null);
-  /** Whether the audio block pressed was already selected: the first click selects, the next one cuts. */
-  const audioWasSelected = useRef(false);
   const timeAt = (clientX: number) => {
     const el = scrollRef.current!;
     const r = el.getBoundingClientRect();
@@ -628,13 +198,13 @@ export function TimelineDock() {
           </span>
         )}
         <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="iconSm" onClick={() => setZoom(zoom / 1.4)} title="Zoom out">
+          <Button variant="ghost" size="iconSm" onClick={() => setZoom(zoom / 1.4)} title="Zoom out (−)" aria-label="Zoom out timeline">
             <ZoomOut size={14} />
           </Button>
-          <Button variant="ghost" size="iconSm" onClick={() => setZoom(zoom * 1.4)} title="Zoom in">
+          <Button variant="ghost" size="iconSm" onClick={() => setZoom(zoom * 1.4)} title="Zoom in (+)" aria-label="Zoom in timeline">
             <ZoomIn size={14} />
           </Button>
-          <Button variant="ghost" size="iconSm" onClick={fit} title="Fit timeline">
+          <Button variant="ghost" size="iconSm" onClick={fit} title="Fit timeline" aria-label="Fit timeline to view">
             <Maximize2 size={14} />
           </Button>
         </div>
@@ -693,32 +263,15 @@ export function TimelineDock() {
         >
           <div className="relative" style={{ width: contentW, height: lanesH }}>
             <Ruler pxPerSec={pxPerSec} duration={duration} width={contentW} />
-            <div className="relative border-b border-sys-gray5/70" style={{ height: CUE_H }}>
-              {!hasCues && (
-                <button
-                  type="button"
-                  className="absolute inset-x-1 top-1 flex h-[26px] items-center justify-center gap-2 rounded-md border border-sys-gray4 bg-sys-gray5 rf-read-face text-[14px] text-white/80 hover:bg-sys-gray4 hover:text-white"
-                  style={{ width: Math.max(0, contentW - 8) }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => setTool("subtitles")}
-                >
-                  <MessageSquare size={14} />
-                  <span>
-                    <b className="font-semibold text-white">No subtitles yet.</b> Click here, then press Generate captions.
-                  </span>
-                </button>
-              )}
-              {project.cues.map((cue) => (
-                <CueBlock
-                  key={cue.id}
-                  cue={cue}
-                  pxPerSec={pxPerSec}
-                  selected={selection?.kind === "cue" && selection.id === cue.id}
-                  active={activeCueId === cue.id}
-                  showTranslated={project.captions.showTranslated}
-                />
-              ))}
-            </div>
+            <CueLane
+              cues={project.cues}
+              pxPerSec={pxPerSec}
+              width={contentW}
+              selection={selection}
+              activeCueId={activeCueId}
+              showTranslated={project.captions.showTranslated}
+              onOpenSubtitles={() => setTool("subtitles")}
+            />
             <div className="relative border-b border-sys-gray5/70" style={{ height: videoH }}>
               {hover && dropX === null && <HoverPreview x={hover.x} time={hover.time} layout={hover.layout} />}
               {layouts.map((layout) => (
@@ -743,74 +296,32 @@ export function TimelineDock() {
               ))}
               {dropX !== null && <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-sys-blue shadow-[0_0_6px_rgba(10,132,255,0.9)]" data-drop-indicator style={{ left: dropX }} />}
             </div>
-            {/* Clip audio on its own lane: one waveform block per clip, aligned with its video block. */}
-            <div className="relative border-b border-sys-gray5/70" style={{ height: audioH }} data-audio-lane>
-              {layouts.map((layout) => {
-                if (!layout.clip.hasAudio) return null;
-                const w = Math.max(6, layout.duration * pxPerSec);
-                const geo = stretchGeometry(layout.clip, w, pxPerSec);
-                const strip = visibleWindow(layout.start * pxPerSec + geo.left, geo.mediaW, view);
-                return (
-                  <div
-                    key={layout.clip.id}
-                    data-audio-clip={layout.clip.id}
-                    data-cut={cutSideOf(layout.clip.id)}
-                    className={cx(
-                      "absolute top-1 cursor-pointer overflow-hidden rounded-md border bg-sys-yellow/10",
-                      selection?.kind === "clip" && selection.id === layout.clip.id ? "border-sys-blue" : "border-sys-yellow/30",
-                    )}
-                    style={{ left: layout.start * pxPerSec, width: w, height: audioH - 8 }}
-                    title={`${layout.clip.name} audio${layout.clip.audioAssetId ? ` (${layout.clip.audioLabel ?? "cleaned"})` : ""}`}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      audioWasSelected.current = selection?.kind === "clip" && selection.id === layout.clip.id;
-                      select({ kind: "clip", id: layout.clip.id });
-                      audioPress.current = e.clientX;
-                    }}
-                    onPointerUp={(e) => {
-                      const from = audioPress.current;
-                      audioPress.current = null;
-                      if (from === null || !audioWasSelected.current || e.pointerType === "touch" || e.button !== 0 || e.shiftKey || e.altKey || e.metaKey || Math.abs(e.clientX - from) > CLICK_SLOP) return;
-                      const lane = e.currentTarget.parentElement!;
-                      cutAt((e.clientX - lane.getBoundingClientRect().left) / pxPerSec);
-                    }}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      setTool("trim");
-                    }}
-                  >
-                    <div className="absolute inset-y-0" style={{ left: geo.left, width: geo.mediaW }}>
-                      <AudioWaveform assetId={layout.clip.audioAssetId ?? layout.clip.assetId} inPoint={geo.inPoint} outPoint={geo.outPoint} width={geo.mediaW} height={audioH - 8} color="rgba(255,214,10,0.9)" visible={strip} />
-                    </div>
-                    {geo.left > 0 && <StretchGhost side="l" width={geo.left} seconds={geo.before} />}
-                    {geo.right > 0 && <StretchGhost side="r" width={geo.right} seconds={geo.after} />}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="relative" style={{ height: musicH }}>
-              {project.voiceovers.map((vo) => (
-                <div
-                  key={vo.id}
-                  className={cx(
-                    "absolute top-1 z-10 flex h-5 cursor-pointer items-center overflow-hidden rounded-md border border-sys-orange/60 bg-sys-orange/25 px-1.5 text-[12px] text-white",
-                    selection?.kind === "voiceover" && selection.id === vo.id && "ring-1 ring-sys-blue",
-                  )}
-                  style={{ left: vo.start * pxPerSec, width: Math.max(6, vo.duration * pxPerSec) }}
-                  title={vo.text}
-                  data-voiceover-block={vo.id}
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    select({ kind: "voiceover", id: vo.id });
-                    seek(vo.start);
-                    setTool("music");
-                  }}
-                >
-                  <span className="truncate">{vo.kind === "sfx" ? "🔔" : "🎙"} {vo.name}</span>
-                </div>
-              ))}
-              {music && <MusicLane music={music} pxPerSec={pxPerSec} shown={musicShown} used={musicUsed} duration={duration} height={musicH - 10} view={view} />}
-            </div>
+            <AudioLane
+              layouts={layouts}
+              pxPerSec={pxPerSec}
+              height={audioH}
+              selection={selection}
+              view={view}
+              cutSideOf={cutSideOf}
+              onSelect={(id) => select({ kind: "clip", id })}
+              onCut={cutAt}
+            />
+            <MusicRow
+              voiceovers={project.voiceovers}
+              music={music}
+              pxPerSec={pxPerSec}
+              height={musicH}
+              shown={musicShown}
+              used={musicUsed}
+              duration={duration}
+              view={view}
+              selection={selection}
+              onPick={(vo) => {
+                select({ kind: "voiceover", id: vo.id });
+                seek(vo.start);
+                setTool("music");
+              }}
+            />
             {/* Where a click would cut: a thin line through the video and audio lanes, notched at both ends. */}
             {hover?.cut && (
               <div className="pointer-events-none absolute z-20 w-0" style={{ left: hover.x, top: RULER_H + CUE_H + CLIP_PAD, height: videoH + audioH - CLIP_PAD * 2 }} data-cut-indicator>

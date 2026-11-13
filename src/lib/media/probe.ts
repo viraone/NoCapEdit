@@ -13,7 +13,7 @@ export interface VideoInfo {
  */
 const PROBE_TIMEOUT_MS = 60_000;
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`${label} took too long. Your computer may be busy; try again in a moment.`)), ms);
     p.then((v) => {

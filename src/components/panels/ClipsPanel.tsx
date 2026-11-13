@@ -71,23 +71,31 @@ export function ClipsPanel() {
       <PanelHeader
         title="Clips"
         body={
-          <ol className="rf-read rf-steps" data-clips-steps>
-            <li>
-              <span>
-                <b>Import</b> recordings or images
-              </span>
-            </li>
-            <li>
-              <span>
-                <b>Order</b> them in the sequence
-              </span>
-            </li>
-            <li>
-              <span>
-                <b>Split</b> at the playhead
-              </span>
-            </li>
-          </ol>
+          project.clips.length === 0 ? (
+            <ol className="rf-read rf-steps" data-clips-steps>
+              <li>
+                <span>
+                  <b>Import</b> recordings or images
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Order</b> them in the sequence
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Split</b> at the playhead
+                </span>
+              </li>
+            </ol>
+          ) : (
+            // Once there is a clip the list below is the thing to read, so the
+            // three steps shrink to one quiet line instead of pushing it down.
+            <p className="rf-read-note" data-clips-steps>
+              Import, order, then split at the playhead.
+            </p>
+          )
         }
       />
       <PanelSection>
@@ -118,7 +126,7 @@ export function ClipsPanel() {
       <PanelSection
         title="Sequence"
         right={
-          <Button variant="ghost" size="xs" onClick={splitAtPlayhead} disabled={!project.clips.length} title="Split the clip under the playhead">
+          <Button variant="ghost" size="xs" onClick={splitAtPlayhead} disabled={!project.clips.length} title="Split the clip under the playhead (S)">
             <Scissors size={12} /> Split at playhead
           </Button>
         }
@@ -155,7 +163,16 @@ export function ClipsPanel() {
                       <p className="text-[11px] text-label-2">
                         {formatTime(layout.duration)} · {clip.width}×{clip.height}
                         {clip.speed !== 1 && ` · ${clip.speed}×`}
-                        {!clip.hasAudio && " · no audio"}
+                        {clip.audioStatus === "failed" ? (
+                          <span className="text-sys-orange" title={clip.audioError ?? "The browser could not read this clip's audio."}>
+                            {" · audio couldn't be read"}
+                          </span>
+                        ) : (
+                          !clip.hasAudio && " · no audio"
+                        )}
+                        {clip.previewUnavailable && (
+                          <span title="The import could not build the preview strip. The clip still plays and exports."> · preview strip unavailable</span>
+                        )}
                       </p>
                     </div>
                   </button>

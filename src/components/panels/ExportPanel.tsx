@@ -7,6 +7,7 @@ import { getFormat } from "@/lib/models/formats";
 import { projectDuration } from "@/lib/models/timeline";
 import { getAsset } from "@/lib/storage/db";
 import { loadImages } from "@/lib/export/images";
+import { friendlyExportError } from "@/lib/export/friendlyError";
 import { exportProject, plannedSegments, DEFAULT_EXPORT_OPTIONS, outputFrame, type ExportOptions, type ExportProgress, type ExportResult } from "@/lib/ffmpeg/exporter";
 import { requestDiskSink, supportsDiskStreaming, type OutputSink } from "@/lib/ffmpeg/sinks";
 import { acquireWakeLock } from "@/lib/mobile/share";
@@ -74,6 +75,9 @@ export function ExportPanel() {
   const compositorNeeded = needsCompositor(project, 0, duration);
   const planned = useMemo(() => plannedSegments(project, { segmentSeconds: opts.segmentSeconds, fps: opts.fps }), [project, opts.segmentSeconds, opts.fps]);
   const segmentSummary = planned.length > 1 ? `${planned.length} segments` : "single pass";
+  // planSegments() keeps a video in one pass while it is at most 1.5 segment
+  // lengths (src/lib/ffmpeg/segments.ts); the panel starts at the default.
+  const singlePassLimit = DEFAULT_EXPORT_OPTIONS.segmentSeconds * 1.5;
   const retryMultithread = () => {
     setSingleThreadPreference(false);
     ffmpegEngine.preferSingleThread = false;
@@ -95,7 +99,8 @@ export function ExportPanel() {
       try {
         sink = await requestDiskSink(`${base}.mp4`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        console.error("[export] save location failed", e);
+        setError(friendlyExportError(e));
         return;
       }
       if (!sink) return;
@@ -127,8 +132,8 @@ export function ExportPanel() {
       if (res.txt) downloadBlob(res.txt, `${base}.txt`);
       if (res.vtt) downloadBlob(res.vtt, `${base}.vtt`);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") setError("Export cancelled.");
-      else setError(e instanceof Error ? e.message : String(e));
+      console.error("[export] export failed", e);
+      setError(friendlyExportError(e));
     } finally {
       releaseLock();
       abortRef.current = null;
@@ -255,11 +260,11 @@ export function ExportPanel() {
               ? `This export renders ${planned.length} segments; each is encoded, then written out before the next starts, so memory stays flat.`
               : opts.segmentSeconds > 0
                 ? `This export is shorter than 1.5 segments, so it renders in a single pass (a short tail is merged into the previous segment).`
-                : "The whole video is encoded in one pass; fine for short videos."
+                : `The whole video is encoded in one pass; best for clips under ${singlePassLimit} s.`
           }
         >
           <Select value={String(opts.segmentSeconds)} onChange={(e) => set({ segmentSeconds: Number(e.target.value) })} disabled={running}>
-            <option value="0">Single pass (short videos)</option>
+            <option value="0">Single pass (best under {singlePassLimit} s)</option>
             <option value="10">10 s segments</option>
             <option value="20">20 s segments</option>
             <option value="40">40 s segments</option>

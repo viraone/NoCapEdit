@@ -6,6 +6,7 @@ import { reelOnSource } from "@/lib/models/timeline";
 import { getProject, listProjectAssets, saveProject } from "@/lib/storage/db";
 import { engine } from "@/lib/playback/engine";
 import { sameProject } from "@/lib/utils/same";
+import { nextRetryDelay } from "@/lib/saveRetry";
 import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/components/timeline/dockLayout";
 
 export type ToolId = "clips" | "trim" | "subtitles" | "transcript" | "style" | "text" | "picture" | "music" | "reels" | "post" | "reframe" | "export";
@@ -27,7 +28,10 @@ export interface EditorState {
   past: VideoProject[];
   future: VideoProject[];
   txSnapshot: VideoProject | null;
-  saveState: "saved" | "saving" | "dirty";
+  /** 'error' means the last autosave write threw; retries are scheduled and the top bar offers Retry now. */
+  saveState: "saved" | "saving" | "dirty" | "error";
+  /** The unload safety copy could not be written (storage full); cleared by the next successful save. */
+  journalFailed: boolean;
   tool: ToolId;
   currentTime: number;
   isPlaying: boolean;
@@ -66,6 +70,8 @@ export interface EditorState {
    * picture, measured from the state a drag began in.
    */
   update(fn: (draft: VideoProject) => void | VideoProject, opts?: { history?: boolean; ripple?: boolean }): void;
+  /** Saves the current project at once, skipping the debounce and any waiting retry (the Retry now button). */
+  saveNow(): void;
   /** Opens an undo transaction; false when one is already open (the caller then does not own it). */
   beginTransaction(): boolean;
   /** Closes the transaction; true when it recorded an undo step. */
@@ -116,11 +122,13 @@ function sameEdit(a: VideoProject, b: VideoProject): boolean {
  */
 const JOURNAL_KEY = "reelflow.unsaved";
 
-function writeJournal(project: VideoProject) {
+/** False when the copy could not be written (storage full or unavailable); the caller reports it. */
+function writeJournal(project: VideoProject): boolean {
   try {
     localStorage.setItem(JOURNAL_KEY, JSON.stringify(project));
+    return true;
   } catch {
-    /* storage full or unavailable: the IndexedDB flush is the only attempt */
+    return false;
   }
 }
 
@@ -144,22 +152,79 @@ function clearJournal(saved: VideoProject) {
   }
 }
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+/** Consecutive failed writes since the last success; drives the retry backoff. */
+let retryAttempt = 0;
+/** Bumped by unload so a write still in flight for the old project cannot report on (or retry for) the new one. */
+let saveGeneration = 0;
 
-function scheduleSave(project: VideoProject, set: (s: Partial<EditorState>) => void) {
-  if (saveTimer) clearTimeout(saveTimer);
-  set({ saveState: "dirty" });
-  saveTimer = setTimeout(async () => {
+type SaveStateSetter = (s: Partial<EditorState>) => void;
+
+function cancelSaveTimers() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
     saveTimer = null;
-    set({ saveState: "saving" });
-    try {
-      await saveProject(project);
-      clearJournal(project);
-      set({ saveState: "saved" });
-    } catch (e) {
-      console.error("Autosave failed", e);
-      set({ saveState: "dirty" });
+  }
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+}
+
+/**
+ * Writes the project and reports the outcome. A failed write shows as 'error'
+ * and schedules another try; a success resets the backoff and clears the
+ * safety copy. Edits that land mid-write are saved by their own (earlier)
+ * debounce, so this write only reports 'saved' while it is still the current one.
+ */
+async function runSave(project: VideoProject, set: SaveStateSetter, generation = saveGeneration) {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  set({ saveState: "saving" });
+  try {
+    await saveProject(project);
+    if (generation !== saveGeneration) return;
+    clearJournal(project);
+    retryAttempt = 0;
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
     }
+    if (useEditor.getState().project === project) set({ saveState: "saved", journalFailed: false });
+    else set({ saveState: "dirty" });
+  } catch (e) {
+    if (generation !== saveGeneration) return;
+    console.error("Autosave failed", e);
+    set({ saveState: "error" });
+    scheduleRetry(set);
+  }
+}
+
+/** Waits nextRetryDelay(attempt), then tries again with whatever the project is by then. */
+function scheduleRetry(set: SaveStateSetter) {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    retryAttempt += 1;
+    const project = useEditor.getState().project;
+    if (project) void runSave(project, set);
+  }, nextRetryDelay(retryAttempt));
+}
+
+function scheduleSave(project: VideoProject, set: SaveStateSetter) {
+  if (saveTimer) clearTimeout(saveTimer);
+  // A fresh edit is saved sooner than any waiting retry, so drop that one.
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  set({ saveState: "dirty" });
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void runSave(project, set);
   }, 500);
 }
 
@@ -173,6 +238,7 @@ export const useEditor = create<EditorState>()(
     future: [],
     txSnapshot: null,
     saveState: "saved",
+    journalFailed: false,
     tool: "clips",
     currentTime: 0,
     isPlaying: false,
@@ -222,13 +288,16 @@ export const useEditor = create<EditorState>()(
     },
 
     unload() {
+      saveGeneration += 1;
+      cancelSaveTimers();
+      retryAttempt = 0;
       for (const url of Object.values(get().assetUrls)) URL.revokeObjectURL(url);
       engine.dispose();
       if (noticeTimer) {
         clearTimeout(noticeTimer);
         noticeTimer = null;
       }
-      set({ project: null, sourceProject: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, stretchRequest: null, reelRun: false, importStatus: null, importError: null, pendingAssetIds: [], notice: null });
+      set({ project: null, sourceProject: null, assetUrls: {}, past: [], future: [], txSnapshot: null, selection: null, currentTime: 0, isPlaying: false, editRequest: null, stretchRequest: null, reelRun: false, importStatus: null, importError: null, pendingAssetIds: [], notice: null, saveState: "saved", journalFailed: false });
     },
 
     update(fn, opts = {}) {
@@ -249,6 +318,13 @@ export const useEditor = create<EditorState>()(
         future: record ? [] : get().future,
       });
       scheduleSave(next, set);
+    },
+
+    saveNow() {
+      const { project } = get();
+      if (!project) return;
+      cancelSaveTimers();
+      void runSave(project, set);
     },
 
     beginTransaction() {
@@ -368,23 +444,15 @@ export const useEditor = create<EditorState>()(
 
 /** Flushes a pending autosave immediately (used before leaving the editor). */
 export async function flushSave() {
-  const pending = !!saveTimer || useEditor.getState().saveState !== "saved";
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-  }
+  const { project, saveState } = useEditor.getState();
+  const pending = !!saveTimer || !!retryTimer || saveState !== "saved";
+  cancelSaveTimers();
   if (!pending) return;
-  const project = useEditor.getState().project;
-  try {
-    if (project) {
-      await saveProject(project);
-      clearJournal(project);
-    }
+  if (!project) {
     useEditor.setState({ saveState: "saved" });
-  } catch (e) {
-    console.error("Autosave failed", e);
-    useEditor.setState({ saveState: "dirty" });
+    return;
   }
+  await runSave(project, useEditor.setState);
 }
 
 /**
@@ -395,7 +463,11 @@ export async function flushSave() {
 export function attachUnloadFlush(): () => void {
   const hide = () => {
     const { project, saveState } = useEditor.getState();
-    if (project && (saveTimer || saveState !== "saved")) writeJournal(project);
+    if (project && (saveTimer || retryTimer || saveState !== "saved") && !writeJournal(project)) {
+      // Quota or blocked storage: IndexedDB is now the only copy of this edit,
+      // so say so instead of failing silently.
+      useEditor.setState({ journalFailed: true });
+    }
     void flushSave();
   };
   const onHide = () => hide();
