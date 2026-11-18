@@ -76,7 +76,11 @@ function decodeCookies(value) {
 const INFO_TIMEOUT_MS = 60_000;
 const DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 
+/** Captions can take a while on a small instance: yt-dlp solves YouTube's JavaScript challenge first. */
+const TRANSCRIPT_TIMEOUT_MS = 100_000;
 let running = 0;
+/** True while a /transcript request is running yt-dlp. */
+let transcribing = false;
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOW_ORIGIN);
@@ -124,7 +128,11 @@ function runYtDlp(args, { timeoutMs, signal, source }) {
     let err = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
-    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutMs);
     const onAbort = () => child.kill("SIGKILL");
     signal?.addEventListener("abort", onAbort, { once: true });
     child.on("error", (e) => {
@@ -136,6 +144,11 @@ function runYtDlp(args, { timeoutMs, signal, source }) {
       signal?.removeEventListener("abort", onAbort);
       if (signal?.aborted) return reject(new Error("cancelled"));
       if (code === 0) return resolve(out);
+      // Killed by the timer: the last stderr line is whatever yt-dlp was in the middle of, not a reason.
+      if (timedOut) {
+        console.log(`[yt-dlp] timed out after ${timeoutMs / 1000} s`);
+        return reject(new Error("YouTube took too long to answer the helper. Try again in a minute."));
+      }
       const lines = err.split("\n").map((l) => l.trim()).filter(Boolean);
       const last = lines.filter((l) => l.startsWith("ERROR")).pop() ?? lines.pop() ?? `yt-dlp exited with ${code}`;
       // The raw wording goes to the server log; the browser gets the friendly version.
@@ -185,10 +198,19 @@ async function handleTranscript(req, res, params) {
     json(res, 400, { error: "Transcripts come from YouTube links only." });
     return;
   }
+  // One at a time, and never beside a full set of downloads: each yt-dlp run (with its JavaScript
+  // runtime) takes a large share of a small instance's memory, and two at once ran Render's 512 MB out.
+  if (transcribing || running >= MAX_JOBS) return json(res, 429, { error: "The helper is busy with another request. Try again in a minute." });
+  transcribing = true;
+  // A visitor who closes the dialog or retries must not leave the old yt-dlp running.
+  const abort = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) abort.abort();
+  });
   const lang = safeLang(params.get("lang"));
   const dir = await mkdtemp(path.join(tmpdir(), "nocap-sub-"));
   try {
-    const out = await runYtDlp([...transcriptArgs(lang, path.join(dir, "sub")), "--no-simulate", "--print", "%(title)s", canonicalMediaUrl(link)], { timeoutMs: INFO_TIMEOUT_MS, source: link.source });
+    const out = await runYtDlp([...transcriptArgs(lang, path.join(dir, "sub")), "--no-simulate", "--print", "%(title)s", canonicalMediaUrl(link)], { timeoutMs: TRANSCRIPT_TIMEOUT_MS, signal: abort.signal, source: link.source });
     const title = out.trim().split("\n")[0] || defaultTitle(link.source);
     const files = (await readdir(dir)).filter((f) => f.endsWith(".vtt")).sort();
     const cues = files.length ? parseVtt(await readFile(path.join(dir, files[0]), "utf8")) : [];
@@ -198,8 +220,9 @@ async function handleTranscript(req, res, params) {
     }
     json(res, 200, { title, language: lang, cues });
   } catch (e) {
-    json(res, 502, { error: e.message });
+    if (!abort.signal.aborted) json(res, 502, { error: e.message });
   } finally {
+    transcribing = false;
     await rm(dir, { recursive: true, force: true });
   }
 }
