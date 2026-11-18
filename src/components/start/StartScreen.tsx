@@ -5,6 +5,7 @@ import { Plus, Upload, Film, Trash2, Copy, HardDrive, Cpu, Layers, ShieldCheck, 
 import Link from "next/link";
 import { Recorder, useRecordingSupported } from "@/components/record/Recorder";
 import { YouTubeBar } from "@/components/start/YouTubeBar";
+import { DocumentaryDialog } from "@/components/start/DocumentaryDialog";
 import { DownloadingNotice } from "@/components/start/DownloadingNotice";
 import { useYouTubeImports, youtubeStageText } from "@/components/start/useYouTubeImports";
 import { useSaveFolder } from "@/components/start/useSaveFolder";
@@ -118,6 +119,8 @@ export function StartScreen() {
 
   // A pasted YouTube or Instagram link becomes a card under Your projects while it downloads, then a real project.
   const youtube = useYouTubeImports(refresh);
+  /** The YouTube link whose transcript and documentary dialog is open, or null. */
+  const [docLink, setDocLink] = useState<string | null>(null);
   const saveFolder = useSaveFolder();
 
   useEffect(() => {
@@ -252,7 +255,8 @@ export function StartScreen() {
         </div>
       </header>
 
-      <YouTubeBar onSubmit={youtube.start} active={youtube.items.find((it) => it.stage !== "error") ?? null} onCancel={youtube.cancel} saveFolder={saveFolder} savedTo={youtube.savedTo} />
+      <YouTubeBar onSubmit={youtube.start} onTranscript={setDocLink} active={youtube.items.find((it) => it.stage !== "error") ?? null} onCancel={youtube.cancel} saveFolder={saveFolder} savedTo={youtube.savedTo} />
+      <DocumentaryDialog link={docLink} onClose={() => setDocLink(null)} />
 
       <section className="mt-6">
         <div className="mb-5 flex items-center justify-between gap-3">

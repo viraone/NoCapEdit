@@ -11,6 +11,7 @@
  * Routes (all GET, CORS enabled; <link> is a YouTube or Instagram video link):
  *   /health                      -> { ok, ytdlp }
  *   /info?url=<link>             -> { id, source, title, duration, thumbnail, uploader, heights }
+ *   /transcript?url=<link>&lang=en -> { title, language, cues: [{ start, end, text }] }, YouTube only
  *   /download?url=<link>&height= -> video/mp4 body, X-Video-Title / X-Video-Id headers
  *                                   (height applies to YouTube; a reel comes at its full size)
  *   /download?url=<link>&format=mp3 -> audio/mpeg body (sound only), same headers; YouTube
@@ -35,11 +36,11 @@
  */
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { availableHeights, canonicalMediaUrl, defaultTitle, formatFor, outputArgs, parseMediaLink, safeTitle } from "./lib.mjs";
+import { availableHeights, canonicalMediaUrl, defaultTitle, formatFor, outputArgs, parseMediaLink, parseVtt, safeLang, safeTitle, transcriptArgs } from "./lib.mjs";
 
 const PORT = Number(process.env.PORT) || 3131;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -177,6 +178,32 @@ async function handleInfo(req, res, params) {
   }
 }
 
+async function handleTranscript(req, res, params) {
+  const link = parseLink(params.get("url"), res);
+  if (!link) return;
+  if (link.source !== "youtube") {
+    json(res, 400, { error: "Transcripts come from YouTube links only." });
+    return;
+  }
+  const lang = safeLang(params.get("lang"));
+  const dir = await mkdtemp(path.join(tmpdir(), "nocap-sub-"));
+  try {
+    const out = await runYtDlp([...transcriptArgs(lang, path.join(dir, "sub")), "--no-simulate", "--print", "%(title)s", canonicalMediaUrl(link)], { timeoutMs: INFO_TIMEOUT_MS, source: link.source });
+    const title = out.trim().split("\n")[0] || defaultTitle(link.source);
+    const files = (await readdir(dir)).filter((f) => f.endsWith(".vtt")).sort();
+    const cues = files.length ? parseVtt(await readFile(path.join(dir, files[0]), "utf8")) : [];
+    if (!cues.length) {
+      json(res, 404, { error: "This video has no captions in that language." });
+      return;
+    }
+    json(res, 200, { title, language: lang, cues });
+  } catch (e) {
+    json(res, 502, { error: e.message });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 async function handleDownload(req, res, params) {
   const link = parseLink(params.get("url"), res);
   if (!link) return;
@@ -249,6 +276,7 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, ytdlp: ytdlpVersion, maxMinutes: MAX_SECONDS / 60 });
   }
   if (url.pathname === "/info") return handleInfo(req, res, url.searchParams);
+  if (url.pathname === "/transcript") return handleTranscript(req, res, url.searchParams);
   if (url.pathname === "/download") return handleDownload(req, res, url.searchParams);
   json(res, 404, { error: "Not found" });
 });

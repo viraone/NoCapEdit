@@ -148,6 +148,57 @@ export function safeTitle(title, fallback = "Video") {
   return (clean || fallback).slice(0, 120);
 }
 
+/** Returns `input` when it looks like a language tag, else "en". */
+export function safeLang(input) {
+  return typeof input === "string" && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/.test(input) ? input : "en";
+}
+
+/** The yt-dlp arguments that fetch subtitles for `lang` into `outBase`. */
+export function transcriptArgs(lang, outBase) {
+  return ["--skip-download", "--no-playlist", "--write-subs", "--write-auto-subs", "--sub-langs", lang, "--sub-format", "vtt", "-o", outBase];
+}
+
+function vttSeconds(ts) {
+  const nums = ts.split(":").map(Number);
+  return nums.length === 3 ? nums[0] * 3600 + nums[1] * 60 + nums[2] : nums[0] * 60 + nums[1];
+}
+
+/** Parses WebVTT text into timed cues, dropping repeats (YouTube's rolling auto captions) and empty cues. */
+export function parseVtt(text) {
+  const blocks = String(text ?? "").replace(/\r\n/g, "\n").split(/\n\s*\n/);
+  const cues = [];
+  let lastEmitted = "";
+  for (const block of blocks) {
+    const lines = block.split("\n");
+    const first = lines[0].trim();
+    if (!first || first === "WEBVTT" || /^(NOTE|STYLE|REGION)\b/.test(first)) continue;
+    const arrow = lines.findIndex((l) => l.includes("-->"));
+    if (arrow === -1) continue;
+    const [startRaw, endRaw] = lines[arrow].split("-->").map((s) => s.trim().split(/\s+/)[0]);
+    const start = Math.round(vttSeconds(startRaw) * 1000) / 1000;
+    const end = Math.round(vttSeconds(endRaw) * 1000) / 1000;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.05) continue;
+    const kept = [];
+    for (const line of lines.slice(arrow + 1)) {
+      const cleaned = line
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!cleaned || cleaned === lastEmitted) continue;
+      kept.push(cleaned);
+      lastEmitted = cleaned;
+    }
+    if (kept.length) cues.push({ start, end, text: kept.join(" ") });
+  }
+  return cues;
+}
+
 /** Distinct H.264 heights available for the video, best first, from a yt-dlp info dict. */
 export function availableHeights(info) {
   const heights = new Set();

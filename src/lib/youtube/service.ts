@@ -81,7 +81,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function serviceFetch(path: string, signal?: AbortSignal): Promise<Response> {
+export async function serviceFetch(path: string, signal?: AbortSignal): Promise<Response> {
   const base = youtubeServiceUrl();
   let res: Response;
   const started = Date.now();

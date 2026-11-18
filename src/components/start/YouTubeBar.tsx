@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ClipboardPaste, CircleCheck, Download, FolderOpen, Loader2, X } from "lucide-react";
+import { ClipboardPaste, CircleCheck, Download, FileText, FolderOpen, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { youtubeStageText, type YouTubeImport } from "@/components/start/useYouTubeImports";
@@ -31,6 +31,7 @@ const smallButton =
  */
 export function YouTubeBar({
   onSubmit,
+  onTranscript,
   disabled,
   active = null,
   onCancel,
@@ -38,6 +39,8 @@ export function YouTubeBar({
   savedTo = null,
 }: {
   onSubmit: (link: string, choice: YouTubeChoice) => void;
+  /** Opens the transcript and documentary dialog for the pasted YouTube link. */
+  onTranscript?: (link: string) => void;
   disabled?: boolean;
   active?: YouTubeImport | null;
   onCancel?: (key: string) => void;
@@ -171,6 +174,11 @@ export function YouTubeBar({
                 </button>
               )}
             </div>
+            {onTranscript && media?.source === "youtube" && (
+              <Button type="button" variant="secondary" size="lg" disabled={disabled} onClick={() => onTranscript(link)} className="h-12 text-[15px]" title="Get the whole dialog as text, or turn it into a narrated documentary" data-youtube-transcript>
+                <FileText size={18} /> Transcript
+              </Button>
+            )}
             <Button type="submit" variant="primary" size="lg" disabled={disabled || !link.trim()} className="h-12 text-[15px] sm:w-44" data-youtube-convert>
               <Download size={18} /> Download
             </Button>

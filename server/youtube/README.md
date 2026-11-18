@@ -121,6 +121,7 @@ All `GET`, CORS enabled, JSON errors as `{ "error": "..." }`.
 | --- | --- |
 | `/health` | `{ ok, ytdlp, maxMinutes }` |
 | `/info?url=<link>` | `{ id, source, title, duration, thumbnail, uploader, heights, maxSeconds }` (`source` is `youtube` or `instagram`) |
+| `/transcript?url=<link>&lang=en` | `{ title, language, cues: [{ start, end, text }] }`: the video's captions (manual if it has them, else YouTube's automatic ones), with the rolling auto-caption repeats removed. No video is downloaded. YouTube only; `404` when there are no captions in that language |
 | `/download?url=<link>&height=1080` | `video/mp4` body with `Content-Length`, `X-Video-Title` (URL-encoded), `X-Video-Id`, `X-Video-Duration`; `height` applies to YouTube only |
 | `/download?url=<link>&format=mp3` | `audio/mpeg` body (best audio track converted by ffmpeg, highest VBR quality), same headers. YouTube only: an Instagram reel is always returned as an MP4, whatever `format` says |
 
