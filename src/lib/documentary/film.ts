@@ -8,7 +8,7 @@ import { parseWav, resampleLinear } from "@/lib/mobile/audio";
 import { synthesizeSpeech } from "@/lib/speech/tts";
 import { drawFilmFrame } from "./draw";
 import type { DocScript } from "./script";
-import { buildTimeline, FPS, splitSentences } from "./timeline";
+import { buildTimeline, FPS, splitSentences, type FilmTimeline } from "./timeline";
 
 export const FILM_AUDIO_RATE = 48_000;
 export type FilmHeight = 720 | 1080;
@@ -35,6 +35,8 @@ export interface FilmResult {
   duration: number;
   width: number;
   height: number;
+  /** When each scene starts and ends, so a chat can tell which scene a playback time is in. */
+  timeline: FilmTimeline;
 }
 
 export function filmSupported(): boolean {
@@ -194,5 +196,5 @@ export async function renderFilm(opts: FilmOptions): Promise<FilmResult> {
   muxer.finalize();
   const blob = new Blob([target.buffer], { type: "video/mp4" });
   progress({ phase: "finish", progress: 1, message: "Done" });
-  return { blob, duration: tl.total, width, height };
+  return { blob, duration: tl.total, width, height, timeline: tl };
 }

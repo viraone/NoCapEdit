@@ -10,7 +10,10 @@ import { Modal } from "@/components/ui/Modal";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Select } from "@/components/ui/Select";
 import { writeDocumentaryScript, aiMissing } from "@/lib/documentary/ai";
+import { DocumentaryChat } from "@/components/start/DocumentaryChat";
 import { filmSupported, renderFilm, type FilmHeight } from "@/lib/documentary/film";
+import type { DocScript } from "@/lib/documentary/script";
+import type { FilmTimeline } from "@/lib/documentary/timeline";
 import { cuesToSrt, cuesToText, transcriptFileName, type Transcript } from "@/lib/documentary/transcript";
 import { loadAiSettings, saveAiSettings, activeModel, type AiSettings } from "@/lib/edit/aiHighlights";
 import { TTS_VOICES } from "@/lib/speech/tts";
@@ -34,6 +37,8 @@ interface Film {
   blob: Blob;
   title: string;
   seconds: number;
+  script: DocScript;
+  timeline: FilmTimeline;
 }
 
 /**
@@ -78,6 +83,8 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
   const [opening, setOpening] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const filmUrlRef = useRef<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const plainText = useMemo(() => (transcript ? cuesToText(transcript.cues) : ""), [transcript]);
   const abortRef = useRef<AbortController | null>(null);
 
   // Fetch the captions whenever a link is opened (or the language is changed and retried).
@@ -156,7 +163,7 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
       });
       const url = URL.createObjectURL(result.blob);
       filmUrlRef.current = url;
-      setFilm({ url, blob: result.blob, title: script.title, seconds: result.duration });
+      setFilm({ url, blob: result.blob, title: script.title, seconds: result.duration, script, timeline: result.timeline });
     } catch (e) {
       if (!ctl.signal.aborted) setFilmError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -189,7 +196,7 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
   };
 
   return (
-    <Modal open={!!link} onClose={close} title="Transcript and documentary" width="max-w-3xl">
+    <Modal open={!!link} onClose={close} title="Transcript and documentary" width={film ? "max-w-6xl" : "max-w-3xl"}>
       <div className="space-y-5 p-5" data-documentary>
         {loading && (
           <p className="flex items-center gap-2 text-sm text-white" role="status" data-documentary-loading>
@@ -324,8 +331,9 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
             )}
 
             {film && (
-              <div className="space-y-2" data-documentary-result>
-                <video src={film.url} controls className="w-full rounded-xl bg-black" aria-label={`${film.title}, the documentary`} />
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]" data-documentary-result>
+                <div className="space-y-2">
+                <video ref={videoRef} src={film.url} controls className="w-full rounded-xl bg-black" aria-label={`${film.title}, the documentary`} />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button variant="primary" size="md" onClick={() => downloadBlob(film.blob, transcriptFileName(film.title, "mp4"))} data-documentary-download>
                     <Download size={15} /> Download MP4
@@ -344,6 +352,8 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
                     {openError}
                   </p>
                 )}
+                </div>
+                <DocumentaryChat script={film.script} timeline={film.timeline} transcriptText={plainText} videoRef={videoRef} apiKey={ai.deepseekKey} model={ai.deepseekModel} onKey={(deepseekKey) => updateAi({ deepseekKey })} />
               </div>
             )}
           </section>
