@@ -76,6 +76,8 @@ export function railLayout(height: number, tools = TOOLS.length): RailLayout {
 export function ToolRail() {
   const tool = useEditor((s) => s.tool);
   const setTool = useEditor((s) => s.setTool);
+  const panelOpen = useEditor((s) => s.panelOpen);
+  const setPanelOpen = useEditor((s) => s.setPanelOpen);
   const hasClips = useEditor((s) => (s.project?.clips.length ?? 0) > 0);
   const ref = useRef<HTMLElement>(null);
   const [height, setHeight] = useState(560);
@@ -109,7 +111,8 @@ export function ToolRail() {
           <button
             key={id}
             type="button"
-            onClick={() => setTool(id)}
+            // The open tool's own icon closes its panel; any other click opens that tool.
+            onClick={() => (active && panelOpen ? setPanelOpen(false) : setTool(id))}
             onMouseEnter={(e) => showTip(id, e.currentTarget)}
             onMouseLeave={() => setTip(null)}
             onFocus={(e) => e.currentTarget.matches(":focus-visible") && showTip(id, e.currentTarget)}

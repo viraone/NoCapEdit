@@ -220,7 +220,7 @@ export function EditorShell() {
           <ToolRail />
           {panelOpen && (
             <aside className="rf-panel card relative flex w-[24rem] flex-col overflow-y-auto">
-              <button type="button" data-tool-panel-close aria-label="Close panel" title="Close panel" onClick={() => setPanelOpen(false)} className="absolute right-2 top-2 z-20 grid h-7 w-7 place-items-center rounded-md text-muted hover:bg-white/10 hover:text-white">
+              <button type="button" data-tool-panel-close aria-label="Close panel" title="Close panel" onClick={() => setPanelOpen(false)} className="sticky top-2 z-20 -mb-9 mr-2 mt-2 grid h-7 w-7 shrink-0 place-items-center self-end rounded-md text-muted hover:bg-white/10 hover:text-white">
                 <X size={16} />
               </button>
               {tool === "clips" && <ClipsPanel />}
