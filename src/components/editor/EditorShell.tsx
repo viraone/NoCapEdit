@@ -9,6 +9,7 @@ import { removeMusicSelection, removedMusicNotice } from "@/lib/models/musicTrim
 import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
 import { EditorChat } from "./EditorChat";
+import { EditorNotes } from "./EditorNotes";
 import { useFitPictureToSong, useStillLength } from "@/components/panels/useStillLength";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { ToolRail } from "@/components/panels/ToolRail";
@@ -242,6 +243,7 @@ export function EditorShell() {
           <CanvasBar />
         </main>
         <EditorChat />
+        <EditorNotes />
       </div>
       <TimelineResizeHandle />
       <TimelineDock />
