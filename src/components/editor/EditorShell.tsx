@@ -86,6 +86,8 @@ function StillLengthStrip() {
 
 export function EditorShell() {
   const tool = useEditor((s) => s.tool);
+  const panelOpen = useEditor((s) => s.panelOpen);
+  const setPanelOpen = useEditor((s) => s.setPanelOpen);
   const project = useEditor((s) => s.project);
   const assetUrls = useEditor((s) => s.assetUrls);
   useFitPictureToSong();
@@ -215,20 +217,25 @@ export function EditorShell() {
       <div className="flex min-h-0 flex-1 gap-3">
         <div className="flex shrink-0 gap-3">
           <ToolRail />
-          <aside className="rf-panel card flex w-[24rem] flex-col overflow-y-auto">
-            {tool === "clips" && <ClipsPanel />}
-            {tool === "trim" && <TrimPanel />}
-            {tool === "subtitles" && <SubtitlesPanel />}
-            {tool === "transcript" && <TranscriptPanel />}
-            {tool === "style" && <StylePanel />}
-            {tool === "text" && <TextPanel />}
-            {tool === "picture" && <PicturePanel />}
-            {tool === "music" && <MusicPanel />}
-            {tool === "reels" && <ReelsPanel />}
-            {tool === "post" && <PostPanel />}
-            {tool === "reframe" && <ReframePanel />}
-            {tool === "export" && <ExportPanel />}
-          </aside>
+          {panelOpen && (
+            <aside className="rf-panel card relative flex w-[24rem] flex-col overflow-y-auto">
+              <button type="button" data-tool-panel-close aria-label="Close panel" title="Close panel" onClick={() => setPanelOpen(false)} className="absolute right-2 top-2 z-20 grid h-7 w-7 place-items-center rounded-md text-muted hover:bg-white/10 hover:text-white">
+                <X size={16} />
+              </button>
+              {tool === "clips" && <ClipsPanel />}
+              {tool === "trim" && <TrimPanel />}
+              {tool === "subtitles" && <SubtitlesPanel />}
+              {tool === "transcript" && <TranscriptPanel />}
+              {tool === "style" && <StylePanel />}
+              {tool === "text" && <TextPanel />}
+              {tool === "picture" && <PicturePanel />}
+              {tool === "music" && <MusicPanel />}
+              {tool === "reels" && <ReelsPanel />}
+              {tool === "post" && <PostPanel />}
+              {tool === "reframe" && <ReframePanel />}
+              {tool === "export" && <ExportPanel />}
+            </aside>
+          )}
         </div>
         <main className="flex min-w-0 flex-1 flex-col gap-2">
           <VideoCanvas />

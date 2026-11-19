@@ -33,6 +33,8 @@ export interface EditorState {
   /** The unload safety copy could not be written (storage full); cleared by the next successful save. */
   journalFailed: boolean;
   tool: ToolId;
+  /** The left tool panel is shown; the X in its corner hides it, picking a tool shows it again. */
+  panelOpen: boolean;
   currentTime: number;
   isPlaying: boolean;
   selection: Selection | null;
@@ -79,6 +81,7 @@ export interface EditorState {
   undo(): void;
   redo(): void;
   setTool(tool: ToolId): void;
+  setPanelOpen(open: boolean): void;
   setReelRun(on: boolean): void;
   /** True while a Make reels run must not be left, after saying so; callers then stay where they are. */
   holdForReelRun(): boolean;
@@ -240,6 +243,7 @@ export const useEditor = create<EditorState>()(
     saveState: "saved",
     journalFailed: false,
     tool: "clips",
+    panelOpen: true,
     currentTime: 0,
     isPlaying: false,
     selection: null,
@@ -279,7 +283,7 @@ export const useEditor = create<EditorState>()(
         const sourceProject = project.sourceProjectId ? ((await getProject(project.sourceProjectId)) ?? null) : null;
         // The source may have been trimmed since the reel was cut; its ranges follow.
         if (project.reel && sourceProject) project.reel = reelOnSource(project.reel, sourceProject.clips);
-        set({ project, sourceProject, assetUrls, loading: false, past: [], future: [], currentTime: 0, isPlaying: false, selection: null, tool: "clips" });
+        set({ project, sourceProject, assetUrls, loading: false, past: [], future: [], currentTime: 0, isPlaying: false, selection: null, tool: "clips", panelOpen: true });
         return true;
       } catch (e) {
         set({ loading: false, error: e instanceof Error ? e.message : String(e) });
@@ -367,8 +371,9 @@ export const useEditor = create<EditorState>()(
 
     setTool(tool) {
       if (tool !== "reels" && get().holdForReelRun()) return;
-      set({ tool });
+      set({ tool, panelOpen: true });
     },
+    setPanelOpen: (panelOpen) => set({ panelOpen }),
     setReelRun: (reelRun) => set({ reelRun }),
     holdForReelRun() {
       if (!get().reelRun) return false;
@@ -406,7 +411,7 @@ export const useEditor = create<EditorState>()(
     requestReels() {
       // The Reels panel takes it from here: it runs the job, or asks for
       // subtitles first when the project has no captions.
-      set({ tool: "reels", reelsRequest: Date.now() });
+      set({ tool: "reels", panelOpen: true, reelsRequest: Date.now() });
     },
     requestEdit(sel) {
       if (get().holdForReelRun()) return;
@@ -417,7 +422,7 @@ export const useEditor = create<EditorState>()(
         tool = kind === "image" || kind === "lottie" ? "picture" : "text";
       } else if (sel.kind === "clip") tool = "trim";
       else if (sel.kind === "voiceover") tool = "music";
-      set({ selection: sel, tool, editRequest: { ...sel, nonce: Date.now() } });
+      set({ selection: sel, tool, panelOpen: true, editRequest: { ...sel, nonce: Date.now() } });
     },
 
     registerAsset(assetId, blob) {
