@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clapperboard, Copy, Download, FileText, Loader2, RotateCcw, X } from "lucide-react";
+import { Clapperboard, Copy, Download, FileText, Loader2, RotateCcw, Scissors, X } from "lucide-react";
+import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
+import { createProject } from "@/lib/models/project";
+import { deleteProject, requestPersistentStorage, saveProject } from "@/lib/storage/db";
 import { AiModelFields } from "@/components/panels/AiModelFields";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -39,7 +42,7 @@ interface Film {
  * writes the script, the in-browser voice reads it, and the film is drawn and encoded on this
  * device. Only the transcript text goes to the AI provider they chose; no video leaves the device.
  */
-export function DocumentaryDialog({ link, onClose }: { link: string | null; onClose: () => void }) {
+export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: string | null; onClose: () => void; /** Opens the editor on the project made from the finished film. */ onOpenProject?: (projectId: string) => void }) {
   const media = link ? parseMediaLink(link) : null;
   /** The caption language being fetched, and what the visitor is typing for the next try. */
   const [lang, setLang] = useState("en");
@@ -71,6 +74,9 @@ export function DocumentaryDialog({ link, onClose }: { link: string | null; onCl
   const [run, setRun] = useState<{ label: string; value: number | null } | null>(null);
   const [filmError, setFilmError] = useState<string | null>(null);
   const [film, setFilm] = useState<Film | null>(null);
+  /** What "Open in editor" is doing right now, or null when idle. */
+  const [opening, setOpening] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
   const filmUrlRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -155,6 +161,30 @@ export function DocumentaryDialog({ link, onClose }: { link: string | null; onCl
       if (!ctl.signal.aborted) setFilmError(e instanceof Error ? e.message : String(e));
     } finally {
       setRun(null);
+    }
+  };
+
+  /** Saves the film as a project (16:9, like the film) and hands its id to the start screen, which opens the editor. */
+  const openInEditor = async () => {
+    if (!film || !onOpenProject) return;
+    setOpenError(null);
+    setOpening("Making the project…");
+    const project = createProject({ name: film.title, formatId: "yt-landscape" });
+    try {
+      await saveProject(project);
+      const file = new File([film.blob], transcriptFileName(film.title, "mp4"), { type: "video/mp4" });
+      const { clip, blob } = await importVideo(file, project.id, (detail) => setOpening(detail || "Making the project…"));
+      project.clips.push(clip);
+      await updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
+      await saveProject(project);
+      await requestPersistentStorage();
+      onOpenProject(project.id);
+    } catch (e) {
+      // Never leave an empty project behind on the start screen.
+      await deleteProject(project.id).catch(() => undefined);
+      setOpenError(e instanceof Error ? `Couldn't open the film in the editor: ${e.message}` : "Couldn't open the film in the editor.");
+    } finally {
+      setOpening(null);
     }
   };
 
@@ -300,10 +330,20 @@ export function DocumentaryDialog({ link, onClose }: { link: string | null; onCl
                   <Button variant="primary" size="md" onClick={() => downloadBlob(film.blob, transcriptFileName(film.title, "mp4"))} data-documentary-download>
                     <Download size={15} /> Download MP4
                   </Button>
+                  {onOpenProject && (
+                    <Button variant="secondary" size="md" onClick={() => void openInEditor()} disabled={!!opening} data-documentary-edit>
+                      {opening ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Scissors size={15} />} {opening ?? "Open in editor"}
+                    </Button>
+                  )}
                   <span className="text-xs text-label-3">
                     {film.title} · {Math.round(film.seconds)} s
                   </span>
                 </div>
+                {openError && (
+                  <p className="text-sm text-sys-red" role="alert">
+                    {openError}
+                  </p>
+                )}
               </div>
             )}
           </section>

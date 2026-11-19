@@ -256,7 +256,7 @@ export function StartScreen() {
       </header>
 
       <YouTubeBar onSubmit={youtube.start} onTranscript={setDocLink} active={youtube.items.find((it) => it.stage !== "error") ?? null} onCancel={youtube.cancel} saveFolder={saveFolder} savedTo={youtube.savedTo} />
-      <DocumentaryDialog link={docLink} onClose={() => setDocLink(null)} />
+      <DocumentaryDialog link={docLink} onClose={() => setDocLink(null)} onOpenProject={openProject} />
 
       <section className="mt-6">
         <div className="mb-5 flex items-center justify-between gap-3">
