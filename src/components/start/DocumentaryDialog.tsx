@@ -10,7 +10,8 @@ import { Modal } from "@/components/ui/Modal";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Select } from "@/components/ui/Select";
 import { writeDocumentaryScript, aiMissing } from "@/lib/documentary/ai";
-import { DocumentaryChat } from "@/components/start/DocumentaryChat";
+import { VideoDocumentaryChat } from "@/components/start/DocumentaryChat";
+import { trimTranscript } from "@/lib/documentary/chat";
 import { filmSupported, renderFilm, type FilmHeight } from "@/lib/documentary/film";
 import type { DocScript } from "@/lib/documentary/script";
 import type { FilmTimeline } from "@/lib/documentary/timeline";
@@ -184,6 +185,8 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
       const file = new File([film.blob], transcriptFileName(film.title, "mp4"), { type: "video/mp4" });
       const { clip, blob } = await importVideo(file, project.id, (detail) => setOpening(detail || "Making the project…"));
       project.clips.push(clip);
+      // The editor's chat reads this: the film's script, its scene times and the source transcript.
+      project.documentary = { assetId: clip.assetId, script: film.script, timeline: film.timeline, transcript: trimTranscript(plainText) };
       await updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
       await saveProject(project);
       await requestPersistentStorage();
@@ -364,7 +367,7 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
                   </p>
                 )}
                 </div>
-                <DocumentaryChat script={film.script} timeline={film.timeline} transcriptText={plainText} videoRef={videoRef} apiKey={ai.deepseekKey} model={ai.deepseekModel} onKey={(deepseekKey) => updateAi({ deepseekKey })} />
+                <VideoDocumentaryChat script={film.script} timeline={film.timeline} transcriptText={plainText} videoRef={videoRef} apiKey={ai.deepseekKey} model={ai.deepseekModel} onKey={(deepseekKey) => updateAi({ deepseekKey })} />
               </div>
             )}
           </section>

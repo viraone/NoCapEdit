@@ -8,6 +8,7 @@ import { splitClipAt, captionsClearedNotice, removeClip } from "@/lib/models/cli
 import { removeMusicSelection, removedMusicNotice } from "@/lib/models/musicTrim";
 import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
+import { EditorChat } from "./EditorChat";
 import { useFitPictureToSong, useStillLength } from "@/components/panels/useStillLength";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { ToolRail } from "@/components/panels/ToolRail";
@@ -233,6 +234,7 @@ export function EditorShell() {
           <VideoCanvas />
           <CanvasBar />
         </main>
+        <EditorChat />
       </div>
       <TimelineResizeHandle />
       <TimelineDock />

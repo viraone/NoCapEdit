@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { ArrowUp, KeyRound, Loader2, MessageCircle, Square } from "lucide-react";
+import { ArrowUp, KeyRound, Loader2, MessageCircle, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { askAboutFilm, chatBody, filmBrief, momentNote, sceneLabel, type DocChatMessage } from "@/lib/documentary/chat";
 import type { DocScript } from "@/lib/documentary/script";
@@ -9,51 +9,39 @@ import { formatClock } from "@/lib/documentary/transcript";
 
 const SUGGESTIONS = ["What does this mean?", "Give me an example", "Explain it more simply"];
 
+export interface DocumentaryChatProps {
+  script: DocScript;
+  timeline: FilmTimeline;
+  transcriptText: string;
+  /** Where the film is now, in the film's own seconds; shown on the line above the box. */
+  now: number;
+  /** Called when a question is sent: pauses the film and returns the film time it was asked at. */
+  onAsk: () => number;
+  apiKey: string;
+  model: string;
+  /** Saves a new DeepSeek key (into the site's AI settings, in this browser). */
+  onKey: (key: string) => void;
+  /** Fill the parent's height at every screen width (the editor's side column). */
+  fill?: boolean;
+  /** When given, the header shows a button that hides the chat. */
+  onClose?: () => void;
+}
+
 /**
  * The chat beside the film. It knows the whole documentary and the original transcript, and
  * every question carries where the viewer is in the film: asking pauses the film, so "what does
  * this mean?" is about the scene on screen. Uses the visitor's own DeepSeek key.
  */
-export function DocumentaryChat({
-  script,
-  timeline,
-  transcriptText,
-  videoRef,
-  apiKey,
-  model,
-  onKey,
-}: {
-  script: DocScript;
-  timeline: FilmTimeline;
-  transcriptText: string;
-  videoRef: RefObject<HTMLVideoElement | null>;
-  apiKey: string;
-  model: string;
-  /** Saves a new DeepSeek key (into the site's AI settings, in this browser). */
-  onKey: (key: string) => void;
-}) {
+export function DocumentaryChat({ script, timeline, transcriptText, now, onAsk, apiKey, model, onKey, fill, onClose }: DocumentaryChatProps) {
   const [messages, setMessages] = useState<DocChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Where the film is now, for the line above the box; refreshed as it plays. */
-  const [now, setNow] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const brief = useMemo(() => filmBrief(script, timeline, transcriptText), [script, timeline, transcriptText]);
 
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const update = () => setNow(v.currentTime);
-    v.addEventListener("timeupdate", update);
-    v.addEventListener("seeked", update);
-    return () => {
-      v.removeEventListener("timeupdate", update);
-      v.removeEventListener("seeked", update);
-    };
-  }, [videoRef]);
   useEffect(() => () => abortRef.current?.abort(), []);
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -62,10 +50,8 @@ export function DocumentaryChat({
   const send = async (text: string) => {
     const question = text.trim();
     if (!question || busy || !apiKey) return;
-    const video = videoRef.current;
-    const at = video?.currentTime ?? 0;
     // Reading an answer while the film plays on would lose the moment; asking holds it.
-    video?.pause();
+    const at = onAsk();
     const next: DocChatMessage[] = [...messages, { role: "user", content: question, at, paused: true }];
     setMessages([...next, { role: "assistant", content: "" }]);
     setDraft("");
@@ -93,9 +79,14 @@ export function DocumentaryChat({
   };
 
   return (
-    <section className="flex h-[26rem] min-h-0 flex-col rounded-xl border border-sys-gray4 bg-sys-gray5/40 lg:h-full lg:min-h-[24rem]" aria-label="Ask about the documentary" data-documentary-chat>
+    <section className={`flex min-h-0 flex-col rounded-xl border border-sys-gray4 bg-sys-gray5/40 ${fill ? "h-full" : "h-[26rem] lg:h-full lg:min-h-[24rem]"}`} aria-label="Ask about the documentary" data-documentary-chat>
       <h4 className="flex items-center gap-2 border-b border-sys-gray4 px-3 py-2 text-[13px] font-semibold text-white">
         <MessageCircle size={15} aria-hidden /> Ask about this film
+        {onClose && (
+          <button type="button" onClick={onClose} className="ml-auto rounded p-0.5 text-label-3 hover:bg-sys-gray4 hover:text-white" aria-label="Hide the chat" title="Hide the chat" data-documentary-chat-close>
+            <X size={14} />
+          </button>
+        )}
       </h4>
 
       <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3 text-[13px]" aria-live="polite" data-documentary-chat-list>
@@ -200,4 +191,26 @@ export function DocumentaryChat({
       )}
     </section>
   );
+}
+
+/** The chat beside a plain <video>: follows its clock and pauses it when a question is sent. */
+export function VideoDocumentaryChat({ videoRef, ...rest }: Omit<DocumentaryChatProps, "now" | "onAsk"> & { videoRef: RefObject<HTMLVideoElement | null> }) {
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const update = () => setNow(v.currentTime);
+    v.addEventListener("timeupdate", update);
+    v.addEventListener("seeked", update);
+    return () => {
+      v.removeEventListener("timeupdate", update);
+      v.removeEventListener("seeked", update);
+    };
+  }, [videoRef]);
+  const onAsk = () => {
+    const v = videoRef.current;
+    v?.pause();
+    return v?.currentTime ?? 0;
+  };
+  return <DocumentaryChat {...rest} now={now} onAsk={onAsk} />;
 }

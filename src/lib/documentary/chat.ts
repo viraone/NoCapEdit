@@ -20,6 +20,13 @@ export interface DocChatMessage {
 export const MAX_CHAT_TRANSCRIPT_CHARS = 24000;
 const MAX_HISTORY_CHARS = 16000;
 
+/** A transcript short enough to send with every question: a long one keeps its start and its end. */
+export function trimTranscript(text: string, maxChars = MAX_CHAT_TRANSCRIPT_CHARS): string {
+  if (text.length <= maxChars) return text;
+  const head = Math.round(maxChars * 0.6);
+  return `${text.slice(0, head)}\n\n[... middle left out ...]\n\n${text.slice(text.length - (maxChars - head))}`;
+}
+
 /** Everything the model needs to know about the film; the same for every question about it. */
 export function filmBrief(script: DocScript, tl: FilmTimeline, transcriptText: string): string {
   const scenes = script.scenes
@@ -30,11 +37,7 @@ export function filmBrief(script: DocScript, tl: FilmTimeline, transcriptText: s
       return `Scene ${i + 1} [${range}] (${s.kind})\nOn screen: ${onScreen}\nNarration: ${s.narration}`;
     })
     .join("\n\n");
-  let source = transcriptText;
-  if (source.length > MAX_CHAT_TRANSCRIPT_CHARS) {
-    const head = Math.round(MAX_CHAT_TRANSCRIPT_CHARS * 0.6);
-    source = `${source.slice(0, head)}\n\n[... middle left out ...]\n\n${source.slice(source.length - (MAX_CHAT_TRANSCRIPT_CHARS - head))}`;
-  }
+  const source = trimTranscript(transcriptText);
   return [
     `You are the study companion beside a short documentary called "${script.title}". The viewer is watching it and pauses to ask you questions.`,
     "Each question starts with a note in square brackets saying where in the film the viewer is. Unless they say otherwise, \"this\" means what that scene is showing and saying at that moment.",

@@ -1,6 +1,8 @@
 import { uid } from "@/lib/utils/id";
 import { DEFAULT_FORMAT_ID, type SafeZoneKind } from "./formats";
 import type { MusicPiece } from "./musicTrim";
+import type { DocScript } from "@/lib/documentary/script";
+import type { FilmTimeline } from "@/lib/documentary/timeline";
 
 export const PROJECT_VERSION = 1;
 
@@ -349,6 +351,16 @@ export interface PostDraft {
   hashtags: string[];
 }
 
+/** Set on a project made from a documentary film: what the editor's chat needs to answer questions about it. */
+export interface ProjectDocumentary {
+  /** The film's video file among the project's assets; a clip with this assetId is the film. */
+  assetId: string;
+  script: DocScript;
+  timeline: FilmTimeline;
+  /** The original video's transcript, already shortened for the chat. */
+  transcript: string;
+}
+
 export interface VideoProject {
   id: string;
   version: number;
@@ -370,6 +382,8 @@ export interface VideoProject {
   sourceProjectId?: string;
   /** Set on reels: how it was picked. */
   reel?: ReelInfo | null;
+  /** Set when the project was opened from a finished documentary. */
+  documentary?: ProjectDocumentary;
 }
 
 export const SPEED_MIN = 0.25;
