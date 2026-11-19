@@ -27,6 +27,8 @@ export interface FilmOptions {
   /** A voice id from TTS_VOICES. */
   voice: string;
   height: FilmHeight;
+  /** Draws each frame: the documentary look when left out, drawAnimationFrame for the animation style. */
+  draw?: typeof drawFilmFrame;
   onProgress?: (p: FilmProgress) => void;
   signal?: AbortSignal;
 }
@@ -106,6 +108,7 @@ async function pickVideoConfig(width: number, height: number): Promise<VideoEnco
 
 export async function renderFilm(opts: FilmOptions): Promise<FilmResult> {
   const { script, voice, signal } = opts;
+  const draw = opts.draw ?? drawFilmFrame;
   const progress = (p: FilmProgress) => opts.onProgress?.(p);
   if (!filmSupported()) throw new Error("This browser can't make videos here. Try Chrome, Edge or Safari.");
 
@@ -188,7 +191,7 @@ export async function renderFilm(opts: FilmOptions): Promise<FilmResult> {
   const frameUs = Math.round(1e6 / FPS);
   for (let i = 0; i < frameCount; i++) {
     throwIfAborted(signal);
-    drawFilmFrame(ctx, width, height, script, tl, i / FPS);
+    draw(ctx, width, height, script, tl, i / FPS);
     const frame = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / FPS), duration: frameUs });
     videoEncoder.encode(frame, { keyFrame: i % (FPS * 2) === 0 });
     frame.close();

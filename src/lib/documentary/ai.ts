@@ -5,6 +5,7 @@
  */
 import { ANTHROPIC_API, DEEPSEEK_API, GEMINI_API, XAI_API, activeModel, type AiSettings } from "@/lib/edit/aiHighlights";
 import { buildScriptPrompt, parseScript, type DocScript } from "./script";
+import { buildAnimationPrompt, parseAnimationScript } from "./animationScript";
 import type { TranscriptCue } from "./transcript";
 
 export interface ModelRequest {
@@ -109,6 +110,8 @@ export interface WriteScriptOptions {
   settings: AiSettings;
   minutes: number;
   language: string;
+  /** "animation" also asks for a picture for every scene. Default: "documentary". */
+  style?: "documentary" | "animation";
   signal?: AbortSignal;
 }
 
@@ -116,11 +119,12 @@ export interface WriteScriptOptions {
 export async function writeDocumentaryScript(title: string, cues: TranscriptCue[], opts: WriteScriptOptions): Promise<DocScript> {
   const missing = aiMissing(opts.settings);
   if (missing) throw new Error(missing);
-  const { system, user } = buildScriptPrompt(title, cues, { minutes: opts.minutes, language: opts.language });
+  const animation = opts.style === "animation";
+  const { system, user } = (animation ? buildAnimationPrompt : buildScriptPrompt)(title, cues, { minutes: opts.minutes, language: opts.language });
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return parseScript(await ask(opts.settings, system, user, opts.signal));
+      return (animation ? parseAnimationScript : parseScript)(await ask(opts.settings, system, user, opts.signal));
     } catch (e) {
       if (opts.signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) throw e;
       lastError = e;

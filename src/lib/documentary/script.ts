@@ -6,6 +6,19 @@ import { cuesToText, type TranscriptCue } from "./transcript";
 
 export type SceneKind = "title" | "point" | "quote" | "takeaways" | "credits";
 
+/** How the animation style pictures a scene. */
+export type VisualType = "icons" | "flow" | "compare" | "stat" | "list";
+
+export interface SceneVisual {
+  type: VisualType;
+  /** One emoji per on-screen line, in the same order ("" where there is none). */
+  icons: string[];
+  /** For "stat": the big figure and what it counts. */
+  stat?: { value: string; label: string };
+  /** For "compare": the two sides. */
+  compare?: { leftTitle: string; rightTitle: string; left: string[]; right: string[] };
+}
+
 export interface DocScene {
   id: string;
   kind: SceneKind;
@@ -14,6 +27,8 @@ export interface DocScene {
   lines: string[];
   /** What the narrator says aloud. */
   narration: string;
+  /** Set by the animation style: how the scene is pictured. */
+  visual?: SceneVisual;
 }
 
 export interface DocScript {

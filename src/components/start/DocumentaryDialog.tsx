@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clapperboard, Copy, Download, FileText, Loader2, RotateCcw, Scissors, X } from "lucide-react";
+import { Clapperboard, Copy, Download, FileText, Loader2, RotateCcw, Scissors, Sparkles, X } from "lucide-react";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { createProject } from "@/lib/models/project";
 import { deleteProject, requestPersistentStorage, saveProject } from "@/lib/storage/db";
@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/Select";
 import { writeDocumentaryScript, aiMissing } from "@/lib/documentary/ai";
 import { VideoDocumentaryChat } from "@/components/start/DocumentaryChat";
 import { trimTranscript } from "@/lib/documentary/chat";
+import { drawAnimationFrame } from "@/lib/documentary/drawAnimation";
 import { filmSupported, renderFilm, type FilmHeight } from "@/lib/documentary/film";
 import type { DocScript } from "@/lib/documentary/script";
 import type { FilmTimeline } from "@/lib/documentary/timeline";
@@ -146,7 +147,7 @@ export function DocumentaryDialog({ link, pasted = null, onClose, onOpenProject 
     }
   };
 
-  const make = async () => {
+  const make = async (style: "documentary" | "animation" = "documentary") => {
     if (!transcript) return;
     const ctl = new AbortController();
     abortRef.current = ctl;
@@ -154,11 +155,12 @@ export function DocumentaryDialog({ link, pasted = null, onClose, onOpenProject 
     setFilmError(null);
     try {
       setRun({ label: `${PROVIDER_NAME[ai.provider]} is writing the script…`, value: null });
-      const script = await writeDocumentaryScript(transcript.title, transcript.cues, { settings: ai, minutes, language: voiceName, signal: ctl.signal });
+      const script = await writeDocumentaryScript(transcript.title, transcript.cues, { settings: ai, minutes, language: voiceName, style, signal: ctl.signal });
       const result = await renderFilm({
         script,
         voice,
         height,
+        draw: style === "animation" ? drawAnimationFrame : undefined,
         signal: ctl.signal,
         onProgress: (p) => {
           const value = p.phase === "voice" ? p.progress * 0.4 : p.phase === "video" ? 0.4 + p.progress * 0.55 : 0.95 + p.progress * 0.05;
@@ -269,7 +271,7 @@ export function DocumentaryDialog({ link, pasted = null, onClose, onOpenProject 
                 <Clapperboard size={17} aria-hidden /> Make a mini documentary
               </h3>
               <p className="mt-0.5 text-[13px] text-label-3">
-                {PROVIDER_NAME[ai.provider]} writes the script from this transcript, the narrator reads it, and the film is drawn on this device. Only the transcript text goes to {PROVIDER_NAME[ai.provider]}.
+                {PROVIDER_NAME[ai.provider]} writes the script from this transcript, the narrator reads it, and the film is drawn on this device. Only the transcript text goes to {PROVIDER_NAME[ai.provider]}. Create Animation pictures every scene instead: icons, step flows, comparisons and big numbers that move.
               </p>
             </div>
 
@@ -338,6 +340,9 @@ export function DocumentaryDialog({ link, pasted = null, onClose, onOpenProject 
               <div className="flex flex-wrap items-center gap-3">
                 <Button variant="primary" size="lg" onClick={() => void make()} disabled={!!missing || !filmSupported()} data-documentary-make>
                   <Clapperboard size={18} /> Create documentary
+                </Button>
+                <Button variant="secondary" size="lg" onClick={() => void make("animation")} disabled={!!missing || !filmSupported()} title="A moving explainer: icons, step flows, comparisons and big numbers instead of plain text" data-documentary-animate>
+                  <Sparkles size={18} /> Create Animation
                 </Button>
                 {missing && <span className="text-[13px] text-sys-orange">{missing}</span>}
               </div>
