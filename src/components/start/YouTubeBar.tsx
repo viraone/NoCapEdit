@@ -32,6 +32,7 @@ const smallButton =
 export function YouTubeBar({
   onSubmit,
   onTranscript,
+  onPasteText,
   disabled,
   active = null,
   onCancel,
@@ -41,6 +42,8 @@ export function YouTubeBar({
   onSubmit: (link: string, choice: YouTubeChoice) => void;
   /** Opens the transcript and documentary dialog for the pasted YouTube link. */
   onTranscript?: (link: string) => void;
+  /** Opens the dialog for pasting the text of any page. */
+  onPasteText?: () => void;
   disabled?: boolean;
   active?: YouTubeImport | null;
   onCancel?: (key: string) => void;
@@ -174,6 +177,11 @@ export function YouTubeBar({
                 </button>
               )}
             </div>
+            {onPasteText && (
+              <Button type="button" variant="secondary" size="lg" disabled={disabled} onClick={onPasteText} className="h-12 text-[15px]" title="Paste the text of any page (a lesson, an article) and turn it into a narrated documentary" data-youtube-from-text>
+                <FileText size={18} /> From text
+              </Button>
+            )}
             {onTranscript && media?.source === "youtube" && (
               <Button type="button" variant="secondary" size="lg" disabled={disabled} onClick={() => onTranscript(link)} className="h-12 text-[15px]" title="Get the whole dialog as text, or turn it into a narrated documentary" data-youtube-transcript>
                 <FileText size={18} /> Transcript

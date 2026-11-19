@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Recorder, useRecordingSupported } from "@/components/record/Recorder";
 import { YouTubeBar } from "@/components/start/YouTubeBar";
 import { DocumentaryDialog } from "@/components/start/DocumentaryDialog";
+import { PasteTextDialog } from "@/components/start/PasteTextDialog";
 import { DownloadingNotice } from "@/components/start/DownloadingNotice";
 import { useYouTubeImports, youtubeStageText } from "@/components/start/useYouTubeImports";
 import { useSaveFolder } from "@/components/start/useSaveFolder";
@@ -121,6 +122,8 @@ export function StartScreen() {
   const youtube = useYouTubeImports(refresh);
   /** The YouTube link whose transcript and documentary dialog is open, or null. */
   const [docLink, setDocLink] = useState<string | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasted, setPasted] = useState<{ title: string; text: string } | null>(null);
   const saveFolder = useSaveFolder();
 
   useEffect(() => {
@@ -255,8 +258,9 @@ export function StartScreen() {
         </div>
       </header>
 
-      <YouTubeBar onSubmit={youtube.start} onTranscript={setDocLink} active={youtube.items.find((it) => it.stage !== "error") ?? null} onCancel={youtube.cancel} saveFolder={saveFolder} savedTo={youtube.savedTo} />
-      <DocumentaryDialog link={docLink} onClose={() => setDocLink(null)} onOpenProject={openProject} />
+      <YouTubeBar onSubmit={youtube.start} onTranscript={setDocLink} onPasteText={() => setPasteOpen(true)} active={youtube.items.find((it) => it.stage !== "error") ?? null} onCancel={youtube.cancel} saveFolder={saveFolder} savedTo={youtube.savedTo} />
+      <PasteTextDialog open={pasteOpen} onClose={() => setPasteOpen(false)} onUse={(title, text) => { setPasteOpen(false); setPasted({ title, text }); }} />
+      <DocumentaryDialog link={docLink} pasted={pasted} onClose={() => { setDocLink(null); setPasted(null); }} onOpenProject={openProject} />
 
       <section className="mt-6">
         <div className="mb-5 flex items-center justify-between gap-3">

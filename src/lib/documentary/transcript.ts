@@ -86,3 +86,13 @@ export function normalizeCues(input: unknown): TranscriptCue[] {
   }
   return out;
 }
+
+/** Pasted text (a lesson, an article) as a transcript: one cue per paragraph, with made-up even times because there is no video. */
+export function textToTranscript(title: string, text: string): Transcript {
+  const cleaned = text.replace(/\r\n?/g, "\n").trim();
+  const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
+  const paragraphs = cleaned.split(/\n\s*\n/).map(tidy).filter(Boolean);
+  const pieces = paragraphs.length > 1 ? paragraphs : cleaned.split("\n").map(tidy).filter(Boolean);
+  const cues: TranscriptCue[] = pieces.map((piece, i) => ({ start: i * 5, end: (i + 1) * 5, text: piece }));
+  return { id: "pasted", title: title.trim() || "Pasted text", language: "en", cues };
+}

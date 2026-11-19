@@ -15,7 +15,7 @@ import { trimTranscript } from "@/lib/documentary/chat";
 import { filmSupported, renderFilm, type FilmHeight } from "@/lib/documentary/film";
 import type { DocScript } from "@/lib/documentary/script";
 import type { FilmTimeline } from "@/lib/documentary/timeline";
-import { cuesToSrt, cuesToText, transcriptFileName, type Transcript } from "@/lib/documentary/transcript";
+import { cuesToSrt, cuesToText, textToTranscript, transcriptFileName, type Transcript } from "@/lib/documentary/transcript";
 import { loadAiSettings, saveAiSettings, activeModel, type AiSettings } from "@/lib/edit/aiHighlights";
 import { isKokoroVoice, KOKORO_VOICES } from "@/lib/speech/kokoro";
 import { TTS_VOICES } from "@/lib/speech/tts";
@@ -49,7 +49,7 @@ interface Film {
  * writes the script, the in-browser voice reads it, and the film is drawn and encoded on this
  * device. Only the transcript text goes to the AI provider they chose; no video leaves the device.
  */
-export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: string | null; onClose: () => void; /** Opens the editor on the project made from the finished film. */ onOpenProject?: (projectId: string) => void }) {
+export function DocumentaryDialog({ link, pasted = null, onClose, onOpenProject }: { link: string | null; /** Text the visitor pasted instead of a link: the dialog opens on it as if it were a transcript. */ pasted?: { title: string; text: string } | null; onClose: () => void; /** Opens the editor on the project made from the finished film. */ onOpenProject?: (projectId: string) => void }) {
   const media = link ? parseMediaLink(link) : null;
   /** The caption language being fetched, and what the visitor is typing for the next try. */
   const [lang, setLang] = useState("en");
@@ -61,7 +61,8 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
   const key = `${link}|${lang}|${attempt}`;
   const settled = result?.key === key ? result : null;
   const loading = !!media && media.source === "youtube" && !settled;
-  const transcript = settled?.transcript ?? null;
+  const pastedTranscript = useMemo(() => (pasted ? textToTranscript(pasted.title, pasted.text) : null), [pasted]);
+  const transcript = settled?.transcript ?? pastedTranscript;
   const error = settled?.error ?? saveError;
   const [timestamps, setTimestamps] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -201,7 +202,7 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
   };
 
   return (
-    <Modal open={!!link} onClose={close} title="Transcript and documentary" width={film ? "max-w-6xl" : "max-w-3xl"}>
+    <Modal open={!!link || !!pasted} onClose={close} title="Transcript and documentary" width={film ? "max-w-6xl" : "max-w-3xl"}>
       <div className="space-y-5 p-5" data-documentary>
         {loading && (
           <p className="flex items-center gap-2 text-sm text-white" role="status" data-documentary-loading>
@@ -247,12 +248,16 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
               <Button size="sm" onClick={() => downloadBlob(new Blob([text], { type: "text/plain;charset=utf-8" }), transcriptFileName(transcript.title, "txt"))} data-documentary-txt>
                 <FileText size={13} /> Download .txt
               </Button>
-              <Button size="sm" onClick={() => downloadBlob(new Blob([cuesToSrt(transcript.cues)], { type: "application/x-subrip;charset=utf-8" }), transcriptFileName(transcript.title, "srt"))} data-documentary-srt>
-                <Download size={13} /> Download .srt
-              </Button>
-              <label className="ml-auto flex items-center gap-1.5 text-[13px] text-label-2">
-                <input type="checkbox" checked={timestamps} onChange={(e) => setTimestamps(e.target.checked)} /> Timestamps
-              </label>
+              {!pasted && (
+                <Button size="sm" onClick={() => downloadBlob(new Blob([cuesToSrt(transcript.cues)], { type: "application/x-subrip;charset=utf-8" }), transcriptFileName(transcript.title, "srt"))} data-documentary-srt>
+                  <Download size={13} /> Download .srt
+                </Button>
+              )}
+              {!pasted && (
+                <label className="ml-auto flex items-center gap-1.5 text-[13px] text-label-2">
+                  <input type="checkbox" checked={timestamps} onChange={(e) => setTimestamps(e.target.checked)} /> Timestamps
+                </label>
+              )}
             </div>
           </section>
         )}
