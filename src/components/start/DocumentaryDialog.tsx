@@ -16,6 +16,7 @@ import type { DocScript } from "@/lib/documentary/script";
 import type { FilmTimeline } from "@/lib/documentary/timeline";
 import { cuesToSrt, cuesToText, transcriptFileName, type Transcript } from "@/lib/documentary/transcript";
 import { loadAiSettings, saveAiSettings, activeModel, type AiSettings } from "@/lib/edit/aiHighlights";
+import { isKokoroVoice, KOKORO_VOICES } from "@/lib/speech/kokoro";
 import { TTS_VOICES } from "@/lib/speech/tts";
 import { fetchTranscript } from "@/lib/youtube/transcript";
 import { parseMediaLink } from "@/lib/youtube/url";
@@ -74,7 +75,7 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
     }
   });
   const [minutes, setMinutes] = useState(2);
-  const [voice, setVoice] = useState(TTS_VOICES[0].id);
+  const [voice, setVoice] = useState(KOKORO_VOICES[0].id);
   const [height, setHeight] = useState<FilmHeight>(720);
   const [run, setRun] = useState<{ label: string; value: number | null } | null>(null);
   const [filmError, setFilmError] = useState<string | null>(null);
@@ -94,8 +95,9 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
     fetchTranscript(media, lang, ctl.signal)
       .then((t) => {
         setResult({ key, transcript: t, error: null });
+        // English keeps the natural default narrator; other languages get their own voice.
         const spoken = TTS_VOICES.find((v) => v.lang === lang.slice(0, 2));
-        if (spoken) setVoice(spoken.id);
+        if (spoken && spoken.lang !== "en") setVoice(spoken.id);
       })
       .catch((e) => {
         if (!ctl.signal.aborted) setResult({ key, transcript: null, error: e instanceof Error ? e.message : String(e) });
@@ -130,7 +132,7 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
     });
   };
   const missing = aiMissing(ai);
-  const voiceName = TTS_VOICES.find((v) => v.id === voice)?.name ?? "English";
+  const voiceName = isKokoroVoice(voice) ? "English" : (TTS_VOICES.find((v) => v.id === voice)?.name ?? "English");
 
   const copy = async () => {
     try {
@@ -277,11 +279,20 @@ export function DocumentaryDialog({ link, onClose, onOpenProject }: { link: stri
               <label className="space-y-1 text-[12px] font-semibold text-label-2">
                 Narrator voice
                 <Select value={voice} onChange={(e) => setVoice(e.target.value)} disabled={!!run} data-documentary-voice>
-                  {TTS_VOICES.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}
-                    </option>
-                  ))}
+                  <optgroup label="Natural English">
+                    {KOKORO_VOICES.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Basic voices (more languages)">
+                    {TTS_VOICES.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 </Select>
               </label>
               <label className="space-y-1 text-[12px] font-semibold text-label-2">

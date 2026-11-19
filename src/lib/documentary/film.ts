@@ -5,6 +5,7 @@
  */
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 import { parseWav, resampleLinear } from "@/lib/mobile/audio";
+import { isKokoroVoice, speakKokoro } from "@/lib/speech/kokoro";
 import { synthesizeSpeech } from "@/lib/speech/tts";
 import { drawFilmFrame } from "./draw";
 import type { DocScript } from "./script";
@@ -63,9 +64,19 @@ async function narrate(text: string, voice: string, signal?: AbortSignal): Promi
   const breath = new Float32Array(Math.round(FILM_AUDIO_RATE * 0.22));
   for (const piece of splitSentences(text)) {
     throwIfAborted(signal);
-    const spoken = await synthesizeSpeech(piece, voice, undefined, signal);
-    const wav = parseWav(new Uint8Array(await spoken.blob.arrayBuffer()));
-    const samples = resampleLinear(wav.channels[0], wav.sampleRate, FILM_AUDIO_RATE);
+    let raw: Float32Array;
+    let rate: number;
+    if (isKokoroVoice(voice)) {
+      const spoken = await speakKokoro(piece, voice, undefined, signal);
+      raw = spoken.audio;
+      rate = spoken.sampleRate;
+    } else {
+      const spoken = await synthesizeSpeech(piece, voice, undefined, signal);
+      const wav = parseWav(new Uint8Array(await spoken.blob.arrayBuffer()));
+      raw = wav.channels[0];
+      rate = wav.sampleRate;
+    }
+    const samples = resampleLinear(raw, rate, FILM_AUDIO_RATE);
     let peak = 0;
     for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
     const gain = peak > 0 ? 0.85 / peak : 1;
@@ -101,7 +112,7 @@ export async function renderFilm(opts: FilmOptions): Promise<FilmResult> {
   // 1. Narration, scene by scene: it decides how long each scene lasts.
   const speech: Float32Array[] = [];
   for (let i = 0; i < script.scenes.length; i++) {
-    progress({ phase: "voice", progress: i / script.scenes.length, message: `Recording the narrator, scene ${i + 1} of ${script.scenes.length}${i === 0 ? " (the first time downloads the voice)" : ""}` });
+    progress({ phase: "voice", progress: i / script.scenes.length, message: `Recording the narrator, scene ${i + 1} of ${script.scenes.length}${i === 0 ? " (the first time downloads the voice, about 90 MB)" : ""}` });
     speech.push(await narrate(script.scenes[i].narration, voice, signal));
   }
   progress({ phase: "voice", progress: 1, message: "Narration recorded" });
