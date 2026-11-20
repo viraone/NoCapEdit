@@ -37,8 +37,9 @@ export function EditorChat() {
       <aside className={open ? "flex w-[22rem] shrink-0 flex-col" : "hidden"} data-editor-chat>
         <DocumentaryChat script={doc.script} timeline={doc.timeline} transcriptText={doc.transcript} now={now} onAsk={onAsk} apiKey={ai.deepseekKey} model={ai.deepseekModel} onKey={onKey} fill onClose={() => setOpen(false)} />
       </aside>
+      {/* When the Notes button is also showing, this one sits under it: pushed down one button height and pulled right by its own width plus the row's gap-3. */}
       {!open && (
-        <button type="button" onClick={() => setOpen(true)} className="card order-last flex h-10 w-10 shrink-0 items-center justify-center self-start text-label-2 hover:text-white" aria-label="Ask about this film" title="Ask about this film" data-editor-chat-open>
+        <button type="button" onClick={() => setOpen(true)} className="card order-last flex h-10 w-10 shrink-0 items-center justify-center self-start text-label-2 hover:text-white [&:has(~[data-editor-notes-open])]:mt-12 [&:has(~[data-editor-notes-open])]:-mr-[3.25rem]" aria-label="Ask about this film" title="Ask about this film" data-editor-chat-open>
           <MessageCircle size={18} />
         </button>
       )}
