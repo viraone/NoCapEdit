@@ -38,7 +38,7 @@ export function EditorChat() {
         <DocumentaryChat script={doc.script} timeline={doc.timeline} transcriptText={doc.transcript} now={now} onAsk={onAsk} apiKey={ai.deepseekKey} model={ai.deepseekModel} onKey={onKey} fill onClose={() => setOpen(false)} />
       </aside>
       {!open && (
-        <button type="button" onClick={() => setOpen(true)} className="card flex w-10 shrink-0 flex-col items-center py-3 text-label-2 hover:text-white" aria-label="Ask about this film" title="Ask about this film" data-editor-chat-open>
+        <button type="button" onClick={() => setOpen(true)} className="card order-last flex h-10 w-10 shrink-0 items-center justify-center self-start text-label-2 hover:text-white" aria-label="Ask about this film" title="Ask about this film" data-editor-chat-open>
           <MessageCircle size={18} />
         </button>
       )}

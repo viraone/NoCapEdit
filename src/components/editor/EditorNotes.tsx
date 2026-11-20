@@ -234,7 +234,7 @@ export function EditorNotes() {
         </section>
       </aside>
       {!open && (
-        <button type="button" onClick={() => show(true)} className="card flex w-10 shrink-0 flex-col items-center py-3 text-label-2 hover:text-white" aria-label="Notes" title="Notes" data-editor-notes-open>
+        <button type="button" onClick={() => show(true)} className="card order-last flex h-10 w-10 shrink-0 items-center justify-center self-start text-label-2 hover:text-white" aria-label="Notes" title="Notes" data-editor-notes-open>
           <NotebookPen size={18} />
         </button>
       )}
