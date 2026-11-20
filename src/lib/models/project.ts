@@ -359,6 +359,10 @@ export interface ProjectDocumentary {
   timeline: FilmTimeline;
   /** The original video's transcript, already shortened for the chat. */
   transcript: string;
+  /** The narrator voice id the film was made with. Absent on projects saved before this was recorded. */
+  voice?: string;
+  /** Which look the film was made with. Absent on projects saved before this was recorded. */
+  style?: "documentary" | "animation";
 }
 
 export interface VideoProject {

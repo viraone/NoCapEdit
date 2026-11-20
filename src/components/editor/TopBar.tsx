@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History, AlertTriangle } from "lucide-react";
+import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History, AlertTriangle, Mic } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useImportClips } from "@/components/panels/useImportClips";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Toggle } from "@/components/ui/Toggle";
 import { VersionsModal } from "./VersionsModal";
+import { RevoiceModal } from "./RevoiceModal";
 import { cx } from "@/lib/utils/cx";
 
 /** Keeps a link from leaving the editor while a Make reels run is going. */
@@ -28,6 +29,7 @@ export function TopBar() {
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [revoiceOpen, setRevoiceOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
@@ -174,6 +176,11 @@ export function TopBar() {
               <button type="button" role="menuitem" className="flex w-full items-center gap-[10px] rounded-lg px-[10px] py-[8px] text-left hover:bg-sys-gray4 disabled:opacity-50" disabled={!project.clips.length} onClick={() => (setMenuOpen(false), useEditor.getState().requestReels())}>
                 <Clapperboard size={16} /> Make reels
               </button>
+              {project.documentary && (
+                <button type="button" role="menuitem" className="flex w-full items-center gap-[10px] rounded-lg px-[10px] py-[8px] text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), setRevoiceOpen(true))} data-revoice-open>
+                  <Mic size={16} /> Change narrator voice…
+                </button>
+              )}
               <button type="button" role="menuitem" className="flex w-full items-center gap-[10px] rounded-lg px-[10px] py-[8px] text-left hover:bg-sys-gray4" onClick={() => (setMenuOpen(false), setVersionsOpen(true))} data-versions-open>
                 <History size={16} /> Saved versions…
               </button>
@@ -190,6 +197,7 @@ export function TopBar() {
           }
         }} />
         <VersionsModal open={versionsOpen} onClose={() => setVersionsOpen(false)} />
+        <RevoiceModal open={revoiceOpen} onClose={() => setRevoiceOpen(false)} />
         <Modal open={!!replaceFile} onClose={() => !replacing && setReplaceFile(null)} title="Replace entire video?">
           <p className="text-sm text-label-2">
             “{replaceFile?.name}” becomes the only clip in <b className="text-white">{project.name}</b>. The name, frame format, music, text and stickers stay. Undo brings the old video back.

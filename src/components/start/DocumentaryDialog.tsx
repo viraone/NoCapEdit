@@ -42,6 +42,8 @@ interface Film {
   seconds: number;
   script: DocScript;
   timeline: FilmTimeline;
+  voice: string;
+  style: "documentary" | "animation";
 }
 
 /**
@@ -169,7 +171,7 @@ export function DocumentaryDialog({ link, pasted = null, onClose, onOpenProject 
       });
       const url = URL.createObjectURL(result.blob);
       filmUrlRef.current = url;
-      setFilm({ url, blob: result.blob, title: script.title, seconds: result.duration, script, timeline: result.timeline });
+      setFilm({ url, blob: result.blob, title: script.title, seconds: result.duration, script, timeline: result.timeline, voice, style });
     } catch (e) {
       if (!ctl.signal.aborted) setFilmError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -189,7 +191,7 @@ export function DocumentaryDialog({ link, pasted = null, onClose, onOpenProject 
       const { clip, blob } = await importVideo(file, project.id, (detail) => setOpening(detail || "Making the project…"));
       project.clips.push(clip);
       // The editor's chat reads this: the film's script, its scene times and the source transcript.
-      project.documentary = { assetId: clip.assetId, script: film.script, timeline: film.timeline, transcript: trimTranscript(plainText) };
+      project.documentary = { assetId: clip.assetId, script: film.script, timeline: film.timeline, transcript: trimTranscript(plainText), voice: film.voice, style: film.style };
       await updateProjectThumbnail(project.id, blob, Math.min(1, clip.duration / 2));
       await saveProject(project);
       await requestPersistentStorage();
