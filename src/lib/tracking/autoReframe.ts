@@ -195,6 +195,13 @@ export async function detectSubjectPath(o: ReframeOptions): Promise<SubjectSampl
 
 export async function autoReframe(o: ReframeOptions): Promise<Keyframe[]> {
   const samples = await detectSubjectPath(o);
+  // With localStorage reelflow.debug=1 the raw detections are logged, so a bad camera path can be
+  // replayed through cameraPath() in a test.
+  try {
+    if (localStorage.getItem("reelflow.debug") === "1") console.debug("[reframe] samples", JSON.stringify(samples));
+  } catch {
+    /* storage unavailable */
+  }
   if (samples.length < 2) throw new Error("Nobody was found in this clip. Try a clip where the person is in view.");
   return cameraPath(samples, o.clip, o.frame);
 }

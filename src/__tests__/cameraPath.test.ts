@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Clip } from "@/lib/models/project";
 import { positionAt } from "@/lib/models/project";
-import { cameraPath, dropSpikes, splitShots, subjectPathToPan, type SubjectSample } from "@/lib/tracking/cameraPath";
+import { cameraPath, dropExcursions, dropSpikes, splitShots, subjectPathToPan, type SubjectSample } from "@/lib/tracking/cameraPath";
+import wideShot from "./fixtures/standupWideShot.samples.json";
 
 // A 16:9 source filling a 9:16 frame: plenty of room to pan sideways, none up or down.
 const clip = { width: 1920, height: 1080, zoom: 1 } as Clip;
@@ -27,9 +28,9 @@ describe("cameraPath (the picture moves like a camera operator)", () => {
     const kf = cameraPath(samples, clip, frame);
     const from = centred(0.5);
     const to = centred(0.7);
-    // Starts where it was, ends with the face centred again.
+    // Starts where it was, ends with the face back near the centre (it comes to rest within 3% of the frame, then holds).
     expect(kf[0].x).toBeCloseTo(from, 6);
-    expect(kf[kf.length - 1].x).toBeCloseTo(to, 3);
+    expect(offCentre(0.7, kf[kf.length - 1].x)).toBeLessThan(0.03);
     // Nothing moves until the face has left the comfort zone.
     expect(positionAt(kf, 2).x).toBeCloseTo(from, 6);
     // Never overshoots, never goes backwards (walking right in the source pans the picture left).
@@ -46,8 +47,9 @@ describe("cameraPath (the picture moves like a camera operator)", () => {
     expect(biggest).toBeLessThan(Math.abs(to - from) * 0.25);
     expect(steps[0]).toBeLessThan(biggest * 0.5);
     expect(steps[steps.length - 1]).toBeLessThan(biggest * 0.5);
-    // At rest well within a couple of seconds of him stopping.
-    expect(offCentre(0.7, positionAt(kf, 5.5).x)).toBeLessThan(0.01);
+    // At rest, near the centre, well within a couple of seconds of him stopping.
+    expect(offCentre(0.7, positionAt(kf, 5.5).x)).toBeLessThan(0.03);
+    expect(positionAt(kf, 5.5).x).toBe(kf[kf.length - 1].x);
   });
 
   it("never slides across a cut: the new shot starts framed", () => {
@@ -93,7 +95,46 @@ describe("cameraPath (the picture moves like a camera operator)", () => {
       expect(dt).toBeGreaterThan(0.001);
       expect(Math.abs(kf[i].x - kf[i - 1].x) / dt).toBeLessThanOrEqual(0.3 + 1e-6);
     }
-    // Lags behind during the walk (the cap is slower than he is) but is centred once he has stood still.
-    expect(offCentre(0.8, kf[kf.length - 1].x)).toBeLessThan(0.01);
+    // Lags behind during the walk (the cap is slower than he is) but is back near the centre once he has stood still.
+    expect(offCentre(0.8, kf[kf.length - 1].x)).toBeLessThan(0.03);
+  });
+
+  it("drops a short run that jumps to someone else and comes back, but keeps a real change of place", () => {
+    // On the comedian, two samples on a head in the audience (lower left), then back on the comedian.
+    const glitch = [at(0, 0.67, { y: 0.2 }), at(0.25, 0.67, { y: 0.2 }), at(0.75, 0.24, { y: 0.69 }), at(1.0, 0.2, { y: 0.7 }), at(1.25, 0.66, { y: 0.74 }), at(2.0, 0.75, { y: 0.16 }), at(2.25, 0.75, { y: 0.17 })];
+    expect(dropExcursions(glitch).map((s) => s.t)).toEqual([0, 0.25, 2.0, 2.25]);
+    // Someone who goes somewhere else and stays there is kept.
+    const moved = [at(0, 0.3), at(0.25, 0.3), at(0.5, 0.7), at(0.75, 0.7), at(1, 0.7), at(4, 0.7)];
+    expect(dropExcursions(moved)).toEqual(moved);
+    // A cut seen in the pixels is never dropped, even if the picture cuts back soon after.
+    const cuts = [at(0, 0.3), at(0.5, 0.7, { cut: true, cutAt: 0.4 }), at(0.75, 0.7), at(1, 0.3, { cut: true, cutAt: 0.9 })];
+    expect(dropExcursions(cuts)).toEqual(cuts);
+  });
+});
+
+describe("cameraPath on a real wide stage shot (detections recorded from a stand-up clip)", () => {
+  // 31 s, one fixed camera, the comedian pacing a little, heads of the audience in the foreground.
+  // Around 18.75 to 19.25 s the detector picked an audience head three times in a row.
+  const samples = wideShot as SubjectSample[];
+  const realClip = { width: 1920, height: 1080, zoom: 1 } as Clip;
+  const kf = cameraPath(samples, realClip, frame);
+  const panAt = (t: number) => positionAt(kf, t).x;
+
+  it("never snaps the picture to the audience and back", () => {
+    for (let t = 0.1; t <= 29; t += 0.1) expect(Math.abs(panAt(t) - panAt(t - 0.1))).toBeLessThan(0.1);
+  });
+
+  it("holds still for most of the clip instead of drifting after every sway", () => {
+    let moving = 0;
+    for (let t = 0.1; t <= 29; t += 0.1) if (Math.abs(panAt(t) - panAt(t - 0.1)) > 0.0005) moving += 0.1;
+    expect(moving).toBeLessThan(14); // it was 21 s of 29 before
+  });
+
+  it("keeps the comedian inside the frame throughout", () => {
+    const ideal = subjectPathToPan(samples, realClip, frame);
+    // Ignore the detector's glitches (anything in the lower half is the audience).
+    samples.forEach((s, i) => {
+      if (s.y < 0.5) expect(Math.abs(ideal[i].x - panAt(s.t))).toBeLessThan(0.25);
+    });
   });
 });

@@ -9,6 +9,12 @@
  * - When the face leaves that zone the camera glides to recentre it with a
  *   smooth ease in and out (a critically damped spring), capped at a speed a
  *   person could pan at, and follows while the subject keeps walking.
+ * - A move ends once the face is back near the centre and the camera has all
+ *   but stopped; it then holds until the face leaves the zone again. Without
+ *   that, someone who sways on the spot keeps the camera drifting after them
+ *   for the whole clip.
+ * - A few samples that jump to somewhere else and come straight back (the
+ *   detector picking a head in the audience) are thrown away, not followed.
  *
  * Pure: no DOM, so it is unit-tested with synthetic paths.
  */
@@ -42,9 +48,15 @@ export interface CameraOptions {
   /** A face jump bigger than this (fraction of the source width) between samples closer than `jumpWithin` is a cut the pixels missed. */
   jump?: number;
   jumpWithin?: number;
+  /** A move ends, and the camera holds, once it is this close to the subject (fraction of the frame size) and nearly stopped. */
+  rest?: number;
+  /** "Nearly stopped": frame widths per second. */
+  restSpeed?: number;
+  /** A jump away that comes back within this many seconds is the detector seeing someone else, not a cut. */
+  excursion?: number;
 }
 
-const DEFAULTS: Required<CameraOptions> = { deadZone: 0.07, settle: 1.2, maxSpeed: 0.8, fps: 12, jump: 0.15, jumpWithin: 0.6 };
+const DEFAULTS: Required<CameraOptions> = { deadZone: 0.16, settle: 1.2, maxSpeed: 0.8, fps: 12, jump: 0.15, jumpWithin: 0.6, rest: 0.03, restSpeed: 0.06, excursion: 2.5 };
 
 /**
  * Converts subject positions into pan keyframes (source time) that keep the
@@ -75,6 +87,37 @@ export function dropSpikes(samples: SubjectSample[], jump = DEFAULTS.jump): Subj
     if (!a || !b || s.cut || b.cut) return true;
     return !(far(s, a, jump) && far(s, b, jump) && !far(a, b, jump));
   });
+}
+
+/**
+ * Drops a short run of samples that jumps away from the track and then comes back to where it
+ * left. On a wide stage shot the detector now and then picks a head in the audience for a few
+ * samples; without this the path treats the jump out and the jump back as two cuts, and the
+ * picture snaps to the audience and back. A real cut to another angle does not return to the
+ * same spot within a second or so, and a cut seen in the pixels is never touched.
+ */
+export function dropExcursions(samples: SubjectSample[], jump = DEFAULTS.jump, within = DEFAULTS.excursion): SubjectSample[] {
+  const out: SubjectSample[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    const anchor = out[out.length - 1];
+    if (!anchor || s.cut || !far(s, anchor, jump)) {
+      out.push(s);
+      continue;
+    }
+    // s has jumped away from the track. Does the track come back near the anchor soon?
+    let back = -1;
+    for (let j = i + 1; j < samples.length && samples[j].t - anchor.t <= within; j++) {
+      if (samples[j].cut) break;
+      if (!far(samples[j], anchor, jump)) {
+        back = j;
+        break;
+      }
+    }
+    if (back < 0) out.push(s);
+    else i = back - 1; // skip the run; the sample that came back is handled next
+  }
+  return out;
 }
 
 /** One continuous shot: its samples and when it starts (the cut, or the first sample). */
@@ -138,8 +181,9 @@ function stepAxis(ax: Axis, ideal: number, dt: number, o: Required<CameraOptions
   const a = w * w * (ideal - ax.x) - 2 * w * ax.v;
   ax.v = clamp(ax.v + a * dt, -o.maxSpeed, o.maxSpeed);
   ax.x += ax.v * dt;
-  if (Math.abs(ideal - ax.x) < 0.002 && Math.abs(ax.v) < 0.01) {
-    ax.x = ideal;
+  if (Math.abs(ideal - ax.x) < o.rest && Math.abs(ax.v) < o.restSpeed) {
+    // Close enough and nearly stopped: come to rest here and hold until the subject leaves the comfort zone again.
+    if (o.rest <= 0.002) ax.x = ideal;
     ax.v = 0;
     ax.moving = false;
   }
@@ -177,7 +221,7 @@ function filmShot(shot: Shot, pans: Keyframe[], o: Required<CameraOptions>): Key
 export function cameraPath(samples: SubjectSample[], clip: Clip, frame: Frame, options: CameraOptions = {}): Keyframe[] {
   const o = { ...DEFAULTS, ...options };
   const out: Keyframe[] = [];
-  for (const shot of splitShots(dropSpikes(samples, o.jump), o)) {
+  for (const shot of splitShots(dropExcursions(dropSpikes(samples, o.jump), o.jump, o.excursion), o)) {
     const pans = subjectPathToPan(median3(shot.samples), clip, frame);
     const prev = out[out.length - 1];
     // Hold the previous shot's framing right up to the cut, then start the new shot framed.

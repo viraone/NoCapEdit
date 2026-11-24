@@ -47,15 +47,26 @@ const escapeRegExp = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/
  * Rewrites "/name..." to "name..." wherever a name the page created appears as an absolute path,
  * in plain arguments and inside filter graphs (e.g. "arnndn=m=/sh.rnnn"). ffmpeg runs inside the
  * work folder, so the relative form reaches the same file.
+ * Inputs (after "-i") and the output (the last argument) lose their leading "/" in every case.
  * @param {string[]} args
  * @param {Iterable<string>} names top-level names the page created in this session
  * @returns {string[]}
  */
 export function rewriteArgs(args, names) {
   const list = [...names].filter(Boolean).sort((a, b) => b.length - a.length).map(escapeRegExp);
-  if (!list.length) return [...args];
-  const re = new RegExp(`(^|[=:'",\\s])/+(${list.join("|")})(?=$|[/:'",\\s\\]])`, "g");
-  return args.map((a) => a.replace(re, "$1$2"));
+  const re = list.length ? new RegExp(`(^|[=:'",\\s])/+(${list.join("|")})(?=$|[/:'",\\s\\]])`, "g") : null;
+  const out = args.map((a) => (re ? a.replace(re, "$1$2") : a));
+  // An input or the output written as "/name" means "name in the page's own folder", whether or
+  // not the page made it first (an output never exists beforehand). Inside the work folder that
+  // is the relative name. Anything it could reach is still bounded by checkArgs and the sandbox.
+  const toRelative = (/** @type {number} */ i) => {
+    if (i >= 0 && i < out.length && /^\/+[^/]/.test(out[i])) out[i] = out[i].replace(/^\/+/, "");
+  };
+  out.forEach((a, i) => {
+    if (a === "-i") toRelative(i + 1);
+  });
+  toRelative(out.length - 1);
+  return out;
 }
 
 /**

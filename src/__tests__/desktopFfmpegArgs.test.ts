@@ -46,8 +46,24 @@ describe("rewriteArgs", () => {
     expect(rewriteArgs(["-af", "arnndn=m=/sh.rnnn:mix=0.90"], ["sh.rnnn"])).toEqual(["-af", "arnndn=m=sh.rnnn:mix=0.90"]);
   });
 
-  it("leaves names not in the list alone", () => {
-    expect(rewriteArgs(["-i", "/etc/passwd"], ["in_x"])).toEqual(["-i", "/etc/passwd"]);
+  it("leaves names not in the list alone outside input and output positions", () => {
+    expect(rewriteArgs(["-vf", "lut3d=file=/etc/x.cube", "-i", "a.mp4", "out.mp4"], ["in_x"])).toEqual(["-vf", "lut3d=file=/etc/x.cube", "-i", "a.mp4", "out.mp4"]);
+  });
+
+  it("makes an input or output written from the root relative, even when the page never created it", () => {
+    // Make reels writes its cut to "/reel_x.mp4": an output does not exist beforehand.
+    expect(rewriteArgs(["-i", "/in_x/a.mp4", "-c:v", "libx264", "/reel_1.mp4"], ["in_x"])).toEqual(["-i", "in_x/a.mp4", "-c:v", "libx264", "reel_1.mp4"]);
+    expect(rewriteArgs(["-i", "/etc/passwd", "//out.mp4"], [])).toEqual(["-i", "etc/passwd", "out.mp4"]);
+    expect(checkArgs(rewriteArgs(["-hide_banner", "-y", "-ss", "0.000", "-t", "30.430", "-i", "/in_x/reel_src.bin", "-map", "0:v:0", "-c:v", "libx264", "-movflags", "+faststart", "/reel_1.mp4"], ["in_x"]))).toBeNull();
+  });
+
+  it("still refuses a path that climbs out after being made relative", () => {
+    expect(typeof checkArgs(rewriteArgs(["-i", "/../secret.mp4", "/out.mp4"], []))).toBe("string");
+    expect(typeof checkArgs(rewriteArgs(["-i", "a.mp4", "/../out.mp4"], []))).toBe("string");
+  });
+
+  it("leaves the null output and option-like last arguments alone", () => {
+    expect(rewriteArgs(["-i", "a.mp4", "-f", "null", "-"], [])).toEqual(["-i", "a.mp4", "-f", "null", "-"]);
   });
 
   it("prefers the longer name over its prefix", () => {
@@ -55,7 +71,7 @@ describe("rewriteArgs", () => {
   });
 
   it("only matches a whole path segment", () => {
-    expect(rewriteArgs(["-i", "/in_xyz/a.mp4"], ["in_x"])).toEqual(["-i", "/in_xyz/a.mp4"]);
+    expect(rewriteArgs(["-af", "arnndn=m=/sh.rnnn2:mix=1", "-i", "a.mp4", "o.mp4"], ["sh.rnnn"])).toEqual(["-af", "arnndn=m=/sh.rnnn2:mix=1", "-i", "a.mp4", "o.mp4"]);
   });
 
   it("returns an equal copy for an empty names list", () => {
