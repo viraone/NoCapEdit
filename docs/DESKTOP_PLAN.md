@@ -372,6 +372,37 @@ Weak or missing checks:
 - Not run at all: voice-over, text and stickers, picture-in-picture, "Enhance picture", transparent
   video, the editor-timeline export, Make a reel, HDR footage, and anything multi-GB.
 
+#### Step 5, part 4 results: do the two engines give the same film? (2026-11-23)
+
+Compared the last export of the fuller test project from each engine (H.264, 10-second pieces,
+dissolve, colour look, burned-in captions, music, cleaned audio). The two files come from two
+separate runs of the same script, so captions were generated twice, not shared.
+
+Picture:
+
+- Same size (1080x1920), same frame rate, same number of frames (501).
+- Measured likeness across the whole film (SSIM, where 1.0 is identical): 0.996 on average, 0.989
+  on the worst frame, no frame below 0.95. The two encoders are different versions, so the files
+  are not expected to be identical bit for bit.
+- Looked at matching frames side by side at 2.0 s (caption over the first clip), 7.9 s (middle of
+  the dissolve) and 13.45 s (the least-alike stretch): captions, their highlighted word, the blend
+  and the framing are the same in each pair. Saved as `docs/desktop-engine-compare.png` (real
+  ffmpeg on the left of each pair).
+
+Sound:
+
+- Same format (AAC, 48 kHz, stereo), same loudness (-17.6 LUFS, mean -20.2 dB, peak -4.5 dB).
+- Subtracting one soundtrack from the other leaves a residue about 35 dB below the sound itself
+  for most of the film (median -53 dB). The largest difference is at 9.8 s, where two 10-second
+  pieces join: -36 dB, still about 16 dB below the sound at that moment. Which engine is nearer the
+  ideal there was not determined, and nobody listened to it.
+- The real ffmpeg's soundtrack is 16.70 s, the same as the picture. The built-in engine's is
+  0.085 s shorter.
+
+Not covered: the colour look was confirmed to be the same in both, not confirmed to be the look
+the .cube file describes. One project, one settings combination. Nobody watched or listened to the
+films from start to end.
+
 ### Step 6: Make it feel like a Mac app
 
 - native save and folder dialogs if Chrome's do not work in Electron (found in step 1)
