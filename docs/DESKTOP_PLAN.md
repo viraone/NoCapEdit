@@ -426,6 +426,35 @@ break export.
 - Run the YouTube helper inside the app instead of on Render.
 - Keep API keys in the macOS keychain instead of the browser's local storage.
 
+## Added outside the plan: Reels with the Mac Studio model (2026-11-24)
+
+In the app, the Reels tool's first screen now offers **Mac Studio** first: one button, nothing to
+install. It uses the model named in `~/.config/nocap-edit/studio.json` (a local file outside the
+project, because the project is public). The website does not show this choice.
+
+How it works: the page calls an address inside the app (`app://nocap/studio/v1/...`), and the shell
+forwards it to the Studio with the key added from the key file. The key never reaches the page.
+Only two calls are forwarded: list models, and chat.
+
+Checked in the app, run from source: the Studio answered through the shell as
+`Qwen3.8-Flash-Next-oQ4e-mtp` in about 0.4 s; other paths are refused (404); the card shows and
+its button saves the settings; and a real **Make reels** on a 60-second captioned clip finished
+with "1 reel ready".
+
+A problem found on the way: inside the app, looking up the Studio's `.local` name the normal way
+never answers (on macOS 26.6), although connecting by address works. The shell now resolves the
+name with the system's own lookup tool, which answers at once.
+
+Not checked, and rough edges:
+
+- Only one Make reels run, on one short clip. The reel it cut was not watched.
+- After choosing Mac Studio, the Model section shows it as "OpenAI-compatible API" with an
+  app-internal address and a placeholder key, and the note beneath talks about a provider's terms.
+  It works, but the wording does not say "Mac Studio".
+- If the Studio is off or on another network, Make reels fails with a "did not answer" message;
+  that path was not exercised.
+- The installed app does not have this until `scripts/build-app.sh` is run again.
+
 ## Who does what
 
 Following the worker rules in `CLAUDE.md`:

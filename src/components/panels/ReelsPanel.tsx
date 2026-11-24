@@ -20,6 +20,7 @@ import { useProject, useReelSlack } from "./shared";
 import { recaptionFromSource } from "@/lib/edit/reelStretch";
 import { DEFAULT_REEL_SETTINGS, isEmptyReel, listReels, loadReelSettings, makeReels, recutReel, saveReelSettings, type ReelProgress, type ReelSettings } from "@/lib/edit/reelMaker";
 import { activeModel, listOllamaModels, loadAiSettings, localAiEnabled, saveAiSettings, type AiSettings } from "@/lib/edit/aiHighlights";
+import { loadStudioModel, studioAiPatch, type StudioModel } from "@/lib/edit/studioModel";
 import { AiModelFields } from "./AiModelFields";
 import { getFormat } from "@/lib/models/formats";
 import { applyGeneratedCaptions, generateCaptions, hasSpeechTrack, type CaptionJobProgress } from "@/lib/speech/generateCaptions";
@@ -50,6 +51,7 @@ export function ReelsPanel() {
   const [models, setModels] = useState<string[] | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [modelsPending, setModelsPending] = useState(false);
+  const [studio, setStudio] = useState<StudioModel | null>(null);
   const isLocalPage = typeof location !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   /** On a public site Chrome gates requests to this computer behind a "local network" permission prompt. */
   const permissionHint = isLocalPage ? "" : " Chrome asks whether this site may reach Ollama on your computer: choose Allow in the prompt. If you dismissed it, click the icon left of the address bar, set Local network access to Allow, and reload.";
@@ -122,6 +124,15 @@ export function ReelsPanel() {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+  useEffect(() => {
+    let alive = true;
+    void loadStudioModel().then((s) => {
+      if (alive) setStudio(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // Keyed on the start time, not the whole job: every progress update makes a new job object, and
   // a timer rebuilt on each one never got to fire while updates came faster than once a second.
   const jobStarted = job?.started ?? null;
@@ -477,6 +488,16 @@ export function ReelsPanel() {
       if (provider) updateAi({ provider });
       setAiAvailable(true);
     };
+    const useStudio = () => {
+      if (!studio) return;
+      try {
+        localStorage.setItem("reelflow.localAi", "1");
+      } catch {
+        /* storage unavailable */
+      }
+      updateAi(studioAiPatch(studio, origin));
+      setAiAvailable(true);
+    };
     return (
       <>
         <PanelHeader
@@ -488,6 +509,20 @@ export function ReelsPanel() {
           }
         />
         <PanelSection>
+          {studio && (
+            <div className="space-y-2.5 rounded-xl border border-sys-gray4 bg-sys-gray5/40 p-3" data-reels-option="studio">
+              <p className="flex items-center justify-between gap-2 text-[13px] font-semibold text-white">
+                <span>{studio.name}</span>
+                <span className="shrink-0 rounded bg-sys-green/15 px-1.5 py-0.5 text-[11px] text-sys-green">Free · private</span>
+              </p>
+              <p className="rf-read-note">
+                The model <b className="[overflow-wrap:anywhere]">{studio.model}</b> on your {studio.name}. Only the <b>transcript</b> is sent, over your own network. Nothing to install.
+              </p>
+              <Button variant="primary" size="md" className="w-full" onClick={useStudio} data-use-studio>
+                <Clapperboard size={14} /> Use {studio.name}
+              </Button>
+            </div>
+          )}
           <div className="space-y-2.5 rounded-xl border border-sys-gray4 bg-sys-gray5/40 p-3" data-reels-option="ollama">
             <p className="flex items-center justify-between gap-2 text-[13px] font-semibold text-white">
               <span>Ollama on this computer</span>
@@ -517,7 +552,7 @@ export function ReelsPanel() {
             <Button variant="secondary" size="sm" className="w-full" onClick={() => navigator.clipboard?.writeText(command).then(() => setNote("Copied the command."))} title="Copy the command">
               <Copy size={13} /> Copy the command
             </Button>
-            <Button variant="primary" size="md" className="w-full" onClick={() => enable()} data-use-ollama>
+            <Button variant={studio ? "secondary" : "primary"} size="md" className="w-full" onClick={() => enable()} data-use-ollama>
               <Clapperboard size={14} /> Use Ollama
             </Button>
           </div>

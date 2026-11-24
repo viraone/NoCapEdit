@@ -24,7 +24,11 @@ export interface DesktopFfmpegBridge {
 
 declare global {
   interface Window {
-    nocapDesktop?: { isDesktop: boolean; ffmpeg?: DesktopFfmpegBridge };
+    nocapDesktop?: {
+      isDesktop: boolean;
+      ffmpeg?: DesktopFfmpegBridge;
+      studio?: { info(): Promise<{ available: boolean; model?: string; name?: string }> };
+    };
   }
 }
 

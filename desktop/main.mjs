@@ -10,6 +10,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { registerFfmpegHost } from "./ffmpegHost.mjs";
+import { handleStudioRequest, isStudioRequest, registerStudio } from "./studioProxy.mjs";
 import { APP_ORIGIN, APP_SCHEME, contentType, fileCandidates, isAppUrl, isExternalUrl, isolationHeaders } from "./lib/appUrl.mjs";
 
 const APP_NAME = "NoCap Edit";
@@ -27,6 +28,7 @@ protocol.registerSchemesAsPrivileged([
 
 /** @param {Request} request */
 async function serveSite(request) {
+  if (isAppUrl(request.url) && isStudioRequest(new URL(request.url).pathname)) return handleStudioRequest(request);
   for (const file of fileCandidates(SITE_ROOT, request.url)) {
     try {
       const info = await fsp.stat(file);
@@ -154,6 +156,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     protocol.handle(APP_SCHEME, serveSite);
     registerFfmpegHost();
+    registerStudio();
     buildMenu();
     createWindow();
     app.on("activate", () => {

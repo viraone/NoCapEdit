@@ -15,6 +15,8 @@ ipcRenderer.on("ffmpeg:log", (_event, id, line) => {
 
 contextBridge.exposeInMainWorld("nocapDesktop", {
   isDesktop: true,
+  // The Mac Studio model connection (desktop/studioProxy.mjs): only "is it set up, and which model".
+  studio: { info: () => ipcRenderer.invoke("studio:info") },
   ffmpeg: {
     info: () => ipcRenderer.invoke("ffmpeg:info"),
     open: () => ipcRenderer.invoke("ffmpeg:open"),
