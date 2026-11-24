@@ -2,7 +2,7 @@
 
 # Local workers (added 2026-11-03)
 
-Routine typing goes to the gateway worker, which is DeepSeek V4-Flash on the Mac Studio (the `qwen-gateway` MCP tools, a historical name; config in `.gateway.toml`, which is local-only and never committed) or to cloud DeepSeek (`/pass-to-deepseek`). Claude writes the spec and reviews the diff.
+Routine typing goes to the gateway worker, which is Qwen3.8-Flash-Next on the Mac Studio, on live trial since 2026-11-21, with DeepSeek V4-Flash kept there as the fallback (the one line to go back is in `.gateway.toml`; Claude does not switch models on its own) (the `qwen-gateway` MCP tools, a historical name; config in `.gateway.toml`, which is local-only and never committed) or to cloud DeepSeek (`/pass-to-deepseek`). Claude writes the spec and reviews the diff.
 The rules are the ones in `~/Developer/beezer/CLAUDE.md` ("Qwen Gateway — operating rules"); this is what differs here.
 
 ## Who gets what
