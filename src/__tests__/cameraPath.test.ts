@@ -3,6 +3,7 @@ import type { Clip } from "@/lib/models/project";
 import { positionAt } from "@/lib/models/project";
 import { cameraPath, dropExcursions, dropSpikes, splitShots, subjectPathToPan, type SubjectSample } from "@/lib/tracking/cameraPath";
 import wideShot from "./fixtures/standupWideShot.samples.json";
+import wideShot2 from "./fixtures/standupWideShot2.samples.json";
 
 // A 16:9 source filling a 9:16 frame: plenty of room to pan sideways, none up or down.
 const clip = { width: 1920, height: 1080, zoom: 1 } as Clip;
@@ -136,5 +137,59 @@ describe("cameraPath on a real wide stage shot (detections recorded from a stand
     samples.forEach((s, i) => {
       if (s.y < 0.5) expect(Math.abs(ideal[i].x - panAt(s.t))).toBeLessThan(0.25);
     });
+  });
+});
+
+describe("cameraPath when the detector stays on an audience head for seconds (second recorded stand-up clip)", () => {
+  // 33 s from the same show. From 8.0 to 10.75 s every detection is a head in the audience (lower left);
+  // the comedian is found again at 11.25 s about where he was.
+  const samples = wideShot2 as SubjectSample[];
+  const realClip = { width: 1920, height: 1080, zoom: 1 } as Clip;
+  const kf = cameraPath(samples, realClip, frame);
+  const panAt = (t: number) => positionAt(kf, t).x;
+
+  it("throws the audience run away", () => {
+    // The same order cameraPath uses: lone spikes first, then runs.
+    const kept = dropExcursions(dropSpikes(samples));
+    expect(kept.filter((s) => s.t >= 8 && s.t <= 10.75)).toEqual([]);
+    // Every audience detection (the lower half of the picture) is gone; most of the comedian's are kept.
+    expect(kept.every((s) => s.y < 0.5)).toBe(true);
+    expect(kept.length).toBeGreaterThan(samples.filter((s) => s.y < 0.5).length * 0.9);
+  });
+
+  it("never swings the picture across to the audience", () => {
+    for (let t = 0.1; t <= 32; t += 0.1) expect(Math.abs(panAt(t) - panAt(t - 0.1))).toBeLessThan(0.1);
+    // The camera never goes further across than the comedian himself ever is (the audience head would need a pan near 0.96).
+    const ideal = subjectPathToPan(samples, realClip, frame);
+    const furthest = Math.max(...samples.map((s, i) => (s.y < 0.5 ? ideal[i].x : -Infinity)));
+    for (const k of kf) expect(k.x).toBeLessThan(furthest + 0.05);
+  });
+
+  it("keeps the comedian inside the frame throughout", () => {
+    const ideal = subjectPathToPan(samples, realClip, frame);
+    // Half the frame width is the edge. The worst moment is at 20 s: the detector had not seen him for
+    // six seconds, the camera held, and he is a third of the frame off-centre when it finds him again.
+    samples.forEach((s, i) => {
+      if (s.y < 0.5) expect(Math.abs(ideal[i].x - panAt(s.t))).toBeLessThan(0.35);
+    });
+  });
+});
+
+describe("dropExcursions leaves real movement alone", () => {
+  it("keeps someone who walks across and back at walking pace", () => {
+    // 0.3 -> 0.7 over 4 s and back over 4 s: far from where he started, but never faster than a walk.
+    const walk = Array.from({ length: 33 }, (_, i) => at(i / 4, i <= 16 ? 0.3 + (i / 16) * 0.4 : 0.7 - ((i - 16) / 16) * 0.4));
+    expect(dropExcursions(walk)).toEqual(walk);
+  });
+
+  it("keeps a move seen after a gap in detections", () => {
+    // Lost for 3 s, found 0.3 away: possible at walking pace, so it is a move and not a leap.
+    const gap = [at(0, 0.3), at(0.25, 0.3), at(3.25, 0.6), at(3.5, 0.6), at(5, 0.32), at(5.25, 0.3)];
+    expect(dropExcursions(gap)).toEqual(gap);
+  });
+
+  it("keeps a leap that never comes back (a cut the pixels missed)", () => {
+    const cut = [at(0, 0.3), at(0.25, 0.3), at(0.5, 0.75), at(0.75, 0.75), at(3, 0.75), at(9, 0.75)];
+    expect(dropExcursions(cut)).toEqual(cut);
   });
 });

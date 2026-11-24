@@ -52,11 +52,11 @@ export interface CameraOptions {
   rest?: number;
   /** "Nearly stopped": frame widths per second. */
   restSpeed?: number;
-  /** A jump away that comes back within this many seconds is the detector seeing someone else, not a cut. */
+  /** A leap away that leaps back within this many seconds is the detector seeing someone else, not a cut. */
   excursion?: number;
 }
 
-const DEFAULTS: Required<CameraOptions> = { deadZone: 0.16, settle: 1.2, maxSpeed: 0.8, fps: 12, jump: 0.15, jumpWithin: 0.6, rest: 0.03, restSpeed: 0.06, excursion: 2.5 };
+const DEFAULTS: Required<CameraOptions> = { deadZone: 0.16, settle: 1.2, maxSpeed: 0.8, fps: 12, jump: 0.15, jumpWithin: 0.6, rest: 0.03, restSpeed: 0.06, excursion: 8 };
 
 /**
  * Converts subject positions into pan keyframes (source time) that keep the
@@ -89,27 +89,47 @@ export function dropSpikes(samples: SubjectSample[], jump = DEFAULTS.jump): Subj
   });
 }
 
+/** Faster than a person moves across the picture, and faster than a head moves up or down it: fractions of the source size per second. */
+const TOO_FAST_ACROSS = 0.3;
+const TOO_FAST_UP_DOWN = 0.15;
+/** How far someone may have wandered while the detector was looking at somebody else: per second, and at most. */
+const DRIFT_PER_SECOND = 0.05;
+const DRIFT_MAX = 0.2;
+
+/** `b` is somewhere `a` could not have got to in the time between them: a different person, or a cut. */
+function leapt(a: SubjectSample, b: SubjectSample, jump: number): boolean {
+  const dt = Math.max(0.05, b.t - a.t);
+  const dx = Math.abs(a.x - b.x);
+  const dy = Math.abs(a.y - b.y);
+  return (dx > jump && dx / dt > TOO_FAST_ACROSS) || (dy > jump && dy / dt > TOO_FAST_UP_DOWN);
+}
+
 /**
- * Drops a short run of samples that jumps away from the track and then comes back to where it
- * left. On a wide stage shot the detector now and then picks a head in the audience for a few
- * samples; without this the path treats the jump out and the jump back as two cuts, and the
- * picture snaps to the audience and back. A real cut to another angle does not return to the
- * same spot within a second or so, and a cut seen in the pixels is never touched.
+ * Drops a run of samples that leaps away from the track when the track is later found again
+ * about where it left. On a wide stage shot the detector sometimes picks a head in the audience, for a few
+ * samples or for several seconds; without this the path treats the leap out and the leap back as
+ * two cuts, and the picture snaps to the audience and back. While those samples are missing the
+ * camera simply holds.
+ *
+ * Kept as they are: a move at walking speed, a leap that never comes back (a real cut the pixels
+ * missed), and anything next to a cut that was seen in the pixels.
  */
 export function dropExcursions(samples: SubjectSample[], jump = DEFAULTS.jump, within = DEFAULTS.excursion): SubjectSample[] {
   const out: SubjectSample[] = [];
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i];
     const anchor = out[out.length - 1];
-    if (!anchor || s.cut || !far(s, anchor, jump)) {
+    if (!anchor || s.cut || !leapt(anchor, s, jump)) {
       out.push(s);
       continue;
     }
-    // s has jumped away from the track. Does the track come back near the anchor soon?
+    // s has leapt away from the track. Does the track leap back to near the anchor before long?
     let back = -1;
     for (let j = i + 1; j < samples.length && samples[j].t - anchor.t <= within; j++) {
-      if (samples[j].cut) break;
-      if (!far(samples[j], anchor, jump)) {
+      const r = samples[j];
+      if (r.cut) break;
+      const drift = jump + Math.min(DRIFT_MAX, DRIFT_PER_SECOND * (r.t - anchor.t));
+      if (Math.abs(r.x - anchor.x) <= drift && Math.abs(r.y - anchor.y) <= jump) {
         back = j;
         break;
       }
