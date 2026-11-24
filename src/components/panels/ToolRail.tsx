@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, TextSelect } from "lucide-react";
+import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, TextSelect, Sparkles } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
 import { cx } from "@/lib/utils/cx";
 
@@ -15,6 +15,8 @@ const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentTyp
   { id: "picture", label: "Picture", hint: "Stickers, logos and images", icon: ImageIcon, color: "#ff375f" },
   { id: "music", label: "Music", hint: "Music, sound effects and voice-over", icon: Music, color: "#64d2ff" },
   { id: "reels", label: "Reels", hint: "Cut the best moments into short reels", icon: Clapperboard, color: "#ff375f" },
+  // Only the button so far: its panel is a placeholder until what it does is decided.
+  { id: "recap", label: "Recap Highlight Reel", hint: "Nothing here yet", icon: Sparkles, color: "#5e5ce6" },
   { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
   // Reframe and Post are not on the rail: cutting a reel follows the face by itself, and Post was taken off the rail.
   // Their panels still open from ?tool=reframe and ?tool=post.

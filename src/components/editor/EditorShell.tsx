@@ -23,6 +23,7 @@ import { PicturePanel } from "@/components/panels/PicturePanel";
 import { MusicPanel } from "@/components/panels/MusicPanel";
 import { ExportPanel } from "@/components/panels/ExportPanel";
 import { ReelsPanel } from "@/components/panels/ReelsPanel";
+import { PanelHeader } from "@/components/ui/Panel";
 import { PostPanel } from "@/components/panels/PostPanel";
 import { ReframePanel } from "@/components/panels/ReframePanel";
 import { CanvasBar } from "@/components/canvas/CanvasBar";
@@ -232,6 +233,7 @@ export function EditorShell() {
               {tool === "picture" && <PicturePanel />}
               {tool === "music" && <MusicPanel />}
               {tool === "reels" && <ReelsPanel />}
+              {tool === "recap" && <PanelHeader title="Recap Highlight Reel" body={<p className="rf-read" data-recap-placeholder>Nothing here yet.</p>} />}
               {tool === "post" && <PostPanel />}
               {tool === "reframe" && <ReframePanel />}
               {tool === "export" && <ExportPanel />}

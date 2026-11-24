@@ -9,7 +9,7 @@ import { sameProject } from "@/lib/utils/same";
 import { nextRetryDelay } from "@/lib/saveRetry";
 import { clampDockHeight, readStoredDockHeight, storeDockHeight } from "@/components/timeline/dockLayout";
 
-export type ToolId = "clips" | "trim" | "subtitles" | "transcript" | "style" | "text" | "picture" | "music" | "reels" | "post" | "reframe" | "export";
+export type ToolId = "clips" | "trim" | "subtitles" | "transcript" | "style" | "text" | "picture" | "music" | "reels" | "recap" | "post" | "reframe" | "export";
 
 export interface Selection {
   kind: "clip" | "cue" | "overlay" | "voiceover" | "music";
