@@ -328,6 +328,50 @@ Not checked, and known limits:
   run again.
 - Still 20-second pieces. Exporting in one go (item 5) may be faster again; not tried.
 
+#### Step 5, part 3 results: a fuller project (2026-11-23)
+
+Test project: two clips (8 s speech, 9 s 1080p) with a dissolve, a .cube colour look, captions
+(12, burned in), and music. Run from source in the app, once with the real ffmpeg and once with it
+switched off (`NOCAP_FFMPEG=off`).
+
+| Check | Real ffmpeg | Built-in engine |
+| --- | --- | --- |
+| H.264, 10-second pieces | 2.0 s | 9.1 s |
+| H.264, single pass | 2.8 s | 11.6 s |
+| H.265 | 4.3 s | did not finish in 4 minutes |
+| GIF | 7.4 s | 12.4 s |
+| H.264 again, later in the session | 2.0 s | 31 s (single-threaded by then) |
+
+Every file that was produced has the right codec, a 16.7-second length and decodes with no errors.
+
+**A bug found and fixed.** The first run showed every captioned export quietly falling back to the
+built-in engine: the guard refused ffmpeg's `-safe` option, which the export uses to feed in the
+caption overlay. The fallback did its job (the export still finished, at the old speed), but the
+real ffmpeg was never used for captions. `-safe 0` is now allowed (the list it reads names only
+files beside it, and the sandbox bounds it anyway), with two new tests.
+
+**Cancelling works** (tested separately, 60-second clip at 4K "Best quality"): while encoding there
+was one ffmpeg process and one work folder; after Cancel the panel said "Export cancelled.", the
+process and folder were gone, no file was saved, and the next export ran in the real ffmpeg in 3.7 s.
+
+Things this run showed about the built-in engine (the website's), not caused by this work:
+
+- **H.265 did not finish** in 4 minutes on the built-in engine for a 17-second project, and after
+  that the session dropped to the single-threaded engine (the 31-second rows). Not investigated.
+- The test harness (Playwright driving Electron) sometimes hangs while launching the app. Two runs
+  were lost to that and repeated. It is the harness, not something a person opening the app sees,
+  as far as these runs show.
+
+Weak or missing checks:
+
+- **Audio clean-up** reported "Using cleaned audio" after 0.2 s on both engines, and the export
+  after it was valid, but nothing checked that the sound actually changed.
+- **The picture was not compared.** Nobody looked at the files to confirm the dissolve, colour look
+  and captions look the same from both engines; only codec, length and clean decoding were checked.
+- The brightness slider was moved by keyboard but its value was not read back.
+- Not run at all: voice-over, text and stickers, picture-in-picture, "Enhance picture", transparent
+  video, the editor-timeline export, Make a reel, HDR footage, and anything multi-GB.
+
 ### Step 6: Make it feel like a Mac app
 
 - native save and folder dialogs if Chrome's do not work in Electron (found in step 1)

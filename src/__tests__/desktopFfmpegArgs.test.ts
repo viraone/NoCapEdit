@@ -89,6 +89,16 @@ describe("checkArgs", () => {
     ).toBeNull();
   });
 
+  it("allows the caption overlay's concat list (-safe 0) inside the work folder", () => {
+    expect(
+      checkArgs(["-hide_banner", "-y", "-i", "in_x/a.mp4", "-f", "concat", "-safe", "0", "-i", "ov0/list.txt", "-filter_complex", "[0:v][1:v]overlay[vout]", "-map", "[vout]", "seg_0.mp4"]),
+    ).toBeNull();
+  });
+
+  it("refuses a concat list outside the work folder", () => {
+    expect(typeof checkArgs(["-f", "concat", "-safe", "0", "-i", "/etc/list.txt", "out.mp4"])).toBe("string");
+  });
+
   it("refuses an empty command", () => {
     expect(typeof checkArgs([])).toBe("string");
   });

@@ -11,7 +11,7 @@ import path from "node:path";
 const BLOCKED_OPTIONS = new Set([
   "-attach", "-dump_attachment", "-passlogfile", "-progress", "-report", "-vstats_file", "-sdp_file",
   "-init_hw_device", "-filter_script", "-filter_complex_script", "-/filter_complex", "-/vf", "-/af", "-/filter",
-  "-protocol_whitelist", "-safe", "-stdin",
+  "-protocol_whitelist", "-stdin",
 ]);
 
 /** Options whose value is a filter graph (file names inside it are relative to the work folder). */
@@ -75,7 +75,8 @@ function badFileArg(value) {
 /**
  * Checks a command after rewriteArgs. Returns null when it may run, or the reason it may not.
  * Inputs and the output must be plain relative names inside the work folder; a few options that
- * reach other files are refused. This is a guard against mistakes and a second line of defence,
+ * reach other files are refused. ("-safe 0" is allowed: the caption overlay is fed in as a concat list
+ * whose entries are plain names beside the list file, and the sandbox bounds what any list can reach.) This is a guard against mistakes and a second line of defence,
  * together with the sandbox the command runs in. It is not a complete parser of ffmpeg's options.
  * @param {string[]} args
  * @returns {string | null}
