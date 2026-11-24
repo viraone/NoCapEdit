@@ -8,10 +8,28 @@ export interface Placement {
   dy: number;
 }
 
+/** How far the picture may be panned each way, as a fraction of the frame, before one of its edges crosses the frame's edge. When the picture is larger than the frame this keeps the frame covered; when it is smaller (zoomed out) it keeps the picture inside the frame. */
+export function panLimit(source: { width: number; height: number }, zoom: number, frame: Frame): { x: number; y: number } {
+  const sw = Math.max(1, source.width);
+  const sh = Math.max(1, source.height);
+  const scale = Math.max(frame.width / sw, frame.height / sh) * zoom;
+  return {
+    x: Math.abs(sw * scale - frame.width) / 2 / frame.width,
+    y: Math.abs(sh * scale - frame.height) / 2 / frame.height,
+  };
+}
+
+/** `pan` held inside panLimit. */
+export function clampPan(pan: { x: number; y: number }, source: { width: number; height: number }, zoom: number, frame: Frame): { x: number; y: number } {
+  const lim = panLimit(source, zoom, frame);
+  return { x: Math.min(lim.x, Math.max(-lim.x, pan.x)), y: Math.min(lim.y, Math.max(-lim.y, pan.y)) };
+}
+
 /**
  * Where a clip's source image lands inside the frame. The source is "cover"
  * fitted, then zoomed around the centre and panned by a fraction of the frame.
  * Shared by the preview canvas and the ffmpeg export so both match exactly.
+ * The pan is held inside panLimit, so no empty space shows that the zoom does not force.
  */
 export function computePlacement(
   source: { width: number; height: number },
@@ -24,7 +42,8 @@ export function computePlacement(
   const scale = base * clip.zoom;
   const dw = sw * scale;
   const dh = sh * scale;
-  const dx = (frame.width - dw) / 2 + clip.pan.x * frame.width;
-  const dy = (frame.height - dh) / 2 + clip.pan.y * frame.height;
+  const pan = clampPan(clip.pan, source, clip.zoom, frame);
+  const dx = (frame.width - dw) / 2 + pan.x * frame.width;
+  const dy = (frame.height - dh) / 2 + pan.y * frame.height;
   return { scale, dw, dh, dx, dy };
 }

@@ -9,6 +9,7 @@ import { CanvasRenderer } from "@/components/CanvasRenderer";
 import { getFormat, SAFE_ZONES } from "@/lib/models/formats";
 import { layoutClips, locateFrame } from "@/lib/models/timeline";
 import { clamp } from "@/lib/utils/math";
+import { panLimit } from "@/lib/models/placement";
 import { manualPan, setManualPan, ZOOM_MAX, ZOOM_MIN } from "@/lib/models/project";
 import { Button } from "@/components/ui/Button";
 import { SafeZoneGuide } from "./SafeZoneGuide";
@@ -200,7 +201,12 @@ export function VideoCanvas() {
       update(
         (p) => {
           const c = p.clips.find((c) => c.id === d.id);
-          if (c) setManualPan(c, { x: clamp(d.origin.x + dx / fw, -1, 1), y: clamp(d.origin.y + dy / fh, -1, 1) });
+          if (c) {
+            // A followed clip's hand offset is added to a path that itself moves within the limit, so it may need up to twice the limit.
+            const k = c.reframe && c.reframe.keyframes.length ? 2 : 1;
+            const lim = panLimit({ width: c.width, height: c.height }, c.zoom, { width: fw, height: fh });
+            setManualPan(c, { x: clamp(d.origin.x + dx / fw, -lim.x * k, lim.x * k), y: clamp(d.origin.y + dy / fh, -lim.y * k, lim.y * k) });
+          }
         },
         { history: false },
       );
