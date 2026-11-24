@@ -12,6 +12,7 @@ import { useYouTubeImports, youtubeStageText } from "@/components/start/useYouTu
 import { useSaveFolder } from "@/components/start/useSaveFolder";
 import { SITE_NAME } from "@/lib/youtube/url";
 import { exportBackup, importBackup } from "@/lib/storage/backup";
+import { backupAllProjects, pickBackupFolder, supportsBackupFolder } from "@/lib/storage/backupAll";
 import { requestDiskSink, createBlobSink } from "@/lib/ffmpeg/sinks";
 import { downloadBlob, safeFilename } from "@/lib/utils/download";
 import { createProject, type VideoProject } from "@/lib/models/project";
@@ -67,6 +68,7 @@ export function StartScreen() {
   const [formatId, setFormatId] = useState(FRAME_FORMATS[0].id);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<VideoProject | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
@@ -101,6 +103,45 @@ export function StartScreen() {
       setBusy(null);
       setError(e instanceof Error ? e.message : String(e));
     }
+  };
+
+  const backupAll = async () => {
+    setError(null);
+    if (!supportsBackupFolder()) {
+      setError("Back up all needs Chrome or Edge on a computer. In this browser, back up each project with its own Backup button.");
+      return;
+    }
+    try {
+      const folder = await pickBackupFolder();
+      if (!folder) return;
+      const count = await backupAllProjects(projects, folder, setBusy);
+      setNotice(`Backed up ${count} project${count === 1 ? "" : "s"} to the folder "${folder.name}".`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const restoreMany = async (files: File[]) => {
+    setError(null);
+    setNotice(null);
+    const failed: string[] = [];
+    let ok = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setBusy(`Restoring ${i + 1} of ${files.length} · ${file.name}`);
+      try {
+        await importBackup(file);
+        ok++;
+      } catch (e) {
+        failed.push(`${file.name} (${e instanceof Error ? e.message : String(e)})`);
+      }
+    }
+    setBusy(null);
+    refresh();
+    if (ok) setNotice(`Restored ${ok} project${ok === 1 ? "" : "s"}.`);
+    if (failed.length) setError(`Could not restore: ${failed.join("; ")}`);
   };
 
   const refresh = useCallback(async () => {
@@ -239,12 +280,18 @@ export function StartScreen() {
           <Link href="/docs/" className="inline-flex h-12 items-center gap-2 rounded-xl px-4 text-[15px] text-label-2 hover:bg-sys-gray4 hover:text-white" title="Step-by-step guide: links, reels, the free Google key">
             <BookOpen size={18} /> How to
           </Link>
-          <input ref={backupInputRef} type="file" accept=".nocap,.zip,application/zip" className="hidden" onChange={(e) => {
-            const f = e.target.files?.[0];
+          <input ref={backupInputRef} type="file" accept=".nocap,.zip,application/zip" className="hidden" multiple onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
             e.target.value = "";
-            if (f) restore(f);
+            if (files.length === 1) restore(files[0]);
+            else if (files.length > 1) restoreMany(files);
           }} />
-          <Button variant="secondary" size="lg" onClick={() => backupInputRef.current?.click()} disabled={!!busy} title="Restore a .nocap backup">
+          {projects.length > 0 && (
+            <Button variant="secondary" size="lg" onClick={backupAll} disabled={!!busy} title="Save every project, with its media, as .nocap files in a folder you pick">
+              <Archive size={18} /> Back up all
+            </Button>
+          )}
+          <Button variant="secondary" size="lg" onClick={() => backupInputRef.current?.click()} disabled={!!busy} title="Restore one or more .nocap backups">
             <PackageOpen size={18} /> Import backup
           </Button>
           {canRecord && (
@@ -390,6 +437,7 @@ export function StartScreen() {
               </div>
             )}
             {error && <p className="mt-1 text-[13px] text-sys-red">{error}</p>}
+            {notice && <p className="mt-1 text-[13px] text-label-2" role="status">{notice}</p>}
           </div>
         </FileDrop>
         <p className="flex flex-wrap items-center gap-x-5 gap-y-1 px-1 text-[13px] text-label-3">

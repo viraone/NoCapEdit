@@ -159,6 +159,30 @@ The website copies stay where they are; nothing is deleted from Chrome.
 **Done when:** every project on nocapedit.com opens in the app with its media and its saved
 versions, checked project by project against the list in Chrome.
 
+#### Step 3 results (2026-11-23)
+
+Built: a **Back up all** button on the start screen (shown when there is at least one project)
+writes one `.nocap` file per project into a folder you pick, and **Import backup** now accepts
+several files at once. Code in `src/lib/storage/backupAll.ts` and
+`src/components/start/StartScreen.tsx`, with 5 new tests. The gate passes.
+
+Checked by script: two projects made in Chrome on the web build were backed up with Back up all,
+both files were restored in the desktop app with one Import backup, and the project names and
+media sizes matched. A restored project opened in the editor with its clip.
+
+Not checked, and not done:
+
+- **The folder dialog itself.** A script cannot click it, so the test stood in the browser's
+  private folder for the one you would pick. Everything after the dialog was the real code.
+- **Your real projects.** The test used two small test projects with no saved versions. The real
+  move happens when you press the buttons: the website needs this change deployed first.
+- **Restoring twice makes duplicates.** Each restore creates new projects; it does not notice a
+  project is already there.
+- **Card pictures.** Right after a restore the project cards show a placeholder picture, not a
+  frame of the video. Whether they fill in after opening the project was not checked.
+- Back up all needs Chrome or Edge on a computer; other browsers get a message pointing at the
+  per-project Backup button.
+
 ### Step 4: Build and install
 
 `scripts/build-app.sh`, modelled on YouTube Desktop's: build the site, package it with Electron as
