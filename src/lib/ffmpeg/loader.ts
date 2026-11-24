@@ -7,12 +7,15 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { BASE_PATH } from "@/lib/basePath";
 import { withDeadline } from "./deadline";
+import { openNativeFfmpeg } from "./nativeFfmpeg";
 
 const CORE_VERSION = "0.12.10";
 
 export interface FFmpegInfo {
   multithreaded: boolean;
   source: "local" | "cdn";
+  /** The real ffmpeg program, run by the desktop app (see nativeFfmpeg.ts). Never set on the website. */
+  native?: boolean;
 }
 
 let instance: FFmpeg | null = null;
@@ -103,6 +106,19 @@ export async function loadFFmpeg(opts: LoadOptions = {}): Promise<{ ffmpeg: FFmp
   if (instance?.loaded && info) return { ffmpeg: instance, info };
   if (loading) return loading;
   loading = (async () => {
+    // In the desktop app the real ffmpeg program stands in for ffmpeg.wasm. It has the same methods,
+    // so everything that receives it carries on unchanged. Not "multithreaded": that flag means the
+    // threaded wasm core, with its thread caps and short stall timer, neither of which applies.
+    const native = await openNativeFfmpeg();
+    if (native) {
+      if (debugFlag("debug")) {
+        native.on("log", ({ message }) => console.debug("[ffmpeg]", message));
+        console.debug("[ffmpeg] loaded", { native: true, version: native.version });
+      }
+      instance = native as unknown as FFmpeg;
+      info = { multithreaded: false, source: "local", native: true };
+      return { ffmpeg: instance, info };
+    }
     const base = `${location.origin}${BASE_PATH}/ffmpeg`;
     const mt = supportsMultithread() && !opts.forceSingleThread && !debugFlag("singleThread");
     const coreName = mt ? "core-mt" : "core";

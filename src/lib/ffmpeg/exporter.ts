@@ -41,6 +41,7 @@ import {
   type X264Preset,
 } from "@/lib/ffmpegEngine";
 import type { FFmpegInfo } from "./loader";
+import { NATIVE_GAVE_UP } from "./nativeFfmpeg";
 import { AAC_PRIMING_SECONDS, buildFilterGraph, buildInputArgs, splitMusicSeek, type ClipInputPlan, type ExportFiles, type ExportPlan, type MusicPlan, type VoiceoverPlan } from "./filters";
 import { planSegments, segmentGrid } from "./segments";
 import { createBlobSink, type OutputSink } from "./sinks";
@@ -218,7 +219,7 @@ export async function exportProject(
     ffmpegEngine.preferSingleThread = true;
     ffmpegEngine.cancel();
     await sink?.reset();
-    const notice = "Multi-threaded engine stalled; restarting single-threaded";
+    const notice = e.why === NATIVE_GAVE_UP ? "The Mac's ffmpeg could not run this export; using the built-in engine" : "Multi-threaded engine stalled; restarting single-threaded";
     onProgress({ stage: "loading", progress: 0, message: notice, notice });
     await yieldToUI();
     return runExport(project, assets, options, (p) => onProgress({ ...p, notice }), signal, sink);

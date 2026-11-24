@@ -39,6 +39,8 @@
   "exclude": [
     "node_modules",
     "public",
-    "out"
+    "out",
+    ".next/**/* 2.ts",
+    ".next/**/* 3.ts"
   ]
 }

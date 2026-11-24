@@ -9,6 +9,7 @@ import { app, BrowserWindow, Menu, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { registerFfmpegHost } from "./ffmpegHost.mjs";
 import { APP_ORIGIN, APP_SCHEME, contentType, fileCandidates, isAppUrl, isExternalUrl, isolationHeaders } from "./lib/appUrl.mjs";
 
 const APP_NAME = "NoCap Edit";
@@ -152,6 +153,7 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
     protocol.handle(APP_SCHEME, serveSite);
+    registerFfmpegHost();
     buildMenu();
     createWindow();
     app.on("activate", () => {

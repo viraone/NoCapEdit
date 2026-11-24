@@ -291,7 +291,7 @@ export function ExportPanel() {
           <p className="flex items-center gap-1.5">
             <Cpu size={12} />
             {engine
-              ? `${running ? "Encoding with" : "Last export used"} the ${engine.multithreaded ? "multi-threaded" : "single-threaded"} engine`
+              ? `${running ? "Encoding with" : "Last export used"} ${engine.native ? "the Mac's ffmpeg" : `the ${engine.multithreaded ? "multi-threaded" : "single-threaded"} engine`}`
               : singleThreadForced
                 ? "Single-threaded engine (the multi-threaded engine stalled on this device before)"
                 : multithread

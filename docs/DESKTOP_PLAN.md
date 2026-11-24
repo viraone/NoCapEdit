@@ -241,6 +241,93 @@ storing media as real files is a possible later change, not part of this plan.
 **Done when:** the same project exports to a valid MP4 that passes the existing validators, the
 time is written next to the first measurement, and the website export still works unchanged.
 
+#### Step 5, part 1 results: the measurement (2026-11-23)
+
+Test: a 60-second 1080p clip cut from a downloaded stand-up video, one clip on the timeline, the
+export panel's default settings (1080x1920, 30 fps, H.264, "Fast", constant quality, 20-second
+segments). M5 Max, 18 cores. Each timing run twice.
+
+| Where | Time for the 60-second film |
+| --- | --- |
+| Website in Chrome 158 (browser ffmpeg) | 18 s and 19 s |
+| Installed app (browser ffmpeg) | 18 s and 18 s |
+| Real ffmpeg, same x264 settings as the app logs | 2.1 s and 2.2 s |
+| Real ffmpeg, x264 "fast" preset | 5.0 s |
+| Real ffmpeg, the Mac's video chip (VideoToolbox) | 3.6 s and 3.6 s |
+
+What this says:
+
+- The app today is no faster than the website: same engine, same 18 seconds.
+- The real ffmpeg with the same encoder settings was about 8 times faster and produced a file of
+  the same size (18.6 MB both), so it is doing comparable work. The browser ffmpeg reports "cpu
+  capabilities: none" for x264, meaning it runs without the processor's fast instructions.
+- The video chip was slower than x264 on this test, not faster. At these settings the encoder is
+  not the slow part. So item 4 below (the "Fast" choice) drops to "only if a later test shows a
+  gain", and the plan's main bet is item 2: the same x264, run by the real program.
+
+Limits of this measurement:
+
+- The real-ffmpeg runs used a hand-written command (scale, crop to vertical, 30 fps) that
+  approximates what the app does; the app's exact filter chain was not copied. Treat "8 times" as
+  a rough size of the gain, not a promise.
+- One clip, no captions, no overlays, no colour work, no transitions, SDR footage. Films with
+  those will have different numbers in both engines.
+- The Homebrew ffmpeg on this Mac has x264, x265 and `loudnorm` but not `zscale`, which the export
+  uses for HDR footage. The app will need its own ffmpeg build that includes it (item 3).
+
+#### Step 5, part 2 results: the real ffmpeg runs exports in the app (2026-11-23)
+
+How it works: in the desktop app the export code is handed a stand-in for the browser ffmpeg that
+has the same methods (`src/lib/ffmpeg/nativeFfmpeg.ts`). Files it "writes" go to a private
+temporary work folder kept by the shell, and commands run there in the real ffmpeg
+(`desktop/ffmpegHost.mjs`). The export code itself (commands, 20-second pieces, joining them) is
+unchanged. On the website the stand-in is never created.
+
+Measured, same 60-second test as part 1, run from source (`npm run desktop:open`):
+
+| Where | Time |
+| --- | --- |
+| App, real ffmpeg | 3.8 s and 3.8 s |
+| App, real ffmpeg made to fail on purpose (falls back) | 18.9 s and 18.1 s |
+| Website in Chrome, new build | 18.9 s and 18.9 s |
+
+- **About 5 times faster** than before (18 s to 3.8 s), with the same file size and a file that
+  decodes with no errors (1803 video frames, 60.0 s of audio).
+- **Fallback works.** With an ffmpeg that fails every command, the export finished on the built-in
+  multi-threaded engine and the file was valid. Any failed command, a refused command, or a missing
+  piece (such as `zscale`) hands the job to the built-in engine. After that the app stays on the
+  built-in engine until it is reopened.
+- **The website is unchanged**: same engine, same time.
+- The gate passes: 684 tests passed, 1 skipped, 46 of them new.
+
+Safety limits on the real ffmpeg:
+
+- It runs in a macOS sandbox: no network, no writing outside its work folder, no reading of the
+  home folder or other disks. Checked by hand before building: an encode inside the folder worked,
+  and reading a home-folder video, writing outside the folder and fetching a web address all failed.
+- The shell refuses commands whose input or output is not a plain name inside the work folder, and
+  a short list of options that reach other files. The checks are a second guard, not a full parser
+  of ffmpeg's options; the sandbox is the main one.
+- Media reaches the work folder only as bytes sent by the page. The folder is deleted when the
+  export engine is closed, when the app starts and when it quits.
+- `localStorage reelflow.nativeFfmpeg = "0"` (in the app's DevTools) keeps the app on the built-in
+  engine. `NOCAP_FFMPEG=off` does the same from the command line.
+
+Not checked, and known limits:
+
+- **Which ffmpeg.** The app uses the Homebrew ffmpeg at `/opt/homebrew/bin/ffmpeg`. Item 3 (the
+  app's own copy) is not done, so the app is only fast on a Mac that has that ffmpeg. This one lacks
+  `zscale`, so HDR footage will fall back to the built-in engine.
+- **Only one kind of export was run**: one clip, default settings. Captions, overlays, colour looks,
+  transitions, music, voice-over, H.265, the other export formats, audio clean-up and Make a reel
+  all go through the same stand-in but none was exercised with the real ffmpeg.
+- **Cancelling an export** part-way was not tried.
+- **Big media.** Each export first copies the source media into the work folder. With a multi-GB
+  project that takes time and disk space; not measured.
+- **The installed app** in /Applications still has the old build until `scripts/build-app.sh` is
+  run again.
+- Still 20-second pieces. Exporting in one go (item 5) may be faster again; not tried.
+
 ### Step 6: Make it feel like a Mac app
 
 - native save and folder dialogs if Chrome's do not work in Electron (found in step 1)

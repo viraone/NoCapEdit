@@ -17,6 +17,7 @@
  */
 import type { FFFSType, FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
+import { disableNativeFfmpeg, NativeFfmpegError, NATIVE_GAVE_UP } from "./ffmpeg/nativeFfmpeg";
 import { FFmpegLoadStalled, loadFFmpeg, resetFFmpeg, setSingleThreadPreference, singleThreadPreferred, supportsMultithread, debugFlag, type FFmpegInfo } from "./ffmpeg/loader";
 import { parseTrackTiming, renumberFragments, shiftFragments, stripInitSegment, stripTrailingIndex, type TrackTiming } from "./ffmpeg/mp4";
 import type { OutputSink } from "./ffmpeg/sinks";
@@ -411,6 +412,8 @@ export class FFmpegEngine {
   private threadedProven = false;
   /** Set after a hang (remembered in localStorage unless threadedProven): every later load uses the single-threaded core. */
   preferSingleThread = singleThreadPreferred();
+  /** The desktop app's real ffmpeg just handed a step back to the built-in engine (see load()). */
+  private nativeGaveUp = false;
   private logHandler = ({ message }: { message: string }) => {
     this.logs.push(message);
     if (this.logs.length > 500) this.logs.shift();
@@ -423,6 +426,13 @@ export class FFmpegEngine {
   }
 
   async load(onStatus?: (message: string) => void): Promise<FFmpegInfo> {
+    // Callers answer a retryable failure by forcing the single-threaded core. When the failure was
+    // the desktop app's real ffmpeg giving up, the built-in engine has not failed at all: start it
+    // the way this device normally would.
+    if (this.nativeGaveUp) {
+      this.nativeGaveUp = false;
+      this.preferSingleThread = singleThreadPreferred();
+    }
     let loaded: Awaited<ReturnType<typeof loadFFmpeg>>;
     try {
       loaded = await loadFFmpeg({ onStatus, forceSingleThread: this.preferSingleThread });
@@ -509,6 +519,7 @@ export class FFmpegEngine {
     let code = -1;
     let hung = false;
     const multithreaded = !!this.info?.multithreaded;
+    const native = !!this.info?.native;
     // The threaded core needs explicit thread caps (see threadPlan); the
     // single-threaded core ignores them, so it gets the command untouched.
     const finalArgs = multithreaded ? withThreadCaps(args, threadPlan(countInputs(args), hardwareThreads())) : args;
@@ -545,12 +556,24 @@ export class FFmpegEngine {
       // The threaded core's heap is a fixed block (see scripts/copy-ffmpeg.mjs); a frame size it cannot hold ends
       // the command with -1 and an "Aborted(OOM)" line. The standard core's heap grows, so the job carries on there
       // for the rest of this session. Nothing is remembered: the next page load tries the fast engine again.
+      // The real ffmpeg (desktop app) failed a command. The built-in engine is what the website
+      // uses and is known to handle everything the export builds, so it takes over from here.
+      if (code !== 0 && native) throw new NativeFfmpegError(`ffmpeg exited with code ${code}.`);
       if (code !== 0 && multithreaded && /Aborted\(OOM\)|out of memory/i.test(this.recentLogs(30))) {
         this.preferSingleThread = true;
         throw new FFmpegHungError(true, "The multi-threaded video engine ran out of memory; retrying single-threaded.", "ran out of memory");
       }
       return code;
     } catch (e) {
+      if (e instanceof NativeFfmpegError && !hung) {
+        const detail = `${e.message}\n${this.recentLogs()}`;
+        if (debugFlag("debug")) console.debug("[ffmpeg] native gave up", detail);
+        disableNativeFfmpeg(detail);
+        this.cancel();
+        this.nativeGaveUp = true;
+        // "multithreaded: true" is what makes every caller retry on a fresh engine.
+        throw new FFmpegHungError(true, "The Mac's ffmpeg could not run this step; carrying on with the built-in engine.", NATIVE_GAVE_UP);
+      }
       if (hung) {
         this.recordStall(multithreaded, finalArgs, longestCheckGap);
         if (multithreaded) {
