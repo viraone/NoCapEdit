@@ -33,6 +33,7 @@ The rules are the ones in `~/Developer/beezer/CLAUDE.md` ("Qwen Gateway — oper
 
 `desktop/` is an Electron shell that shows the built site (`out/`) in a window; the plan and what has been checked are in `docs/DESKTOP_PLAN.md`. `npm run desktop` builds and opens it, `npm run desktop:open` opens it without rebuilding.
 - **Never change** the address `app://nocap` (`desktop/lib/appUrl.mjs`) or the app name "NoCap Edit" (`desktop/main.mjs`). Projects live in IndexedDB under that address, inside `~/Library/Application Support/NoCap Edit`; changing either makes every saved project disappear.
+- `scripts/build-app.sh` runs the gate, builds, and installs "NoCap Edit.app" in /Applications (`--no-open` to skip opening). The app holds only `desktop/` and `out/`; projects are outside it, so reinstalling keeps them.
 - `NOCAP_DATA_DIR=<folder>` points the app at another data folder. Use it for every test run so tests never touch the real projects.
 - `desktop/main.mjs` and `desktop/preload.cjs` are Claude's (address, headers, security settings). Pure helpers in `desktop/lib/` with tests in `src/__tests__/` (imported by relative path, since `@/` only covers `src/`) can go to the Studio worker.
 - The page gets no Node access. Anything it needs from the shell is added to the fixed list in `desktop/preload.cjs`.

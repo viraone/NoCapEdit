@@ -38,6 +38,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@electron/packager": "^18.4.4",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.4",
     "@types/react": "^19",

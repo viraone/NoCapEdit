@@ -192,6 +192,22 @@ Not code signed, no self-update; a new version means running the script again. T
 
 **Done when:** the app in /Applications opens from Spotlight and passes the step 1 checks.
 
+#### Step 4 results (2026-11-23)
+
+`scripts/build-app.sh` runs the gate, builds the site, packages the shell and the site as
+"NoCap Edit.app" (about 400 MB), signs it with a local signature, replaces the copy in
+/Applications and opens it (`--no-open` skips opening). It takes about 15 seconds. `@electron/packager`
+is a new dev dependency.
+
+Checked on the installed copy, by script, against a test data folder: the page is isolated, a
+16-second export took about 2 seconds with the multi-threaded core and gave a valid MP4, and the
+test projects were still there after the app was rebuilt and reinstalled. The signature verifies.
+Launched normally, the installed app uses `~/Library/Application Support/NoCap Edit`, the same
+folder as `npm run desktop:open`.
+
+Not checked: opening it from Spotlight or the Dock by hand, the icon's look, and the items still
+open from steps 1 and 2.
+
 ### Step 5: Fast export with the real ffmpeg program
 
 Today export runs ffmpeg compiled for the browser: slower than the real program, limited to 2 GB
