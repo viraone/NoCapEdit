@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Clip } from "@/lib/models/project";
 import { positionAt } from "@/lib/models/project";
-import { cameraPath, dropExcursions, dropSpikes, splitShots, subjectPathToPan, type SubjectSample } from "@/lib/tracking/cameraPath";
+import { cameraPath, dropExcursions, dropSpikes, pickSubject, splitShots, subjectPathToPan, type SubjectSample } from "@/lib/tracking/cameraPath";
 import wideShot from "./fixtures/standupWideShot.samples.json";
 import wideShot2 from "./fixtures/standupWideShot2.samples.json";
+import wideShot3 from "./fixtures/standupWideShot3.samples.json";
 
 // A 16:9 source filling a 9:16 frame: plenty of room to pan sideways, none up or down.
 const clip = { width: 1920, height: 1080, zoom: 1 } as Clip;
@@ -191,5 +192,53 @@ describe("dropExcursions leaves real movement alone", () => {
   it("keeps a leap that never comes back (a cut the pixels missed)", () => {
     const cut = [at(0, 0.3), at(0.25, 0.3), at(0.5, 0.75), at(0.75, 0.75), at(3, 0.75), at(9, 0.75)];
     expect(dropExcursions(cut)).toEqual(cut);
+  });
+});
+
+describe("pickSubject (several people reported at one moment)", () => {
+  it("keeps the one who carries on from the person followed so far", () => {
+    // The performer up on the stage, and from 1 s a head in the audience reported alongside him.
+    const both = [at(0, 0.6, { y: 0.2 }), at(0.25, 0.61, { y: 0.2 }), at(1, 0.22, { y: 0.75 }), at(1, 0.63, { y: 0.2 }), at(1.25, 0.2, { y: 0.74 }), at(1.25, 0.64, { y: 0.21 })];
+    expect(pickSubject(both).map((s) => s.x)).toEqual([0.6, 0.61, 0.63, 0.64]);
+  });
+
+  it("starts with the biggest figure when there is nobody to carry on from", () => {
+    const first = [at(0, 0.2, { size: 0.05 }), at(0, 0.6, { size: 0.15 }), at(0.25, 0.6, { size: 0.15 })];
+    expect(pickSubject(first).map((s) => s.x)).toEqual([0.6, 0.6]);
+  });
+
+  it("keeps the nearest when nobody there could be the same person, and leaves one-per-moment input alone", () => {
+    const alone = [at(0, 0.6, { y: 0.2 }), at(0.25, 0.6, { y: 0.2 }), at(0.5, 0.2, { y: 0.75 }), at(0.75, 0.6, { y: 0.2 })];
+    expect(pickSubject(alone)).toEqual(alone);
+  });
+});
+
+describe("cameraPath when the performer turns away and walks off to the side (third recorded stand-up clip)", () => {
+  // 32 s from the same show, recorded with the detector reporting everyone it sees. From 15 to 23 s he is
+  // side-on or facing away; from 24 to 25.25 s the only detection is a head in the audience at the lower left,
+  // while he walks from the middle to the far right.
+  const samples = wideShot3 as SubjectSample[];
+  const realClip = { width: 1920, height: 1080, zoom: 1 } as Clip;
+  const kf = cameraPath(samples, realClip, frame);
+  const panAt = (t: number) => positionAt(kf, t).x;
+  const onStage = (s: SubjectSample) => s.y < 0.5;
+
+  it("never follows the head in the audience", () => {
+    const kept = dropExcursions(dropSpikes(pickSubject(samples)));
+    expect(kept.every(onStage)).toBe(true);
+    for (let t = 0.1; t <= 31.5; t += 0.1) expect(Math.abs(panAt(t) - panAt(t - 0.1))).toBeLessThan(0.1);
+    // The audience head would need a pan near +0.84. He is never left of the middle by much.
+    for (const k of kf) expect(k.x).toBeLessThan(0.3);
+  });
+
+  it("keeps the performer in the picture, including while he walks off to the right", () => {
+    const ideal = subjectPathToPan(samples, realClip, frame);
+    // Half the frame width is the edge of the picture.
+    samples.forEach((s, i) => {
+      if (onStage(s)) expect(Math.abs(ideal[i].x - panAt(s.t))).toBeLessThan(0.5);
+    });
+    // And by 27 s, two seconds after he stops, he is back near the middle.
+    const late = samples.map((s, i) => ({ s, i })).filter(({ s }) => onStage(s) && s.t >= 27 && s.t <= 29.5);
+    for (const { s, i } of late) expect(Math.abs(ideal[i].x - panAt(s.t))).toBeLessThan(0.2);
   });
 });

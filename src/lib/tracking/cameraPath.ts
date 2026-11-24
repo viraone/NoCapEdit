@@ -93,8 +93,8 @@ export function dropSpikes(samples: SubjectSample[], jump = DEFAULTS.jump): Subj
 const TOO_FAST_ACROSS = 0.3;
 const TOO_FAST_UP_DOWN = 0.15;
 /** How far someone may have wandered while the detector was looking at somebody else: per second, and at most. */
-const DRIFT_PER_SECOND = 0.05;
-const DRIFT_MAX = 0.2;
+const DRIFT_PER_SECOND = 0.15;
+const DRIFT_MAX = 0.45;
 
 /** `b` is somewhere `a` could not have got to in the time between them: a different person, or a cut. */
 function leapt(a: SubjectSample, b: SubjectSample, jump: number): boolean {
@@ -129,13 +129,53 @@ export function dropExcursions(samples: SubjectSample[], jump = DEFAULTS.jump, w
       const r = samples[j];
       if (r.cut) break;
       const drift = jump + Math.min(DRIFT_MAX, DRIFT_PER_SECOND * (r.t - anchor.t));
-      if (Math.abs(r.x - anchor.x) <= drift && Math.abs(r.y - anchor.y) <= jump) {
+      // Back about where the track left off, and somewhere other than where the run has been
+      // (a run that simply stays put is a new place, not a visit).
+      if (Math.abs(r.x - anchor.x) <= drift && Math.abs(r.y - anchor.y) <= jump && far(samples[j - 1], r, jump)) {
         back = j;
         break;
       }
     }
     if (back < 0) out.push(s);
     else i = back - 1; // skip the run; the sample that came back is handled next
+  }
+  return out;
+}
+
+/**
+ * The detector may report several people at one moment (several samples with the same time).
+ * Keeps one per moment: the one that carries on from the person followed so far. When nobody at
+ * that moment could be that person, the nearest is kept as it is, and dropExcursions decides
+ * afterwards whether it was a glitch or a change of shot.
+ */
+export function pickSubject(samples: SubjectSample[], jump = DEFAULTS.jump): SubjectSample[] {
+  const out: SubjectSample[] = [];
+  /** The last sample that carried on from the one before it: who is being followed. */
+  let anchor: SubjectSample | null = null;
+  for (let i = 0; i < samples.length; ) {
+    let j = i;
+    while (j < samples.length && samples[j].t === samples[i].t) j++;
+    const group = samples.slice(i, j);
+    i = j;
+    if (!anchor) {
+      // Nothing to go on yet: the biggest figure in the picture.
+      anchor = group.reduce((a, b) => (b.size > a.size ? b : a));
+      out.push(anchor);
+      continue;
+    }
+    const from: SubjectSample = anchor;
+    const dist = (s: SubjectSample): number => Math.hypot(s.x - from.x, s.y - from.y);
+    const nearest = (list: SubjectSample[]): SubjectSample => list.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+    const same = group.filter((s) => !s.cut && !leapt(from, s, jump));
+    if (same.length) {
+      anchor = nearest(same);
+      out.push(anchor);
+    } else {
+      const pick = nearest(group);
+      out.push(pick);
+      // After a cut the new shot starts afresh with whoever is there.
+      if (pick.cut) anchor = pick;
+    }
   }
   return out;
 }
@@ -241,7 +281,7 @@ function filmShot(shot: Shot, pans: Keyframe[], o: Required<CameraOptions>): Key
 export function cameraPath(samples: SubjectSample[], clip: Clip, frame: Frame, options: CameraOptions = {}): Keyframe[] {
   const o = { ...DEFAULTS, ...options };
   const out: Keyframe[] = [];
-  for (const shot of splitShots(dropExcursions(dropSpikes(samples, o.jump), o.jump, o.excursion), o)) {
+  for (const shot of splitShots(dropExcursions(dropSpikes(pickSubject(samples, o.jump), o.jump), o.jump, o.excursion), o)) {
     const pans = subjectPathToPan(median3(shot.samples), clip, frame);
     const prev = out[out.length - 1];
     // Hold the previous shot's framing right up to the cut, then start the new shot framed.

@@ -23,6 +23,10 @@ const WASM_BASE = withBase("/mediapipe/wasm");
 export const CUT_DIFF = 0.1;
 const PROBE_W = 32;
 const PROBE_H = 18;
+/** Shoulders this far below the hips (fraction of the picture height) mean the skeleton is upside down. */
+const UPSIDE_DOWN_MARGIN = 0.05;
+/** How many people the pose model reports per frame. */
+const MAX_PEOPLE = 4;
 
 /** Tiny greyscale copy of the current video frame, for telling one shot from the next. */
 function probeFrame(ctx: CanvasRenderingContext2D, video: HTMLVideoElement): Float32Array {
@@ -56,16 +60,32 @@ interface Found {
 }
 
 interface Locator {
-  /** Head position in the current frame (fractions of the source), or null when nobody is seen. */
-  locate(video: HTMLVideoElement): Found | null;
+  /** Every head seen in the current frame (fractions of the source); empty when nobody is seen. */
+  locate(video: HTMLVideoElement): Found[];
   close(): void;
 }
 
-/** Head position from pose landmarks: the nose when seen, else between the ears, else just above the shoulders. */
+/**
+ * Head position from pose landmarks: the nose when seen, else between the ears, else just above the shoulders.
+ *
+ * When someone on a stage turns side-on or away, the pose model often lays its skeleton over them
+ * upside down: the "nose" and "shoulders" land at their feet and the "ankles" at their head. The
+ * outline is still theirs, so the head is taken as the top middle of the outline. Without this the
+ * performer was reported a whole body-length too low and read as somebody else.
+ */
 export function headOf(lm: { x: number; y: number; visibility?: number }[]): Found | null {
-  const [nose, lEar, rEar, lSh, rSh] = [lm[0], lm[7], lm[8], lm[11], lm[12]];
+  const [nose, lEar, rEar, lSh, rSh, lHip, rHip] = [lm[0], lm[7], lm[8], lm[11], lm[12], lm[23], lm[24]];
   const seen = (p?: { visibility?: number }) => !!p && (p.visibility ?? 1) > 0.5;
   const size = lSh && rSh ? Math.abs(lSh.x - rSh.x) : 0;
+  if (lSh && rSh && lHip && rHip && (lSh.y + rSh.y) / 2 > (lHip.y + rHip.y) / 2 + UPSIDE_DOWN_MARGIN) {
+    const body = lm.filter((p) => (p.visibility ?? 1) > 0.3);
+    if (body.length >= 4) {
+      const xs = body.map((p) => p.x);
+      const left = Math.min(...xs);
+      const right = Math.max(...xs);
+      return { x: (left + right) / 2, y: Math.min(...body.map((p) => p.y)), size: Math.max(size, right - left) };
+    }
+  }
   if (seen(nose)) return { x: nose.x, y: nose.y, size };
   if (seen(lEar) && seen(rEar)) return { x: (lEar.x + rEar.x) / 2, y: (lEar.y + rEar.y) / 2, size };
   if (seen(lSh) && seen(rSh)) return { x: (lSh.x + rSh.x) / 2, y: (lSh.y + rSh.y) / 2 - size * 0.8, size };
@@ -92,22 +112,24 @@ async function loadLocator(onProgress?: ReframeOptions["onProgress"]): Promise<L
   const face = await gpuThenCpu((delegate) => FaceDetector.createFromOptions(vision, { baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate }, runningMode: "IMAGE", minDetectionConfidence: 0.5 }));
   let pose: PoseLandmarkerT | null = null;
   try {
-    pose = await gpuThenCpu((delegate) => PoseLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate }, runningMode: "IMAGE", numPoses: 1, minPoseDetectionConfidence: 0.5 }));
+    pose = await gpuThenCpu((delegate) => PoseLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate }, runningMode: "IMAGE", numPoses: MAX_PEOPLE, minPoseDetectionConfidence: 0.5 }));
   } catch {
     /* faces only */
   }
   return {
     locate(video) {
-      const lm = pose?.detect(video).landmarks[0];
-      const head = lm ? headOf(lm) : null;
-      if (head) return head;
+      // Everyone the pose model sees, not only its first pick: on a stage shot with heads in the
+      // foreground its first pick is often someone in the audience, most of all while the performer
+      // is turned away. cameraPath() works out which of them is the one to follow.
+      const heads = (pose?.detect(video).landmarks ?? []).map(headOf).filter((h): h is Found => h !== null);
+      if (heads.length) return heads;
       const best = face
         .detect(video)
         .detections.filter((d) => d.boundingBox)
         .sort((a, b) => (b.categories[0]?.score ?? 0) - (a.categories[0]?.score ?? 0))[0];
       const b = best?.boundingBox;
-      if (!b) return null;
-      return { x: (b.originX + b.width / 2) / video.videoWidth, y: (b.originY + b.height / 2) / video.videoHeight, size: b.width / video.videoWidth };
+      if (!b) return [];
+      return [{ x: (b.originX + b.width / 2) / video.videoWidth, y: (b.originY + b.height / 2) / video.videoHeight, size: b.width / video.videoWidth }];
     },
     close() {
       pose?.close();
@@ -134,6 +156,7 @@ export async function detectSubjectPath(o: ReframeOptions): Promise<SubjectSampl
   const total = Math.max(1, Math.ceil((outPoint - inPoint) * fps));
   let skipped = 0;
   let cuts = 0;
+  let seenFrames = 0;
   const probe = document.createElement("canvas");
   probe.width = PROBE_W;
   probe.height = PROBE_H;
@@ -176,12 +199,14 @@ export async function detectSubjectPath(o: ReframeOptions): Promise<SubjectSampl
         prevT = t;
       }
       const found = locator.locate(video);
-      if (found) {
-        samples.push({ t, ...found, ...(cutAt !== null ? { cut: true, cutAt } : {}) });
+      if (found.length) {
+        // One sample per person seen at this moment; they share the time (and the cut, if one was just passed).
+        for (const f of found) samples.push({ t, ...f, ...(cutAt !== null ? { cut: true, cutAt } : {}) });
         cutAt = null;
+        seenFrames++;
       }
       // Counts frames with a person, not people: one speaker seen 12 times reads "seen in 12 frames".
-      const seen = samples.length ? `seen in ${samples.length} frame${samples.length === 1 ? "" : "s"}` : "nobody seen yet";
+      const seen = seenFrames ? `seen in ${seenFrames} frame${seenFrames === 1 ? "" : "s"}` : "nobody seen yet";
       const shots = cuts ? ` · ${cuts} cut${cuts === 1 ? "" : "s"}` : "";
       o.onProgress?.(`Scanning ${Math.round(t - inPoint)} s of ${Math.round(outPoint - inPoint)} s · ${seen}${shots}${skipped ? ` · ${skipped} frame${skipped === 1 ? "" : "s"} skipped` : ""}`, i / total);
     }
