@@ -154,8 +154,9 @@ export function ExportPanel() {
   const set = (patch: Partial<ExportOptions>) => setOpts((o) => ({ ...o, ...patch }));
   const rc = opts.rateControl;
 
+  // The desktop app gets its own skin (globals.css); on the website the wrapper takes no part in layout.
   return (
-    <>
+    <div className={phoneBridge() ? "rf-export-skin" : "contents"}>
       <PanelHeader
         title="Export"
         body={
@@ -295,7 +296,7 @@ export function ExportPanel() {
           </Field>
         )}
       </PanelSection>
-      <PanelSection>
+      <PanelSection className="rf-export-actions">
         <div className="rf-read-note space-y-1">
           <p className="flex items-center gap-1.5">
             <Cpu size={12} />
@@ -323,7 +324,7 @@ export function ExportPanel() {
           </p>
         </div>
         {!running ? (
-          <Button variant="primary" className="w-full" onClick={run} disabled={!project.clips.length || moreBusy}>
+          <Button variant="primary" className="rf-export-go w-full" onClick={run} disabled={!project.clips.length || moreBusy}>
             <Download size={14} /> Export MP4
           </Button>
         ) : (
@@ -370,6 +371,6 @@ export function ExportPanel() {
         )}
       </PanelSection>
       <ExportMore project={project} assetUrls={assetUrls} opts={opts} busy={running || moreBusy} setBusy={setMoreBusy} blocked={blocked} />
-    </>
+    </div>
   );
 }

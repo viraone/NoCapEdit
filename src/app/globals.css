@@ -391,3 +391,128 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .rf-saved-check, .rf-saved-glow { animation: none; }
 }
+
+/* The Export panel in the desktop app only (ExportPanel adds .rf-export-skin there), matching
+   the Instagram windows. The website's panel is untouched. */
+.rf-export-skin {
+  --rf-hot: linear-gradient(90deg, var(--color-sys-purple), var(--color-sys-pink), var(--color-sys-orange));
+  padding-bottom: 10px;
+}
+/* Header: scrolls with the page, a hot line on top, the three steps side by side. */
+.rf-export-skin > div:first-child {
+  position: static;
+  border-bottom: 0;
+  padding-bottom: 2px;
+  background: var(--rf-hot) top / 100% 4px no-repeat;
+}
+.rf-export-skin > div:first-child .rf-steps {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.rf-export-skin .rf-steps > li {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  row-gap: 6px;
+  padding: 8px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+.rf-export-skin .rf-steps > li::before {
+  background: var(--rf-hot);
+  color: #fff;
+}
+.rf-export-skin .rf-steps ~ p {
+  display: none;
+}
+/* Each group is a card. */
+.rf-export-skin > section {
+  margin: 10px 10px 0;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+}
+.rf-export-skin > section h3.caps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.rf-export-skin > section h3.caps::before {
+  content: "";
+  width: 4px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--color-sys-purple), var(--color-sys-orange));
+}
+/* The panel's close button floats over the cards once scrolled, so give it a backing. */
+.rf-panel:has(> .rf-export-skin) > [data-tool-panel-close] {
+  border-radius: 999px;
+  background: rgba(38, 38, 40, 0.95);
+}
+.rf-export-skin .rf-read-note {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.rf-export-skin select {
+  height: 40px;
+  border-radius: 12px;
+  background-color: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.rf-export-skin button[role="switch"][aria-checked="true"] > span:last-child {
+  background: var(--rf-hot);
+}
+.rf-export-skin .rf-range::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(255, 55, 95, 0.3);
+}
+.rf-export-skin .rf-progress-fill {
+  background: var(--rf-hot);
+}
+.rf-export-skin [data-export-gif],
+.rf-export-skin [data-export-transparent],
+.rf-export-skin [data-export-timeline] {
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+/* The Export button stays in reach at the bottom of the panel: what will be made, then the button. */
+.rf-export-skin > section.rf-export-actions {
+  position: sticky;
+  bottom: 8px;
+  z-index: 15;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  background: #262628;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+.rf-export-skin .rf-export-actions > div {
+  border-radius: 14px;
+}
+.rf-export-skin .rf-export-actions > .rf-read-note > p {
+  justify-content: center;
+  font-size: 11.5px;
+}
+/* The two "available" lines are left out here; a warning about the engine still shows. */
+.rf-export-skin .rf-export-actions > .rf-read-note > p:not(:last-child):not(.text-sys-orange) {
+  display: none;
+}
+.rf-export-skin .rf-export-go {
+  height: 46px;
+  border-radius: 999px;
+  background: var(--rf-hot);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 22px rgba(255, 55, 95, 0.28);
+}
+.rf-export-skin .rf-export-go:enabled:hover {
+  filter: brightness(1.1);
+}
