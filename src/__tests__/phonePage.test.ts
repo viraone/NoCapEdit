@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AnnexBSplitter, FrameAssembler } from "@/lib/phone/h264";
+import { clampPanelWidth, PANEL_MIN_WIDTH, panelHeightFor, panelWidthFor } from "@/lib/phone/panelSize";
 import { parsePeople, toPhonePoint } from "@/lib/phone/phoneBridge";
 import { parseReelChoices, typeableNote, untypeable } from "@/lib/phone/reelChoices";
 
@@ -72,5 +73,29 @@ describe("the Post / Reel window's choices", () => {
   it("maps a click on the picture to the phone's own pixels", () => {
     expect(toPhonePoint(50, 100, { width: 100, height: 200 }, { width: 1080, height: 2424 })).toEqual({ x: 540, y: 1212 });
     expect(toPhonePoint(-5, 9999, { width: 100, height: 200 }, { width: 1080, height: 2424 })).toEqual({ x: 0, y: 2423 });
+  });
+});
+
+describe("the phone panel's size", () => {
+  const phone = { width: 1080, height: 2424 };
+
+  it("grows taller as it is dragged wider", () => {
+    expect(panelHeightFor(304, phone)).toBe(Math.round(96 + (286 * 2424) / 1080));
+    expect(panelHeightFor(500, phone)).toBeGreaterThan(panelHeightFor(304, phone));
+    expect(Math.abs(panelWidthFor(panelHeightFor(420, phone), phone) - 420)).toBeLessThanOrEqual(1);
+  });
+
+  it("holds a dragged width to what the window can show", () => {
+    const room = { height: 900, windowWidth: 1600 };
+    expect(clampPanelWidth(50, room, phone)).toBe(PANEL_MIN_WIDTH);
+    expect(clampPanelWidth(304, room, phone)).toBe(304);
+    const widest = clampPanelWidth(5000, room, phone);
+    expect(panelHeightFor(widest, phone)).toBeLessThanOrEqual(room.height + 2);
+    expect(panelHeightFor(widest + 10, phone)).toBeGreaterThan(room.height);
+  });
+
+  it("never takes more than 60% of a narrow window, nor less than the minimum", () => {
+    expect(clampPanelWidth(5000, { height: 3000, windowWidth: 1000 }, phone)).toBe(600);
+    expect(clampPanelWidth(5000, { height: 300, windowWidth: 1000 }, phone)).toBe(PANEL_MIN_WIDTH);
   });
 });

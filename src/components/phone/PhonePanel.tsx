@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Circle, Smartphone, Square, X } from "lucide-react";
+import { ArrowLeft, Circle, GripVertical, Smartphone, Square, X } from "lucide-react";
 import { AnnexBSplitter, FrameAssembler } from "@/lib/phone/h264";
 import { phoneBridge, toPhonePoint, type PhoneInfo } from "@/lib/phone/phoneBridge";
+import { clampPanelWidth, loadPanelWidth, PANEL_DEFAULT_WIDTH, panelHeightFor, panelWidthFor, savePanelWidth } from "@/lib/phone/panelSize";
 import { usePhone } from "@/lib/phone/phoneStore";
 
 /** Id of the element in the top bar that holds the phone button. */
@@ -35,6 +36,13 @@ export function PhonePanel() {
   const [live, setLive] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [round, setRound] = useState(0);
+  // Until the user drags the handle on its left edge the panel fits the row it sits in (null). A dragged
+  // width is theirs: the picture grows with it, and the panel reaches down over the timeline when it has to.
+  const [width, setWidth] = useState<number | null>(() => loadPanelWidth());
+  const asideRef = useRef<HTMLElement>(null);
+  /** Height from the panel's top to the bottom of the window, so a tall panel can reach over the timeline. */
+  const [room, setRoom] = useState<{ height: number; windowWidth: number } | null>(null);
+  const dragRef = useRef<{ x: number; width: number } | null>(null);
   const pressRef = useRef<{ x: number; y: number; at: number } | null>(null);
   const typedRef = useRef<{ text: string; timer: ReturnType<typeof setTimeout> | null }>({ text: "", timer: null });
 
@@ -130,6 +138,17 @@ export function PhonePanel() {
     };
   }, [open, round]);
 
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const top = asideRef.current?.getBoundingClientRect().top ?? 0;
+      setRoom({ height: Math.max(200, window.innerHeight - top - 10), windowWidth: window.innerWidth });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [open]);
+
   const send = (action: Parameters<NonNullable<ReturnType<typeof phoneBridge>>["input"]>[0]) => {
     const api = phoneBridge();
     if (!api) return;
@@ -204,6 +223,21 @@ export function PhonePanel() {
   };
 
   if (!desktop) return null;
+  const phoneSize = { width: info?.width ?? 1080, height: info?.height ?? 2424 };
+  const shown = width === null ? PANEL_DEFAULT_WIDTH : room ? clampPanelWidth(width, room, phoneSize) : width;
+  // Dragged: as tall as the picture needs at that width, which can reach down over the timeline.
+  const tall = width !== null && room ? Math.min(room.height, panelHeightFor(shown, phoneSize)) : 0;
+  const resizeTo = (next: number | null) => {
+    const w = next === null ? null : room ? clampPanelWidth(next, room, phoneSize) : next;
+    setWidth(w);
+    savePanelWidth(w);
+  };
+  /** Where a drag starts from: an undragged panel shows its picture smaller than its width, so start at the width that picture has. */
+  const dragStartWidth = () => {
+    if (width !== null) return shown;
+    const rowHeight = asideRef.current?.getBoundingClientRect().height ?? 0;
+    return rowHeight ? Math.min(shown, panelWidthFor(rowHeight, phoneSize)) : shown;
+  };
   const ratio = info?.width && info.height ? `${info.width} / ${info.height}` : "9 / 20";
 
   return (
@@ -224,8 +258,41 @@ export function PhonePanel() {
           slot,
         )}
       {open && (
-        <aside className="flex w-[19rem] shrink-0 flex-col" data-phone-panel>
-          <section className="flex h-full min-h-0 flex-col rounded-xl border border-sys-gray4 bg-sys-gray5/40" aria-label="Phone">
+        <aside ref={asideRef} className="relative shrink-0" style={{ width: shown }} data-phone-panel>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the phone"
+            tabIndex={0}
+            title="Drag to resize the phone. Double-click to reset."
+            className="absolute -left-2.5 top-1/2 z-50 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-md border border-sys-gray4 bg-sys-gray5 text-label-2 hover:bg-sys-gray4 hover:text-white"
+            onPointerDown={(e) => {
+              dragRef.current = { x: e.clientX, width: dragStartWidth() };
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              const d = dragRef.current;
+              if (d) resizeTo(d.width + (d.x - e.clientX));
+            }}
+            onPointerUp={() => (dragRef.current = null)}
+            onPointerCancel={() => (dragRef.current = null)}
+            onDoubleClick={() => resizeTo(null)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowLeft") resizeTo(dragStartWidth() + 24);
+              else if (e.key === "ArrowRight") resizeTo(dragStartWidth() - 24);
+              else return;
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            data-phone-resize
+          >
+            <GripVertical size={14} aria-hidden />
+          </div>
+          <section
+            className="absolute right-0 top-0 z-40 flex w-full flex-col rounded-xl border border-sys-gray4"
+            style={{ background: "var(--color-sys-gray6)", height: tall ? `max(100%, ${tall}px)` : "100%" }}
+            aria-label="Phone"
+          >
             <h4 className="flex items-center gap-2 border-b border-sys-gray4 px-3 py-2 text-[13px] font-semibold text-white">
               <Smartphone size={15} aria-hidden /> Phone
               {live && (
