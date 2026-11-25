@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Clapperboard, FolderOpen, PlusCircle, Send, Share } from "lucide-react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { CheckCircle2, ChevronRight, Clapperboard, FolderOpen, PlusCircle, Send, Share } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection } from "@/components/ui/Panel";
 import { phoneBridge, sendToPhone, type PhoneInfo } from "@/lib/phone/phoneBridge";
 import { usePhone, type FinishedExport } from "@/lib/phone/phoneStore";
@@ -14,6 +15,30 @@ import { StoryDialog } from "./StoryDialog";
 const clean = (e: unknown, fallback: string) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : fallback);
 
 type Action = "reel" | "story" | "send";
+
+/** One thing to do with the video: a tile with an icon, a name and a line saying what happens. */
+function ActionCard({ icon, title, text, hero = false, ...props }: { icon: ReactNode; title: string; text: string; hero?: boolean } & ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={cx(
+        "group flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition duration-200",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-sys-pink/70 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100",
+        hero
+          ? "border-white/20 bg-linear-to-br from-sys-purple via-sys-pink to-sys-orange shadow-lg shadow-sys-pink/25 enabled:hover:brightness-110"
+          : "border-white/10 bg-white/[0.04] enabled:hover:border-white/25 enabled:hover:bg-white/[0.08]",
+      )}
+      {...props}
+    >
+      <span className={cx("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white", hero ? "bg-white/20" : "bg-white/[0.07] ring-1 ring-inset ring-white/10")}>{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-bold tracking-wide text-white">{title}</span>
+        <span className={cx("rf-read-face mt-0.5 block text-[12px] leading-snug", hero ? "text-white/90" : "text-white/60")}>{text}</span>
+      </span>
+      <ChevronRight size={16} className={cx("shrink-0 transition-transform group-enabled:group-hover:translate-x-0.5", hero ? "text-white" : "text-white/40")} />
+    </button>
+  );
+}
 
 /**
  * The Instagram tool (desktop app only): hand a finished export to the Android emulator and open
@@ -114,21 +139,26 @@ function Body({ done }: { done: FinishedExport | null }) {
 
   return (
     <>
-      <PanelHeader title="Instagram" description="Post the finished video from the phone on the right." />
+      <PanelHeader title="Instagram" description="Post it from the phone on the right." />
       <PanelSection>
         {picked?.chosen ? (
-          <p className="rf-read-note flex items-center gap-1.5" data-instagram-video>
-            <FolderOpen size={15} className="shrink-0" /> Posting {picked.name} · {formatBytes(picked.video.size)}
-          </p>
-        ) : done ? (
-          <p className="rf-read-note rf-ok flex items-start gap-1.5 rounded-lg border border-sys-green/40 bg-sys-green/10 p-2.5" data-instagram-video>
-            <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
-            <span>
-              Export finished: {done.fileName} · {formatBytes(done.bytes)} · {done.streamed ? "saved where you chose" : "saved to Downloads"}
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3" data-instagram-video>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sys-blue/15 text-sys-blue"><FolderOpen size={17} /></span>
+            <span className="min-w-0">
+              <span className="rf-read-face block truncate text-[13.5px] font-semibold text-white" title={picked.name}>{picked.name}</span>
+              <span className="rf-read-face block text-[12px] text-white/60">Your file · {formatBytes(picked.video.size)}</span>
             </span>
-          </p>
+          </div>
+        ) : done ? (
+          <div className="flex items-center gap-3 rounded-2xl border border-sys-green/30 bg-linear-to-br from-sys-green/15 to-sys-green/[0.03] p-3" data-instagram-video>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sys-green/20 text-sys-green"><CheckCircle2 size={18} /></span>
+            <span className="min-w-0">
+              <span className="rf-read-face block truncate text-[13.5px] font-semibold text-white" title={done.fileName}>{done.fileName}</span>
+              <span className="rf-read-face block text-[12px] text-sys-green">Exported · {formatBytes(done.bytes)} · {done.streamed ? "saved where you chose" : "saved to Downloads"}</span>
+            </span>
+          </div>
         ) : (
-          <p className="rf-read-note" data-instagram-video>
+          <p className="rf-read-note rounded-2xl border border-dashed border-white/15 p-3" data-instagram-video>
             Nothing has been exported since this project was opened. Export the video first, or pick a video file below.
           </p>
         )}
@@ -151,24 +181,9 @@ function Body({ done }: { done: FinishedExport | null }) {
         />
 
         <div className="flex flex-col gap-2">
-          <div>
-            <Button variant="primary" className="w-full justify-start" disabled={!ready || !info?.instagram || busy} onClick={() => void act("reel")} data-instagram-reel>
-              <Clapperboard size={15} /> Post / Reel
-            </Button>
-            <p className="rf-read-note mt-1">Set the caption and options first, then Instagram is walked through them.</p>
-          </div>
-          <div>
-            <Button variant="secondary" className="w-full justify-start" disabled={!ready || !info?.instagram || busy} onClick={() => void act("story")} data-instagram-story>
-              <PlusCircle size={15} /> Story
-            </Button>
-            <p className="rf-read-note mt-1">Set the link sticker and options first, then Instagram is walked through them.</p>
-          </div>
-          <div>
-            <Button variant="secondary" className="w-full justify-start" disabled={!ready || busy} onClick={() => void act("send")} data-instagram-send>
-              <Send size={15} /> Send to phone
-            </Button>
-            <p className="rf-read-note mt-1">Only copies the video into the phone&apos;s gallery.</p>
-          </div>
+          <ActionCard hero icon={<Clapperboard size={20} />} title="Post / Reel" text="Caption, location, tags." disabled={!ready || !info?.instagram || busy} onClick={() => void act("reel")} data-instagram-reel />
+          <ActionCard icon={<PlusCircle size={20} />} title="Story" text="Link, text, Highlight." disabled={!ready || !info?.instagram || busy} onClick={() => void act("story")} data-instagram-story />
+          <ActionCard icon={<Send size={19} />} title="Send to phone" text="Copy to the gallery." disabled={!ready || busy} onClick={() => void act("send")} data-instagram-send />
         </div>
 
         {info && !info.available && (
@@ -189,10 +204,10 @@ function Body({ done }: { done: FinishedExport | null }) {
       </PanelSection>
 
       <PanelSection>
-        <div className="flex flex-wrap gap-1.5">
-          <Button
-            variant="ghost"
-            size="xs"
+        <div className="flex flex-wrap items-center justify-center gap-1.5 border-t border-white/10 pt-3">
+          <button
+            type="button"
+            className="rf-read-face inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 text-[12px] font-medium text-white/70 transition-colors enabled:hover:border-white/25 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
             disabled={busy}
             onClick={() => {
               pending.current = null;
@@ -200,16 +215,21 @@ function Body({ done }: { done: FinishedExport | null }) {
             }}
             data-instagram-pick
           >
-            <FolderOpen size={11} /> Use another video file
-          </Button>
+            <FolderOpen size={13} /> Another video
+          </button>
           {picked?.chosen && done && (
             <Button variant="ghost" size="xs" disabled={busy} onClick={() => setPicked(null)} data-instagram-unpick>
               Back to the export
             </Button>
           )}
-          <Button variant="ghost" size="xs" onClick={() => setTool("export")} data-instagram-to-export>
-            <Share size={11} /> Export again
-          </Button>
+          <button
+            type="button"
+            className="rf-read-face inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 text-[12px] font-medium text-white/70 transition-colors enabled:hover:border-white/25 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+            onClick={() => setTool("export")}
+            data-instagram-to-export
+          >
+            <Share size={13} /> Export again
+          </button>
         </div>
       </PanelSection>
 
