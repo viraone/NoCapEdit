@@ -2,28 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Sparkles, Undo2, X } from "lucide-react";
+import { Clapperboard, MapPin, MessageSquare, Scissors, Send, Sparkles, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, textareaClass } from "@/components/ui/Field";
 import { parsePeople, phoneBridge, type ReelOptions, type ReelOutcome } from "@/lib/phone/phoneBridge";
 import { loadReelChoices, saveReelChoices, typeableNote } from "@/lib/phone/reelChoices";
+import { Card, DialogHeader, SwitchRow, dialogClass, goButtonClass } from "./dialogParts";
 
 /** Seconds the final Instagram screen is shown before Share is tapped, with a button to cancel. */
 const SHARE_COUNTDOWN = 6;
 
 type Phase = { kind: "form" } | { kind: "running"; label: string } | { kind: "countdown"; left: number; outcome: ReelOutcome } | { kind: "done"; headline: string; outcome: ReelOutcome | null; ok: boolean };
-
-function Check({ checked, onChange, label, hint, name }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string; name: string }) {
-  return (
-    <label className="flex cursor-pointer items-start gap-2.5">
-      <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[var(--sys-blue,#0a84ff)]" checked={checked} onChange={(e) => onChange(e.target.checked)} data-reel-check={name} />
-      <span>
-        <span className="block text-[13px] text-white">{label}</span>
-        <span className="block text-[12px] text-label-2">{hint}</span>
-      </span>
-    </label>
-  );
-}
 
 /**
  * The Post / Reel window: what Instagram should be walked through on the phone, then Go.
@@ -147,71 +136,76 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
       role="dialog"
       aria-label="Post / Reel"
       style={{ background: "var(--color-sys-gray6)" }}
-      className="card fixed left-6 top-20 z-50 flex max-h-[calc(100vh-7rem)] w-[30rem] max-w-[calc(100vw-3rem)] flex-col shadow-2xl"
+      className={dialogClass}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === "Escape") close();
       }}
       data-reel-dialog
     >
-      <h3 className="flex items-center border-b border-sys-gray4 px-4 py-2.5 text-[14px] font-semibold text-white">
-        Post / Reel
-        <button type="button" onClick={close} className="ml-auto rounded p-0.5 text-label-3 hover:bg-sys-gray4 hover:text-white" aria-label="Close" data-reel-close>
-          <X size={16} />
-        </button>
-      </h3>
-      <div className="space-y-3.5 overflow-y-auto p-4">
-        <fieldset disabled={busy} className="space-y-3.5 disabled:opacity-60">
-          <Check name="keepFull" checked={keepFull} onChange={setKeepFull} label="Keep the full clip" hint="Off: stop on Instagram's trim tools so you can cut it there." />
-          <Field label="Text on the video" hint="Optional. Typed into Instagram's Text tool, in the middle of the picture.">
-            <Input value={overlay} onChange={(e) => setOverlay(e.target.value)} placeholder="Friday night open mic" maxLength={200} data-reel-overlay />
-          </Field>
-          <Check name="next" checked={next} onChange={setNext} label="Tap Next" hint="Off: stop on the Reel editor, before the caption screen." />
-          <Field
-            label="Caption"
-            hint={captionNote ?? "Rough notes are fine: date, place, who. AI polish turns them into a finished caption you can edit."}
-            right={
-              ai.available ? (
-                <span className="flex items-center gap-1.5">
-                  {ai.before !== null && (
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 text-label-2 hover:text-white"
-                      onClick={() => {
-                        setCaption(ai.before ?? "");
-                        setAi((a) => ({ ...a, before: null }));
-                      }}
-                      data-reel-polish-undo
-                    >
-                      <Undo2 size={11} /> My notes
+      <DialogHeader icon={<Clapperboard size={20} />} title="Post / Reel" onClose={close} closeData={{ "data-reel-close": "" }} />
+      <div className="min-h-0 overflow-y-auto p-3">
+        <fieldset disabled={busy} className="space-y-2.5 disabled:opacity-60">
+          <Card icon={<Scissors size={16} />} tone="bg-sys-blue/15 text-sys-blue">
+            <SwitchRow data={{ "data-reel-check": "keepFull" }} checked={keepFull} onChange={setKeepFull} label="Keep the full clip" hint="Off: stop on the trim tools to cut it there." />
+            <Field label="Text on the video" hint="Optional. Placed in the middle of the picture.">
+              <Input value={overlay} onChange={(e) => setOverlay(e.target.value)} placeholder="Friday night open mic" maxLength={200} data-reel-overlay />
+            </Field>
+            <SwitchRow data={{ "data-reel-check": "next" }} checked={next} onChange={setNext} label="Tap Next" hint="Off: stop on the Reel editor." />
+          </Card>
+          <Card icon={<MessageSquare size={16} />} tone="bg-sys-pink/15 text-sys-pink">
+            <Field
+              label="Caption"
+              hint={captionNote ?? "Rough notes are fine. AI polish writes the caption; you can edit it."}
+              right={
+                ai.available ? (
+                  <span className="flex items-center gap-1.5">
+                    {ai.before !== null && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-label-2 hover:text-white normal-case"
+                        onClick={() => {
+                          setCaption(ai.before ?? "");
+                          setAi((a) => ({ ...a, before: null }));
+                        }}
+                        data-reel-polish-undo
+                      >
+                        <Undo2 size={11} /> My notes
+                      </button>
+                    )}
+                    <button type="button" className="inline-flex items-center gap-1 rounded-full bg-linear-to-r from-sys-purple to-sys-pink px-2.5 py-1 text-[11px] font-bold normal-case text-white transition enabled:hover:brightness-110 disabled:opacity-45" onClick={() => void polish()} disabled={ai.busy || !caption.trim()} data-reel-polish>
+                      <Sparkles size={11} /> {ai.busy ? "Polishing" : "AI polish"}
                     </button>
-                  )}
-                  <button type="button" className="inline-flex items-center gap-1 font-semibold text-sys-blue hover:underline disabled:opacity-50" onClick={() => void polish()} disabled={ai.busy || !caption.trim()} data-reel-polish>
-                    <Sparkles size={11} /> {ai.busy ? "Polishing" : "AI polish"}
-                  </button>
-                </span>
-              ) : undefined
-            }
-          >
-            <textarea className={`${textareaClass} min-h-28`} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Nov 28, open mic, 12 comics, packed room" maxLength={2200} data-reel-caption />
-          </Field>
-          {ai.error && <p className="rf-read-note rf-error">{ai.error}</p>}
-          <Field label="Location" hint="Optional. Searched in Instagram; the exact match, or else the first result, is picked.">
-            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Name of the venue" maxLength={80} data-reel-location />
-          </Field>
-          <Field label="Tag people" hint="Optional. Usernames, separated by spaces. Only an exact username is tagged.">
-            <Input value={people} onChange={(e) => setPeople(e.target.value)} placeholder="@name @another" data-reel-people />
-          </Field>
-          <Check name="share" checked={share} onChange={setShare} label="Tap Share" hint={`Posts publicly, and also to Threads and Facebook if Instagram's "Also share on" switches are on. The final screen shows for ${SHARE_COUNTDOWN} seconds first, with a button to cancel. Off: stop on the caption screen.`} />
+                  </span>
+                ) : undefined
+              }
+            >
+              <textarea className={`${textareaClass} min-h-28 rounded-xl`} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Nov 28, open mic, 12 comics, packed room" maxLength={2200} data-reel-caption />
+            </Field>
+            {ai.error && <p className="rf-read-note rf-error">{ai.error}</p>}
+          </Card>
+          <Card icon={<MapPin size={16} />} tone="bg-sys-green/15 text-sys-green">
+            <Field label="Location" hint="Optional. The exact match, or else the first result.">
+              <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Name of the venue" maxLength={80} data-reel-location />
+            </Field>
+            <Field label="Tag people" hint="Optional. Usernames with spaces between. Exact matches only.">
+              <Input value={people} onChange={(e) => setPeople(e.target.value)} placeholder="@name @another" data-reel-people />
+            </Field>
+          </Card>
+          <Card icon={<Send size={16} />} tone="bg-sys-orange/15 text-sys-orange">
+            <SwitchRow data={{ "data-reel-check": "share" }} checked={share} onChange={setShare} label="Tap Share" hint={`Posts publicly, and to Threads and Facebook if "Also share on" is on. Waits ${SHARE_COUNTDOWN} seconds first so you can cancel. Off: stop on the caption screen.`} />
+          </Card>
         </fieldset>
+      </div>
+      <div className="shrink-0 space-y-2.5 border-t border-white/10 bg-black/20 p-3">
 
         {phase.kind === "running" && (
-          <p className="rf-read-note" data-reel-status>
+          <p className="rf-read-note animate-pulse" data-reel-status>
             {phase.label}…
           </p>
         )}
         {phase.kind === "countdown" && (
-          <div className="space-y-2 rounded-lg border border-sys-orange/40 bg-sys-orange/10 p-2.5" data-reel-countdown>
+          <div className="space-y-2 rounded-2xl border border-sys-orange/40 bg-sys-orange/10 p-2.5" data-reel-countdown>
             <p className="rf-read-note">Everything is filled in. Check the phone panel, including &ldquo;Also share on&rdquo; further down. Tapping Share in {phase.left} s.</p>
             <Button
               variant="danger"
@@ -224,7 +218,7 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
           </div>
         )}
         {phase.kind === "done" && (
-          <div className={`space-y-1 rounded-lg border p-2.5 ${phase.ok ? "border-sys-green/40 bg-sys-green/10" : "border-sys-red/40 bg-sys-red/10"}`} data-reel-result>
+          <div className={`space-y-1 rounded-2xl border p-2.5 max-h-40 overflow-y-auto ${phase.ok ? "border-sys-green/40 bg-sys-green/10" : "border-sys-red/40 bg-sys-red/10"}`} data-reel-result>
             <p className={`rf-read-note ${phase.ok ? "rf-ok" : "rf-error"}`}>{phase.headline}</p>
             {phase.outcome?.notes.map((n) => (
               <p key={n} className="rf-read-note [overflow-wrap:anywhere]">
@@ -234,19 +228,19 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
           </div>
         )}
 
-        <div className="flex justify-end gap-2">
+        <div className="flex items-center gap-2">
           {phase.kind === "running" ? (
-            <Button variant="outline" size="sm" onClick={stop} data-reel-stop>
+            <Button variant="outline" size="md" onClick={stop} data-reel-stop className="rounded-full px-5">
               Stop
             </Button>
           ) : (
-            <Button variant="ghost" size="sm" onClick={close}>
+            <Button variant="ghost" size="md" onClick={close} className="rounded-full px-5">
               Close
             </Button>
           )}
-          <Button variant="primary" size="sm" onClick={() => void go()} disabled={busy} data-reel-go>
-            {phase.kind === "done" ? "Go again" : "Go"}
-          </Button>
+          <button type="button" onClick={() => void go()} disabled={busy} data-reel-go className={goButtonClass}>
+            <Send size={15} /> {phase.kind === "done" ? "Go again" : "Go"}
+          </button>
         </div>
       </div>
     </div>,
