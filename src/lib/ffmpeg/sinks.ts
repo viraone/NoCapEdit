@@ -10,6 +10,8 @@ export interface OutputSink {
   /** Finishes the file. Returns the Blob for in-memory sinks, null for disk. */
   close(): Promise<Blob | null>;
   abort(): Promise<void>;
+  /** Disk sinks only: the finished file, read back from where it was saved (the desktop app's "send to phone"). */
+  file?(): Promise<Blob>;
   /** Discards everything written so far and starts over (used when a render restarts). */
   reset(): Promise<void>;
   bytes: number;
@@ -23,6 +25,7 @@ interface FileSystemWritableLike {
 interface FileSystemFileHandleLike {
   name: string;
   createWritable(): Promise<FileSystemWritableLike>;
+  getFile?(): Promise<Blob>;
 }
 type SaveFilePicker = (opts: { suggestedName?: string; types?: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandleLike>;
 
@@ -89,6 +92,10 @@ export async function requestDiskSink(suggestedName: string, type: { description
   return {
     kind: "disk",
     name: handle.name,
+    file: async () => {
+      if (!handle.getFile) throw new Error("The saved file cannot be read back here.");
+      return handle.getFile();
+    },
     get bytes() {
       return bytes;
     },

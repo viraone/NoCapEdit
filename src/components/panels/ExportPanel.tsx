@@ -18,6 +18,7 @@ import { needsCompositor } from "@/lib/playback/compositor";
 import { downloadBlob, safeFilename } from "@/lib/utils/download";
 import { formatBytes, formatTime } from "@/lib/utils/time";
 import { PanelHeader, PanelSection } from "@/components/ui/Panel";
+import { InstagramSection } from "@/components/phone/InstagramSection";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
@@ -85,6 +86,8 @@ export function ExportPanel() {
     setEngine(null);
   };
 
+  /** Reads back an export that was saved straight to disk, for the Instagram buttons. */
+  const [savedFile, setSavedFile] = useState<(() => Promise<Blob>) | null>(null);
   const run = async () => {
     setError(null);
     setResult(null);
@@ -105,6 +108,8 @@ export function ExportPanel() {
       }
       if (!sink) return;
     }
+    const saved = sink?.file?.bind(sink) ?? null;
+    setSavedFile(() => saved);
     const controller = new AbortController();
     abortRef.current = controller;
     setProgress({ stage: "preparing", progress: 0, message: "Starting" });
@@ -359,6 +364,7 @@ export function ExportPanel() {
             </div>
           </div>
         )}
+        {result && <InstagramSection video={result.video ?? null} loadVideo={result.video ? null : savedFile} fileName={result.fileName} />}
       </PanelSection>
       <ExportMore project={project} assetUrls={assetUrls} opts={opts} busy={running || moreBusy} setBusy={setMoreBusy} blocked={blocked} />
     </>

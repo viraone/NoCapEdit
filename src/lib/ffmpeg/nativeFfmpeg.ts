@@ -28,6 +28,8 @@ declare global {
       isDesktop: boolean;
       ffmpeg?: DesktopFfmpegBridge;
       studio?: { info(): Promise<{ available: boolean; model?: string; name?: string }> };
+      phone?: import("@/lib/phone/phoneBridge").DesktopPhoneBridge;
+      caption?: { info(): Promise<{ available: boolean; model?: string }>; polish(notes: string): Promise<string> };
     };
   }
 }

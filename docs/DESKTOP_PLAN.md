@@ -481,3 +481,17 @@ Following the worker rules in `CLAUDE.md`:
   Step 5 keeps x264 as the default until the two have been compared by eye.
 - **How much faster is unknown.** Nobody has measured it on this Mac with these projects. Step 5
   starts with the measurement for that reason.
+
+## Android emulator and Instagram (added 2026-11-24)
+
+Desktop app only; nothing shows on the website.
+
+- **Export panel, after an export:** Post / Reel, Story, Send to phone.
+- **Phone panel:** a button at the end of the top bar shows the emulator's screen live. Click to tap, drag to swipe, type to type.
+- **Post / Reel window:** keep the full clip, text on the video, tap Next, caption (with AI polish), location, tag people, tap Share (6 second countdown with Cancel).
+
+Checked against Instagram 455.0.0.51.72 on an Android 16 emulator, with Share unticked: send, Story screen, and a Reel run with text, caption, location and tags up to the caption screen (twice, about 1 to 2 minutes each). The countdown was checked with Instagram faked.
+
+Not checked: the real Share tap, a real Gemini request, and the "Keep the full clip" and "Tap Next" boxes unticked.
+
+Limits: emoji and accented letters cannot be typed on the phone. Instagram's own "Also share on" switches (Threads, Facebook) apply to a shared reel; the app does not change them. Leaving the Export panel drops the finished export, and with it the Instagram buttons.

@@ -1,5 +1,6 @@
 "use client";
 import { NOTES_BUTTON_SLOT } from "./EditorNotes";
+import { PHONE_BUTTON_SLOT } from "@/components/phone/PhonePanel";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History, AlertTriangle, Mic } from "lucide-react";
@@ -240,6 +241,8 @@ export function TopBar() {
         </Button>
         {/* The Notes button, while the notes are closed (EditorNotes puts it here). */}
         <div id={NOTES_BUTTON_SLOT} className="contents" />
+        {/* The phone button, in the desktop app (PhonePanel puts it here). */}
+        <div id={PHONE_BUTTON_SLOT} className="contents" />
       </div>
     </header>
   );

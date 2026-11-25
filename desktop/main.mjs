@@ -9,7 +9,9 @@ import { app, BrowserWindow, Menu, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { registerCaptionAi } from "./captionAi.mjs";
 import { registerFfmpegHost } from "./ffmpegHost.mjs";
+import { registerPhone } from "./phoneHost.mjs";
 import { handleStudioRequest, isStudioRequest, registerStudio } from "./studioProxy.mjs";
 import { APP_ORIGIN, APP_SCHEME, contentType, fileCandidates, isAppUrl, isExternalUrl, isolationHeaders } from "./lib/appUrl.mjs";
 
@@ -157,6 +159,8 @@ if (!app.requestSingleInstanceLock()) {
     protocol.handle(APP_SCHEME, serveSite);
     registerFfmpegHost();
     registerStudio();
+    registerPhone();
+    registerCaptionAi();
     buildMenu();
     createWindow();
     app.on("activate", () => {

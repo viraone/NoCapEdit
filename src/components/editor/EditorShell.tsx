@@ -10,6 +10,7 @@ import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
 import { EditorChat } from "./EditorChat";
 import { EditorNotes } from "./EditorNotes";
+import { PhonePanel } from "@/components/phone/PhonePanel";
 import { useFitPictureToSong, useStillLength } from "@/components/panels/useStillLength";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { ToolRail } from "@/components/panels/ToolRail";
@@ -246,6 +247,7 @@ export function EditorShell() {
         </main>
         <EditorChat />
         <EditorNotes />
+        <PhonePanel />
       </div>
       <TimelineResizeHandle />
       <TimelineDock />
