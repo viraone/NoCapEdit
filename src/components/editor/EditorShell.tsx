@@ -10,6 +10,7 @@ import { debugFlag } from "@/lib/ffmpeg/loader";
 import { TopBar } from "./TopBar";
 import { EditorChat } from "./EditorChat";
 import { EditorNotes } from "./EditorNotes";
+import { InstagramPanel } from "@/components/phone/InstagramPanel";
 import { PhonePanel } from "@/components/phone/PhonePanel";
 import { useFitPictureToSong, useStillLength } from "@/components/panels/useStillLength";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -241,6 +242,7 @@ export function EditorShell() {
                   {tool === "post" && <PostPanel />}
                   {tool === "reframe" && <ReframePanel />}
                   {tool === "export" && <ExportPanel />}
+                  {tool === "instagram" && <InstagramPanel />}
                 </aside>
               )}
             </div>

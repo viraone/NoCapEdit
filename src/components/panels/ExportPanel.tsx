@@ -18,7 +18,8 @@ import { needsCompositor } from "@/lib/playback/compositor";
 import { downloadBlob, safeFilename } from "@/lib/utils/download";
 import { formatBytes, formatTime } from "@/lib/utils/time";
 import { PanelHeader, PanelSection } from "@/components/ui/Panel";
-import { InstagramSection } from "@/components/phone/InstagramSection";
+import { phoneBridge } from "@/lib/phone/phoneBridge";
+import { usePhone } from "@/lib/phone/phoneStore";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
@@ -86,8 +87,6 @@ export function ExportPanel() {
     setEngine(null);
   };
 
-  /** Reads back an export that was saved straight to disk, for the Instagram buttons. */
-  const [savedFile, setSavedFile] = useState<(() => Promise<Blob>) | null>(null);
   const run = async () => {
     setError(null);
     setResult(null);
@@ -108,8 +107,8 @@ export function ExportPanel() {
       }
       if (!sink) return;
     }
+    /** Reads back an export saved straight to disk, for the Instagram panel. */
     const saved = sink?.file?.bind(sink) ?? null;
-    setSavedFile(() => saved);
     const controller = new AbortController();
     abortRef.current = controller;
     setProgress({ stage: "preparing", progress: 0, message: "Starting" });
@@ -136,6 +135,11 @@ export function ExportPanel() {
       if (res.srt) downloadBlob(res.srt, `${base}.srt`);
       if (res.txt) downloadBlob(res.txt, `${base}.txt`);
       if (res.vtt) downloadBlob(res.vtt, `${base}.vtt`);
+      // Desktop app: the finished video goes to the Instagram panel, which takes this panel's place.
+      if (phoneBridge() && (res.video || saved)) {
+        usePhone.getState().setLastExport({ video: res.video ?? null, loadVideo: res.video ? null : saved, fileName: res.fileName, bytes: res.bytes, streamed: res.streamed, at: Date.now() });
+        useEditor.getState().setTool("instagram");
+      }
     } catch (e) {
       console.error("[export] export failed", e);
       setError(friendlyExportError(e));
@@ -364,7 +368,6 @@ export function ExportPanel() {
             </div>
           </div>
         )}
-        {result && <InstagramSection video={result.video ?? null} loadVideo={result.video ? null : savedFile} fileName={result.fileName} />}
       </PanelSection>
       <ExportMore project={project} assetUrls={assetUrls} opts={opts} busy={running || moreBusy} setBusy={setMoreBusy} blocked={blocked} />
     </>

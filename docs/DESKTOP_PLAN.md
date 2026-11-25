@@ -486,7 +486,7 @@ Following the worker rules in `CLAUDE.md`:
 
 Desktop app only; nothing shows on the website.
 
-- **Export panel, after an export:** Post / Reel, Story, Send to phone.
+- **Instagram panel** (its own tool on the rail, below Export; desktop app only): Post / Reel, Story, Send to phone. It opens by itself when an export finishes and takes the Export panel's place. The finished export stays available there until the next export; another video file can be picked instead.
 - **Phone panel:** a button at the end of the top bar shows the emulator's screen live. Click to tap, drag to swipe, type to type.
 - **Post / Reel window:** keep the full clip, text on the video, tap Next, caption (with AI polish), location, tag people, tap Share (6 second countdown with Cancel).
 
@@ -494,4 +494,4 @@ Checked against Instagram 455.0.0.51.72 on an Android 16 emulator, with Share un
 
 Not checked: the real Share tap, a real Gemini request, and the "Keep the full clip" and "Tap Next" boxes unticked.
 
-Limits: emoji and accented letters cannot be typed on the phone. Instagram's own "Also share on" switches (Threads, Facebook) apply to a shared reel; the app does not change them. Leaving the Export panel drops the finished export, and with it the Instagram buttons.
+Limits: emoji and accented letters cannot be typed on the phone. Instagram's own "Also share on" switches (Threads, Facebook) apply to a shared reel; the app does not change them.

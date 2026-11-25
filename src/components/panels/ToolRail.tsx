@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, TextSelect, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Film, Scissors, Captions, Palette, Type, Image as ImageIcon, Music, Share, Clapperboard, TextSelect, Sparkles, Send } from "lucide-react";
 import { useEditor, type ToolId } from "@/store/editorStore";
 import { cx } from "@/lib/utils/cx";
 
@@ -18,9 +18,16 @@ const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentTyp
   // Only the button so far: its panel is a placeholder until what it does is decided.
   { id: "recap", label: "Recap Highlight Reel", hint: "Nothing here yet", icon: Sparkles, color: "#5e5ce6" },
   { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
+  // Desktop app only (DESKTOP_ONLY below): it needs the Android emulator.
+  { id: "instagram", label: "Instagram", hint: "Send the finished video to the phone and post it", icon: Send, color: "#e1306c" },
   // Reframe and Post are not on the rail: cutting a reel follows the face by itself, and Post was taken off the rail.
   // Their panels still open from ?tool=reframe and ?tool=post.
 ];
+
+/** Tools that only exist in the desktop app; the website's rail leaves them out. */
+const DESKTOP_ONLY: ToolId[] = ["instagram"];
+const noSubscription = () => () => undefined;
+const inDesktopApp = () => typeof window !== "undefined" && !!window.nocapDesktop?.phone;
 
 /**
  * Name and one-line purpose of a tool, beside the rail while it is hovered or
@@ -96,7 +103,9 @@ export function ToolRail() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const lay = railLayout(height, TOOLS.length);
+  const desktop = useSyncExternalStore(noSubscription, inDesktopApp, () => false);
+  const tools = desktop ? TOOLS : TOOLS.filter((t) => !DESKTOP_ONLY.includes(t.id));
+  const lay = railLayout(height, tools.length);
   return (
     <nav
       ref={ref}
@@ -107,7 +116,7 @@ export function ToolRail() {
       data-labels={lay.labels || undefined}
       data-tile={lay.tile}
     >
-      {TOOLS.map(({ id, label, icon: Icon, color }) => {
+      {tools.map(({ id, label, icon: Icon, color }) => {
         const active = tool === id;
         return (
           <button
