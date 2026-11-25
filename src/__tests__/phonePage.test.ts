@@ -80,7 +80,7 @@ describe("the phone panel's size", () => {
   const phone = { width: 1080, height: 2424 };
 
   it("grows taller as it is dragged wider", () => {
-    expect(panelHeightFor(304, phone)).toBe(Math.round(96 + (286 * 2424) / 1080));
+    expect(panelHeightFor(304, phone)).toBe(Math.round(114 + (286 * 2424) / 1080));
     expect(panelHeightFor(500, phone)).toBeGreaterThan(panelHeightFor(304, phone));
     expect(Math.abs(panelWidthFor(panelHeightFor(420, phone), phone) - 420)).toBeLessThanOrEqual(1);
   });
@@ -104,7 +104,7 @@ describe("the phone panel's size", () => {
     expect(tall.width).toBe(222);
     expect(Math.abs(tall.height / tall.width - 2424 / 1080)).toBeLessThan(0.02);
     const wide = pictureSize({ width: 900, height: 846 }, phone);
-    expect(wide.height).toBe(750);
+    expect(wide.height).toBe(732);
     expect(Math.abs(wide.height / wide.width - 2424 / 1080)).toBeLessThan(0.02);
   });
 });

@@ -3,7 +3,7 @@
 export const PANEL_DEFAULT_WIDTH = 304;
 export const PANEL_MIN_WIDTH = 240;
 /** Header, button row, padding and borders around the picture, top to bottom. */
-const CHROME_HEIGHT = 96;
+const CHROME_HEIGHT = 114;
 /** Padding and borders either side of the picture. */
 const CHROME_WIDTH = 18;
 // "2": widths saved before the phone became a full-height column are not carried over.

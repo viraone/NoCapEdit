@@ -52,6 +52,8 @@ export interface DesktopPhoneBridge {
   onVideo(fn: ((chunk: Uint8Array | null) => void) | null): void;
   input(action: PhoneInput): Promise<{ dropped?: string[] }>;
   open(mode: "reel" | "story", uri: string): Promise<void>;
+  /** Opens Instagram's home feed. "busy": Instagram has an editor or a draft open, and nothing was pressed. */
+  instagramHome(): Promise<{ state: "home" | "busy" }>;
   reel(uri: string, options: ReelOptions): Promise<ReelOutcome>;
   onStep(fn: ((label: string) => void) | null): void;
   cancel(): Promise<void>;

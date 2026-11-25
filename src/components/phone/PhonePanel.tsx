@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Circle, GripVertical, Smartphone, Square, X } from "lucide-react";
+import { ArrowLeft, GripVertical, House, LayoutGrid, Smartphone, X } from "lucide-react";
 import { AnnexBSplitter, FrameAssembler } from "@/lib/phone/h264";
 import { phoneBridge, toPhonePoint, type PhoneInfo } from "@/lib/phone/phoneBridge";
 import { clampPanelWidth, loadPanelWidth, PANEL_DEFAULT_WIDTH, pictureSize, savePanelWidth } from "@/lib/phone/panelSize";
@@ -12,6 +12,8 @@ import { usePhone } from "@/lib/phone/phoneStore";
 export const PHONE_BUTTON_SLOT = "editor-phone-button-slot";
 
 const ICON = "rounded p-0.5 text-label-3 hover:bg-sys-gray4 hover:text-white";
+/** A labelled button under the phone: an icon with its name beneath, so nobody has to guess. */
+const NAV = "flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] leading-tight text-label-2 hover:bg-sys-gray4 hover:text-white disabled:opacity-50";
 const KEY = { home: 3, back: 4, enter: 66, del: 67, tab: 61, up: 19, down: 20, left: 21, right: 22, recents: 187 } as const;
 /** A press that travels less than this (in drawn pixels) is a tap, more is a swipe. */
 const TAP_SLOP = 8;
@@ -162,6 +164,20 @@ export function PhonePanel() {
       .catch((e: unknown) => setNote(e instanceof Error ? e.message : "The emulator did not answer."));
   };
 
+  const [goingHome, setGoingHome] = useState(false);
+  /** Instagram's home feed. With an editor or a draft open nothing is pressed, and the note says how to leave it. */
+  const instagramHome = () => {
+    const api = phoneBridge();
+    if (!api || goingHome) return;
+    setGoingHome(true);
+    setNote(null);
+    void api
+      .instagramHome()
+      .then((r) => setNote(r.state === "busy" ? "Instagram has an editor or a draft open, so nothing was pressed. Leave it with the arrow or X at the top left of the phone screen (Instagram asks before it discards a draft), then press Instagram again." : null))
+      .catch((e: unknown) => setNote(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The emulator did not answer."))
+      .finally(() => setGoingHome(false));
+  };
+
   const point = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top, width: r.width, height: r.height };
@@ -307,7 +323,7 @@ export function PhonePanel() {
                 </button>
               </span>
             </h4>
-            <div className="flex min-h-0 flex-1 items-center justify-center p-2">
+            <div className="relative flex min-h-0 flex-1 items-center justify-center p-2">
               {info && !info.available ? (
                 <p className="rf-read-note px-3 text-center" data-phone-missing>
                   {info.reason ?? "Start the Android emulator first."}{" "}
@@ -329,21 +345,29 @@ export function PhonePanel() {
                   data-phone-screen
                 />
               )}
+              {/* Laid over the picture's lower edge, so a message never changes the picture's size. */}
+              {note && (
+                <button type="button" onClick={() => setNote(null)} className="rf-read-note absolute inset-x-3 bottom-3 rounded-lg border border-sys-gray4 px-2.5 py-1.5 text-left" style={{ background: "var(--color-sys-gray6)" }} title="Click to hide" data-phone-note>
+                  {note}
+                </button>
+              )}
             </div>
-            {note && (
-              <p className="rf-read-note px-3 pb-1 text-center" data-phone-note>
-                {note}
-              </p>
-            )}
-            <div className="flex items-center justify-center gap-6 border-t border-sys-gray4 py-2 text-label-2">
-              <button type="button" className={ICON} onClick={() => send({ kind: "key", code: KEY.back })} aria-label="Back" title="Back" data-phone-back>
-                <ArrowLeft size={16} />
+            <div className="grid grid-cols-4 gap-1 border-t border-sys-gray4 p-1.5">
+              <button type="button" className={NAV} onClick={() => send({ kind: "key", code: KEY.back })} title="Go back one screen, like the phone's Back button" data-phone-back>
+                <ArrowLeft size={16} aria-hidden />
+                Back
               </button>
-              <button type="button" className={ICON} onClick={() => send({ kind: "key", code: KEY.home })} aria-label="Home" title="Home" data-phone-home>
-                <Circle size={15} />
+              <button type="button" className={NAV} onClick={() => send({ kind: "key", code: KEY.home })} title="The phone's own home screen, with all its apps" data-phone-home>
+                <Smartphone size={16} aria-hidden />
+                Phone home
               </button>
-              <button type="button" className={ICON} onClick={() => send({ kind: "key", code: KEY.recents })} aria-label="Recent apps" title="Recent apps" data-phone-recents>
-                <Square size={14} />
+              <button type="button" className={NAV} onClick={() => send({ kind: "key", code: KEY.recents })} title="The apps that are open, to switch between them" data-phone-recents>
+                <LayoutGrid size={16} aria-hidden />
+                Open apps
+              </button>
+              <button type="button" className={`${NAV} text-white`} onClick={instagramHome} disabled={goingHome} title="Open Instagram on its home feed" data-phone-instagram>
+                <House size={16} aria-hidden />
+                {goingHome ? "Opening" : "Instagram"}
               </button>
             </div>
           </section>

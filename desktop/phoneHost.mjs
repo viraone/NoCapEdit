@@ -284,6 +284,32 @@ async function openInstagram(/** @type {string} */ serial, /** @type {"reel" | "
   ]);
 }
 
+/**
+ * Shows Instagram's own home feed, if that can be done without losing anything: Instagram is brought
+ * to the front, and its Home tab is tapped when it is on screen. With an editor or a draft open the
+ * tab is not there; nothing is pressed then, so no draft is ever discarded from here.
+ * @returns {Promise<{ state: "home" | "busy" }>}
+ */
+async function instagramHome() {
+  const serial = await requireDevice();
+  const focus = await sh(serial, ["dumpsys", "window"], 15_000).catch(() => "");
+  const inFront = (focus.match(/mCurrentFocus=.*/)?.[0] ?? "").includes(`${INSTAGRAM}/`);
+  if (!inFront) {
+    const running = (await sh(serial, ["pidof", INSTAGRAM]).catch(() => "")).trim() !== "";
+    await sh(serial, ["monkey", "-p", INSTAGRAM, "-c", "android.intent.category.LAUNCHER", "1"], 30_000);
+    await wait(running ? 1500 : 7000);
+  }
+  for (let i = 0; i < 2; i++) {
+    const tab = findUi(await look(serial), { id: "feed_tab" });
+    if (tab) {
+      await tap(serial, tab);
+      return { state: "home" };
+    }
+    await wait(700);
+  }
+  return { state: "busy" };
+}
+
 /** @type {{ cancelled: boolean } | null} */
 let job = null;
 
@@ -509,6 +535,7 @@ export function registerPhone() {
     const serial = await requireDevice();
     await openInstagram(serial, mode === "story" ? "story" : "reel", String(uri));
   });
+  handle("phone:instagramHome", () => instagramHome());
   handle("phone:reel", (event, uri, options) => runReel(event.sender, String(uri), options && typeof options === "object" ? options : {}));
   handle("phone:cancel", () => {
     if (job) job.cancelled = true;
