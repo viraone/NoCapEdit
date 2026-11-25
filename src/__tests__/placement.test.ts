@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampPan, computePlacement, panLimit } from "@/lib/models/placement";
+import { clampPan, computePlacement, panLimit, zoomForPan } from "@/lib/models/placement";
 
 const frame = { width: 1080, height: 1920 };
 const source = { width: 1920, height: 1080 };
@@ -51,5 +51,30 @@ describe("computePlacement", () => {
     const p = computePlacement(source, { zoom: 0.5, pan: { x: 3, y: -3 } }, { width: 1920, height: 1080 });
     expect(p.dx + p.dw).toBeCloseTo(1920, 6);
     expect(p.dy).toBeCloseTo(0, 6);
+  });
+});
+
+describe("zoomForPan", () => {
+  it("a sideways drag never zooms a wide video in a tall frame", () => {
+    expect(zoomForPan({ x: 0.5, y: 0 }, source, 1, frame, 2)).toBe(1);
+  });
+
+  it("an up or down drag zooms in just enough", () => {
+    expect(zoomForPan({ x: 0, y: 0.1 }, source, 1, frame, 2)).toBeCloseTo(1.2, 2);
+    expect(zoomForPan({ x: 0, y: -0.1 }, source, 1, frame, 2)).toBeCloseTo(1.2, 2);
+    const want = { x: 0, y: 0.1 };
+    const p = computePlacement(source, { zoom: zoomForPan(want, source, 1, frame, 2), pan: want }, frame);
+    expect(p.dy).toBeLessThanOrEqual(1e-6);
+    expect(p.dy).toBeGreaterThan(-3);
+  });
+
+  it("keeps a zoom that is already enough, and stops at the cap", () => {
+    expect(zoomForPan({ x: 0, y: 0.1 }, source, 1.5, frame, 2)).toBe(1.5);
+    expect(zoomForPan({ x: 0, y: 5 }, source, 1, frame, 2)).toBe(2);
+    expect(zoomForPan({ x: 0, y: 5 }, source, 3, frame, 2)).toBe(3);
+  });
+
+  it("leaves a zoomed-out picture alone", () => {
+    expect(zoomForPan({ x: 0, y: 0.3 }, source, 0.8, frame, 2)).toBe(0.8);
   });
 });

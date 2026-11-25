@@ -59,3 +59,21 @@ describe("followsStale (changing the frame format)", () => {
     expect(followsStale([still()], wide, tall)).toBe(false);
   });
 });
+
+describe("a followed clip zoomed after its path was made", () => {
+  it("scales the path by the change in zoom, and adds the hand offset unscaled", () => {
+    const c = followed();
+    c.reframe!.zoom = 1;
+    c.zoom = 1.2;
+    expect(clipPanAt(c, 5).x).toBeCloseTo(0.24);
+    c.reframe!.offset = { x: 0.1, y: 0.05 };
+    expect(clipPanAt(c, 5).x).toBeCloseTo(0.34);
+    expect(clipPanAt(c, 5).y).toBeCloseTo(0.05);
+  });
+
+  it("leaves the path alone when the zoom it was made at is not recorded", () => {
+    const c = followed();
+    c.zoom = 1.2;
+    expect(clipPanAt(c, 5)).toEqual({ x: 0.2, y: 0 });
+  });
+});

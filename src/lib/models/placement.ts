@@ -26,6 +26,22 @@ export function clampPan(pan: { x: number; y: number }, source: { width: number;
 }
 
 /**
+ * The zoom a drag needs: on an axis where the picture only just covers the frame at zoom 1 there is no room to
+ * move, so the picture is zoomed in just enough for a pan of `want`. Never below `zoom`, never above `max` unless
+ * `zoom` already is, and unchanged for a zoomed-out picture (zoom below 1) or an axis that has room of its own.
+ */
+export function zoomForPan(want: { x: number; y: number }, source: { width: number; height: number }, zoom: number, frame: Frame, max: number): number {
+  if (zoom < 1) return zoom;
+  const sw = Math.max(1, source.width);
+  const sh = Math.max(1, source.height);
+  const base = Math.max(frame.width / sw, frame.height / sh);
+  let need = zoom;
+  if (sw * base - frame.width < 0.5) need = Math.max(need, 1 + 2 * Math.abs(want.x));
+  if (sh * base - frame.height < 0.5) need = Math.max(need, 1 + 2 * Math.abs(want.y));
+  return Math.min(Math.ceil(need * 1000 - 1e-6) / 1000, Math.max(zoom, max));
+}
+
+/**
  * Where a clip's source image lands inside the frame. The source is "cover"
  * fitted, then zoomed around the centre and panned by a fraction of the frame.
  * Shared by the preview canvas and the ffmpeg export so both match exactly.

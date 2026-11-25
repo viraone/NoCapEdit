@@ -67,6 +67,8 @@ export interface Reframe {
   label?: string;
   /** Where the user moved the picture from the followed path, as a fraction of the frame size. */
   offset?: { x: number; y: number };
+  /** The clip's zoom when the path was made. The path is scaled when the zoom changes afterwards, so the person stays centred. */
+  zoom?: number;
 }
 
 /** What the import learned about a clip's own sound (see lib/media/import.ts). */
@@ -599,7 +601,10 @@ export function clipPanAt(clip: Clip, sourceTime: number): { x: number; y: numbe
   if (clip.reframe && clip.reframe.keyframes.length) {
     const p = positionAt(clip.reframe.keyframes, sourceTime);
     const off = clip.reframe.offset;
-    return off ? { x: p.x + off.x, y: p.y + off.y } : p;
+    const made = clip.reframe.zoom;
+    const k = made && made > 0 ? clip.zoom / made : 1;
+    if (k === 1) return off ? { x: p.x + off.x, y: p.y + off.y } : p;
+    return { x: p.x * k + (off?.x ?? 0), y: p.y * k + (off?.y ?? 0) };
   }
   return clip.pan;
 }

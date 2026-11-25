@@ -9,7 +9,7 @@ import { CanvasRenderer } from "@/components/CanvasRenderer";
 import { getFormat, SAFE_ZONES } from "@/lib/models/formats";
 import { layoutClips, locateFrame } from "@/lib/models/timeline";
 import { clamp } from "@/lib/utils/math";
-import { panLimit } from "@/lib/models/placement";
+import { panLimit, zoomForPan } from "@/lib/models/placement";
 import { manualPan, setManualPan, ZOOM_MAX, ZOOM_MIN } from "@/lib/models/project";
 import { Button } from "@/components/ui/Button";
 import { SafeZoneGuide } from "./SafeZoneGuide";
@@ -40,6 +40,9 @@ function snap(values: number[], lines: number[], threshold: number): { delta: nu
   }
   return best;
 }
+
+/** The most a drag zooms the picture in by itself. Beyond this the user zooms by hand. */
+const DRAG_ZOOM_MAX = 2;
 
 export function VideoCanvas() {
   const project = useEditor((s) => s.project)!;
@@ -202,10 +205,19 @@ export function VideoCanvas() {
         (p) => {
           const c = p.clips.find((c) => c.id === d.id);
           if (c) {
+            const src = { width: c.width, height: c.height };
+            const fr = { width: fw, height: fh };
+            const want = { x: d.origin.x + dx / fw, y: d.origin.y + dy / fh };
+            // Where the picture only just fills the frame there is no room to move, so the drag zooms in just enough (and back out as the drag comes back).
+            const zoom = zoomForPan(want, src, d.origin.size, fr, DRAG_ZOOM_MAX);
+            if (zoom !== c.zoom) {
+              if (c.reframe && c.reframe.keyframes.length && c.reframe.zoom === undefined) c.reframe.zoom = d.origin.size;
+              c.zoom = zoom;
+            }
             // A followed clip's hand offset is added to a path that itself moves within the limit, so it may need up to twice the limit.
             const k = c.reframe && c.reframe.keyframes.length ? 2 : 1;
-            const lim = panLimit({ width: c.width, height: c.height }, c.zoom, { width: fw, height: fh });
-            setManualPan(c, { x: clamp(d.origin.x + dx / fw, -lim.x * k, lim.x * k), y: clamp(d.origin.y + dy / fh, -lim.y * k, lim.y * k) });
+            const lim = panLimit(src, c.zoom, fr);
+            setManualPan(c, { x: clamp(want.x, -lim.x * k, lim.x * k), y: clamp(want.y, -lim.y * k, lim.y * k) });
           }
         },
         { history: false },
