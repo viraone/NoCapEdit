@@ -75,11 +75,11 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
     }
     const outcome = phase.outcome;
     const api = phoneBridge();
-    setPhase({ kind: "running", label: "Tapping Share" });
+    setPhase({ kind: "running", label: "Sharing the reel (Instagram can take a minute)" });
     void (async () => {
       try {
         const r = await api!.share();
-        setPhase({ kind: "done", ok: r.shared, outcome, headline: r.shared ? "Shared. Instagram is uploading the reel." : "Share was tapped, but Instagram is still on the caption screen. Check the phone panel." });
+        setPhase({ kind: "done", ok: r.shared, outcome, headline: r.shared ? "Shared. Instagram is uploading the reel." : "Share was tapped, but Instagram was still on the caption screen 90 seconds later, so it may not have posted. Look at the phone panel before sharing again, or it could post twice." });
       } catch (e) {
         setPhase({ kind: "done", ok: false, outcome, headline: e instanceof Error ? e.message : "Share could not be tapped. Finish in the phone panel." });
       }
@@ -227,7 +227,7 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
           <div className={`space-y-1 rounded-lg border p-2.5 ${phase.ok ? "border-sys-green/40 bg-sys-green/10" : "border-sys-red/40 bg-sys-red/10"}`} data-reel-result>
             <p className={`rf-read-note ${phase.ok ? "rf-ok" : "rf-error"}`}>{phase.headline}</p>
             {phase.outcome?.notes.map((n) => (
-              <p key={n} className="rf-read-note">
+              <p key={n} className="rf-read-note [overflow-wrap:anywhere]">
                 {n}
               </p>
             ))}

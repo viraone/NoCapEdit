@@ -105,13 +105,13 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
     const api = phoneBridge();
     void (async () => {
       try {
-        setPhase({ kind: "running", label: "Sharing the Story" });
+        setPhase({ kind: "running", label: "Sharing the Story (Instagram can take a minute)" });
         const r = await api!.shareStory(audience);
         setPhase({
           kind: "done",
           ok: r.shared,
           outcome,
-          headline: r.shared ? (audience === "close" ? "Shared to Close Friends." : "Shared to your story.") : "Share was tapped, but the Story screen is still open. Check the phone panel.",
+          headline: r.shared ? (audience === "close" ? "Shared to Close Friends. Instagram is uploading it." : "Shared to your story. Instagram is uploading it.") : "Share was tapped, but Instagram was still on the Story screen 90 seconds later, so it may not have posted. Look at the phone panel before sharing again, or it could post twice.",
         });
       } catch (e) {
         setPhase({
@@ -240,7 +240,7 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
           <div className={`space-y-1 rounded-lg border p-2.5 ${phase.ok ? "border-sys-green/40 bg-sys-green/10" : "border-sys-red/40 bg-sys-red/10"}`} data-story-result>
             <p className={`rf-read-note ${phase.ok ? "rf-ok" : "rf-error"}`}>{phase.headline}</p>
             {phase.outcome?.notes.map((n) => (
-              <p key={n} className="rf-read-note">
+              <p key={n} className="rf-read-note [overflow-wrap:anywhere]">
                 {n}
               </p>
             ))}

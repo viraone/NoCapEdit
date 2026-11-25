@@ -622,11 +622,28 @@ async function shareStory(/** @type {unknown} */ audience) {
   const found = await waitFor(serial, { id }, 8000);
   if (!found) throw new Error("Instagram's share button is not on screen. Finish in the phone panel.");
   await tap(serial, found.hit);
-  for (let i = 0; i < 6; i++) {
-    await wait(1200);
-    if (!findUi(await look(serial), { id: "your_story_share_shortcut_button" })) return { shared: true };
+  return { shared: await leftScreen(serial, "your_story_share_shortcut_button") };
+}
+
+/** How long Instagram is given to leave the screen it was shared from. */
+const SHARE_WAIT_MS = 90_000;
+
+/**
+ * After a share is tapped: waits for Instagram to leave the screen that has the element `id`.
+ * It keeps that screen up while it gets the video ready, which took well over 20 seconds for a
+ * real Story on the emulator, so a short wait reported a Story that did post as not shared.
+ * Nothing is tapped here: a second tap could post twice. A screen that cannot be read does not count as "left".
+ * @param {string} serial @param {string} id
+ * @returns {Promise<boolean>} false when the screen was still there (or could not be read) when the time ran out
+ */
+async function leftScreen(serial, id) {
+  const until = Date.now() + SHARE_WAIT_MS;
+  while (Date.now() < until) {
+    await wait(1500);
+    const nodes = await look(serial);
+    if (nodes.length > 0 && !findUi(nodes, { id })) return true;
   }
-  return { shared: false };
+  return false;
 }
 
 /** Taps Instagram's Share. Only ever called when the page asks, after its own countdown. */
@@ -636,17 +653,14 @@ async function shareReel() {
   if (!first) throw new Error("Instagram's Share button is not on screen. Finish in the phone panel.");
   await tap(serial, first.hit);
   // The first time, Instagram puts up a notice about original audio with its own Share button.
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 4; i++) {
     await wait(1200);
     const nodes = await look(serial);
-    const sheetShare = nodes.find((n) => n.text.trim() === "Share" && n.y > 0 && nodes.some((s) => s.id.startsWith("clips_original_audio_nux_sheet")));
-    if (sheetShare) {
-      await tap(serial, sheetShare);
-      continue;
-    }
-    if (!findUi(nodes, { id: "caption_input_text_view" })) return { shared: true };
+    const sheetShare = nodes.find((n) => n.text.trim() === "Share" && nodes.some((s) => s.id.startsWith("clips_original_audio_nux_sheet")));
+    if (!sheetShare) break;
+    await tap(serial, sheetShare);
   }
-  return { shared: false };
+  return { shared: await leftScreen(serial, "caption_input_text_view") };
 }
 
 // ---- The fixed list the page can call --------------------------------------------------------
