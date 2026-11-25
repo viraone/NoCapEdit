@@ -43,6 +43,8 @@ function snap(values: number[], lines: number[], threshold: number): { delta: nu
 
 /** The most a drag zooms the picture in by itself. Beyond this the user zooms by hand. */
 const DRAG_ZOOM_MAX = 2;
+/** How far (fraction of the frame) a drag must travel along an axis with no room before it starts to zoom. */
+const DRAG_ZOOM_SLACK = 0.06;
 
 export function VideoCanvas() {
   const project = useEditor((s) => s.project)!;
@@ -207,9 +209,15 @@ export function VideoCanvas() {
           if (c) {
             const src = { width: c.width, height: c.height };
             const fr = { width: fw, height: fh };
-            const want = { x: d.origin.x + dx / fw, y: d.origin.y + dy / fh };
+            // A click, a sideways drag with a little wobble, or an old leftover offset must not zoom the picture:
+            // an axis with no room starts from the centre, and the drag has to go DRAG_ZOOM_SLACK of the frame past
+            // the room there is before the zoom starts.
+            const k0 = c.reframe && c.reframe.keyframes.length ? 2 : 1;
+            const lim0 = panLimit(src, d.origin.size, fr);
+            const want = { x: (lim0.x * k0 > 0.005 ? d.origin.x : 0) + dx / fw, y: (lim0.y * k0 > 0.005 ? d.origin.y : 0) + dy / fh };
+            const past = (v: number, limit: number) => (Math.abs(v) <= limit ? v : Math.sign(v) * (limit + Math.max(0, Math.abs(v) - limit - DRAG_ZOOM_SLACK)));
             // Where the picture only just fills the frame there is no room to move, so the drag zooms in just enough (and back out as the drag comes back).
-            const zoom = zoomForPan(want, src, d.origin.size, fr, DRAG_ZOOM_MAX);
+            const zoom = zoomForPan({ x: past(want.x, lim0.x), y: past(want.y, lim0.y) }, src, d.origin.size, fr, DRAG_ZOOM_MAX);
             if (zoom !== c.zoom) {
               if (c.reframe && c.reframe.keyframes.length && c.reframe.zoom === undefined) c.reframe.zoom = d.origin.size;
               c.zoom = zoom;
