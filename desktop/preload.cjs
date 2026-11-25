@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
     open: (mode, uri) => ipcRenderer.invoke("phone:open", mode, uri),
     instagramHome: () => ipcRenderer.invoke("phone:instagramHome"),
     reel: (uri, options) => ipcRenderer.invoke("phone:reel", uri, options),
+    story: (uri, options) => ipcRenderer.invoke("phone:story", uri, options),
+    shareStory: (audience) => ipcRenderer.invoke("phone:shareStory", audience),
     onStep: (fn) => {
       onPhoneStep = typeof fn === "function" ? fn : null;
     },

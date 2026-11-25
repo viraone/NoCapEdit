@@ -488,6 +488,7 @@ Desktop app only; nothing shows on the website.
 
 - **Instagram panel** (its own tool on the rail, below Export; desktop app only): Post / Reel, Story, Send to phone. It opens by itself when an export finishes and takes the Export panel's place. The finished export stays available there until the next export; another video file can be picked instead.
 - **Phone panel:** a button at the end of the top bar shows the emulator's screen live. Click to tap, drag to swipe, type to type.
+- **Story window** (added 2026-11-25): link sticker (address and words, remembered), text on the picture, each at top, middle or bottom; mute the video's sound; share to Your story or Close Friends; tap Share after the same 6 second countdown. Checked on the emulator with Share unticked (two runs, about 75 s each); the countdown was checked with Instagram faked. No caption field yet: Instagram's Story caption line ends in an arrow button that was not tapped, because it is not known whether it only attaches the caption or posts the Story.
 - **Post / Reel window:** keep the full clip, text on the video, tap Next, caption (with AI polish), location, tag people, tap Share (6 second countdown with Cancel).
 
 Checked against Instagram 455.0.0.51.72 on an Android 16 emulator, with Share unticked: send, Story screen, and a Reel run with text, caption, location and tags up to the caption screen (twice, about 1 to 2 minutes each). The countdown was checked with Instagram faked.

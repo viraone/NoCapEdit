@@ -9,6 +9,7 @@ import { usePhone, type FinishedExport } from "@/lib/phone/phoneStore";
 import { formatBytes } from "@/lib/utils/time";
 import { useEditor } from "@/store/editorStore";
 import { PostReelDialog } from "./PostReelDialog";
+import { StoryDialog } from "./StoryDialog";
 
 const clean = (e: unknown, fallback: string) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : fallback);
 
@@ -32,6 +33,7 @@ function Body({ done }: { done: FinishedExport | null }) {
   const [round, setRound] = useState(0);
   const [status, setStatus] = useState<{ text: string; kind: "busy" | "ok" | "error" } | null>(null);
   const [reelOpen, setReelOpen] = useState(false);
+  const [storyOpen, setStoryOpen] = useState(false);
   /** A file the user picked, or an export read back from disk. A picked file wins over the export. */
   const [picked, setPicked] = useState<{ video: Blob; name: string; chosen: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -96,16 +98,15 @@ function Body({ done }: { done: FinishedExport | null }) {
       setReelOpen(true);
       return;
     }
+    if (what === "story") {
+      setStatus(null);
+      setStoryOpen(true);
+      return;
+    }
     setStatus({ text: "Sending the video to the phone", kind: "busy" });
     try {
-      const uri = await ensureSent(from, () => undefined);
-      if (what === "send") {
-        setStatus({ text: `Sent. ${name} is the newest video in the phone's gallery.`, kind: "ok" });
-        return;
-      }
-      setPhoneOpen(true);
-      await phoneBridge()!.open("story", uri);
-      setStatus({ text: "Instagram's Story screen is open in the phone panel. Finish and share there.", kind: "ok" });
+      await ensureSent(from, () => undefined);
+      setStatus({ text: `Sent. ${name} is the newest video in the phone's gallery.`, kind: "ok" });
     } catch (e) {
       setStatus({ text: clean(e, "The emulator did not answer."), kind: "error" });
     }
@@ -160,7 +161,7 @@ function Body({ done }: { done: FinishedExport | null }) {
             <Button variant="secondary" className="w-full justify-start" disabled={!ready || !info?.instagram || busy} onClick={() => void act("story")} data-instagram-story>
               <PlusCircle size={15} /> Story
             </Button>
-            <p className="rf-read-note mt-1">Opens Instagram&apos;s Story screen with the video loaded.</p>
+            <p className="rf-read-note mt-1">Set the link sticker and options first, then Instagram is walked through them.</p>
           </div>
           <div>
             <Button variant="secondary" className="w-full justify-start" disabled={!ready || busy} onClick={() => void act("send")} data-instagram-send>
@@ -216,6 +217,16 @@ function Body({ done }: { done: FinishedExport | null }) {
         <PostReelDialog
           open={reelOpen}
           onClose={() => setReelOpen(false)}
+          prepare={async (onLabel) => {
+            setPhoneOpen(true);
+            return ensureSent(source, onLabel);
+          }}
+        />
+      )}
+      {source && (
+        <StoryDialog
+          open={storyOpen}
+          onClose={() => setStoryOpen(false)}
           prepare={async (onLabel) => {
             setPhoneOpen(true);
             return ensureSent(source, onLabel);

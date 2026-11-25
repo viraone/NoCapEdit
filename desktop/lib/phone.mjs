@@ -170,3 +170,42 @@ export function pickResult(nodes, rowId, typed) {
   const t = typed.trim().toLowerCase().replace(/^@/, "");
   return rows.find((n) => n.text.trim().toLowerCase() === t) ?? rows[0] ?? null;
 }
+
+/** Where a sticker or a line of text can be put on a Story: a third of the way down, the middle, or low (above the caption line). */
+export const STORY_SLOTS = /** @type {const} */ (["top", "middle", "bottom"]);
+
+/**
+ * The height on the phone's screen for a slot, in the phone's own pixels.
+ * `nudge` moves it a little lower, for a second thing put in the same slot.
+ * @param {string} slot one of STORY_SLOTS; anything else is "middle"
+ * @param {number} screenHeight
+ * @param {boolean} [nudge]
+ */
+export function storySlotY(slot, screenHeight, nudge = false) {
+  const at = slot === "top" ? 0.2 : slot === "bottom" ? 0.68 : 0.455;
+  return Math.round(screenHeight * (at + (nudge ? 0.075 : 0)));
+}
+
+/**
+ * A web address fit to type into Instagram's Link sticker: http or https, plain keyboard characters,
+ * no spaces, at most 200 long. "example.com/x" gets "https://" put in front. Null when it is not one.
+ * @param {unknown} text
+ * @returns {string | null}
+ */
+export function cleanLinkUrl(text) {
+  if (typeof text !== "string") return null;
+  let t = text.trim();
+  if (!t || t.length > 200 || !/^[\x21-\x7e]+$/.test(t)) return null;
+  if (!/^https?:\/\//i.test(t)) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(t) && !/^[^/:]+:\d+(\/|$)/.test(t)) return null; // some other scheme (javascript:, intent: ...)
+    t = `https://${t}`;
+  }
+  try {
+    const url = new URL(t);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (!url.hostname.includes(".") || url.username || url.password) return null;
+  } catch {
+    return null;
+  }
+  return t;
+}

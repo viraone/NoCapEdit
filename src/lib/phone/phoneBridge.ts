@@ -42,6 +42,23 @@ export interface ReelOutcome {
   notes: string[];
 }
 
+/** Where a sticker or a line of text goes on a Story. */
+export type StorySlot = "top" | "middle" | "bottom";
+
+/** What the Story window asks Instagram to do. Sharing is a separate call. */
+export interface StoryOptions {
+  /** Turn the video's own sound off. */
+  mute: boolean;
+  /** Text to put on the picture, or "". */
+  overlay: string;
+  overlayAt: StorySlot;
+  /** Web address for a Link sticker, or "" for none. */
+  linkUrl: string;
+  /** The words on the Link sticker in place of the address, or "". */
+  linkLabel: string;
+  linkAt: StorySlot;
+}
+
 /** What desktop/preload.cjs exposes as `window.nocapDesktop.phone`. */
 export interface DesktopPhoneBridge {
   info(): Promise<PhoneInfo>;
@@ -55,6 +72,10 @@ export interface DesktopPhoneBridge {
   /** Opens Instagram's home feed. "busy": Instagram has an editor or a draft open, and nothing was pressed. */
   instagramHome(): Promise<{ state: "home" | "busy" }>;
   reel(uri: string, options: ReelOptions): Promise<ReelOutcome>;
+  /** Fills in the Story screen. `ready` means everything asked for is on the Story and it is waiting to be shared. */
+  story(uri: string, options: StoryOptions): Promise<ReelOutcome>;
+  /** Shares the open Story to "Your story" or to Close Friends. */
+  shareStory(audience: "story" | "close"): Promise<{ shared: boolean }>;
   onStep(fn: ((label: string) => void) | null): void;
   cancel(): Promise<void>;
   share(): Promise<{ shared: boolean }>;

@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { isAppUrl } from "./lib/appUrl.mjs";
 import {
+  cleanLinkUrl,
   findUi,
   firstDevice,
   inputTextPieces,
@@ -26,6 +27,8 @@ import {
   pickResult,
   screenSize,
   shellQuote,
+  STORY_SLOTS,
+  storySlotY,
   streamSize,
   typeable,
 } from "./lib/phone.mjs";
@@ -461,6 +464,171 @@ async function runReel(sender, uri, raw) {
   }
 }
 
+// ---- Story ------------------------------------------------------------------------------------
+
+/**
+ * Types into the field with this id and checks what landed there: typed too soon after a tap, the
+ * first letters can be lost while the keyboard opens. One retry; returns false when it still differs.
+ * @param {string} serial @param {string} fieldId @param {string} text plain keyboard characters
+ */
+async function typeChecked(serial, fieldId, text) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const field = findUi(await look(serial), { id: fieldId });
+    if (!field) return false;
+    await tap(serial, field);
+    await wait(1400);
+    if (field.text && attempt > 0) await sh(serial, ["input", "keyevent", ...Array(Math.min(250, field.text.length + 4)).fill("67")], 30_000);
+    await typeText(serial, text);
+    await wait(700);
+    const now = findUi(await look(serial), { id: fieldId });
+    if (now && now.text.trim() === text.trim()) return true;
+  }
+  return false;
+}
+
+/**
+ * Drags a sticker (or a line of text) on the Story to a height on the screen. A drag lands a little
+ * short of where it was aimed, so it is corrected once.
+ * @param {string} serial
+ * @param {(n: import("./lib/phone.mjs").UiNode) => boolean} which
+ * @param {number} targetY
+ */
+async function dragSticker(serial, which, targetY) {
+  for (let i = 0; i < 2; i++) {
+    const node = (await look(serial)).find(which);
+    if (!node) return false;
+    if (Math.abs(node.y - targetY) < 50) return true;
+    await sh(serial, ["input", "swipe", String(node.x), String(node.y), String(node.x), String(targetY), "900"]);
+    await wait(900);
+  }
+  return true;
+}
+
+const isLinkSticker = (/** @type {import("./lib/phone.mjs").UiNode} */ n) => n.desc.startsWith("Sticker. Touch and hold");
+const isTextSticker = (/** @type {import("./lib/phone.mjs").UiNode} */ n) => n.desc.includes(", Sticker. Touch and hold");
+
+/**
+ * Walks Instagram's Story screen through what the user ticked, up to but not including sharing.
+ * @param {import("electron").WebContents} sender
+ * @param {string} uri
+ * @param {Record<string, unknown>} raw
+ */
+async function runStory(sender, uri, raw) {
+  const serial = await requireDevice();
+  const slot = (/** @type {unknown} */ v) => (typeof v === "string" && /** @type {readonly string[]} */ (STORY_SLOTS).includes(v) ? v : "middle");
+  const o = {
+    mute: raw.mute === true,
+    overlay: typeof raw.overlay === "string" ? typeable(raw.overlay.trim().slice(0, 200)).lines.join(" ").trim() : "",
+    overlayAt: slot(raw.overlayAt),
+    linkUrl: cleanLinkUrl(raw.linkUrl),
+    linkLabel: typeof raw.linkLabel === "string" ? typeable(raw.linkLabel.trim().slice(0, 60)).lines.join(" ").trim() : "",
+    linkAt: slot(raw.linkAt),
+  };
+  const mine = { cancelled: false };
+  job = mine;
+  /** @type {string[]} */
+  const notes = [];
+  if (typeof raw.linkUrl === "string" && raw.linkUrl.trim() && !o.linkUrl) notes.push("The link is not a web address the phone can type, so no link sticker was added.");
+  const step = async (/** @type {string} */ label, /** @type {() => Promise<void>} */ fn) => {
+    if (mine.cancelled) throw new Stopped("Stopped.");
+    if (!sender.isDestroyed()) sender.send("phone:step", label);
+    await fn();
+  };
+  const need = async (/** @type {{ id?: string, text?: string, desc?: string }} */ want, /** @type {string} */ what, ms = 20_000) => {
+    const found = await waitFor(serial, want, ms);
+    if (!found) throw new Error(`Instagram did not show ${what}. Finish in the phone panel.`);
+    return found;
+  };
+  const editor = () => need({ id: "your_story_share_shortcut_button" }, "the Story screen");
+
+  try {
+    const height = screenSize(await sh(serial, ["wm", "size"], 6000))?.height ?? 2424;
+
+    await step("Opening Instagram", async () => {
+      await openInstagram(serial, "story", uri);
+      await need({ id: "your_story_share_shortcut_button" }, "the Story screen", 40_000);
+    });
+
+    if (o.mute) {
+      await step("Muting the video's sound", async () => {
+        const { nodes } = await editor();
+        const off = findUi(nodes, { desc: "Mute volume" });
+        if (off) await tap(serial, off);
+        else if (!findUi(nodes, { desc: "Unmute volume" })) notes.push("The mute button was not found; the sound was left as it is.");
+      });
+    }
+
+    // The link goes on first and is moved out of the centre before the text arrives there, so the two never sit on top of each other.
+    if (o.linkUrl) {
+      await step("Adding the link sticker", async () => {
+        const { nodes } = await editor();
+        const tray = findUi(nodes, { id: "asset_button" });
+        if (!tray) throw new Error("Instagram did not show the Stickers button. Finish in the phone panel.");
+        await tap(serial, tray);
+        const link = await need({ desc: "Link Sticker" }, "the Link sticker");
+        await tap(serial, link.hit);
+        await need({ id: "link_sticker_list_web_url_edit_text" }, "the link's address box");
+        if (!(await typeChecked(serial, "link_sticker_list_web_url_edit_text", /** @type {string} */ (o.linkUrl)))) {
+          throw new Error("The link's address did not type correctly. Fix it in the phone panel.");
+        }
+        if (o.linkLabel) {
+          const now = await look(serial);
+          if (!findUi(now, { id: "link_sticker_custom_cta_edit_text" })) {
+            const row = findUi(now, { id: "link_sticker_custom_cta_row" });
+            if (row) await tap(serial, row);
+            await need({ id: "link_sticker_custom_cta_edit_text" }, "the sticker text box");
+          }
+          if (!(await typeChecked(serial, "link_sticker_custom_cta_edit_text", o.linkLabel))) notes.push("The sticker's text did not type correctly; check it in the phone panel.");
+        }
+        const done = findUi(await look(serial), { id: "link_sticker_list_done_icon_button" });
+        if (!done) throw new Error("Instagram did not show the link's Done button. Finish in the phone panel.");
+        await tap(serial, done);
+        await editor();
+        await dragSticker(serial, isLinkSticker, storySlotY(o.linkAt, height, o.overlay !== "" && o.overlayAt === o.linkAt));
+        notes.push(`Link sticker: ${o.linkUrl}`);
+      });
+    }
+
+    if (o.overlay) {
+      await step("Adding the text", async () => {
+        const { nodes } = await editor();
+        const button = findUi(nodes, { id: "add_text_button" });
+        if (!button) throw new Error("Instagram did not show the Text button. Finish in the phone panel.");
+        await tap(serial, button);
+        await need({ id: "text_overlay_edit_text" }, "the text box");
+        await wait(900);
+        await typeText(serial, o.overlay);
+        const done = await need({ id: "done_button" }, "the Done button");
+        await tap(serial, done.hit);
+        await editor();
+        await dragSticker(serial, isTextSticker, storySlotY(o.overlayAt, height));
+      });
+    }
+
+    await editor();
+    return { ready: true, notes };
+  } catch (err) {
+    if (err instanceof Stopped) return { ready: false, stoppedAt: "cancelled", notes };
+    return { ready: false, stoppedAt: "failed", error: err instanceof Error ? err.message : String(err), notes };
+  } finally {
+    if (job === mine) job = null;
+  }
+}
+
+/** Shares the Story that is open. Only ever called when the page asks, after its own countdown. */
+async function shareStory(/** @type {unknown} */ audience) {
+  const serial = await requireDevice();
+  const id = audience === "close" ? "close_friends_story_share_shortcut_button" : "your_story_share_shortcut_button";
+  const found = await waitFor(serial, { id }, 8000);
+  if (!found) throw new Error("Instagram's share button is not on screen. Finish in the phone panel.");
+  await tap(serial, found.hit);
+  for (let i = 0; i < 6; i++) {
+    await wait(1200);
+    if (!findUi(await look(serial), { id: "your_story_share_shortcut_button" })) return { shared: true };
+  }
+  return { shared: false };
+}
+
 /** Taps Instagram's Share. Only ever called when the page asks, after its own countdown. */
 async function shareReel() {
   const serial = await requireDevice();
@@ -537,6 +705,8 @@ export function registerPhone() {
   });
   handle("phone:instagramHome", () => instagramHome());
   handle("phone:reel", (event, uri, options) => runReel(event.sender, String(uri), options && typeof options === "object" ? options : {}));
+  handle("phone:story", (event, uri, options) => runStory(event.sender, String(uri), options && typeof options === "object" ? options : {}));
+  handle("phone:shareStory", (_event, audience) => shareStory(audience));
   handle("phone:cancel", () => {
     if (job) job.cancelled = true;
   });
