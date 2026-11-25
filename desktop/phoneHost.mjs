@@ -15,6 +15,7 @@ import path from "node:path";
 import { isAppUrl } from "./lib/appUrl.mjs";
 import {
   cleanLinkUrl,
+  findHighlight,
   findUi,
   firstDevice,
   inputTextPieces,
@@ -27,6 +28,8 @@ import {
   pickResult,
   screenSize,
   shellQuote,
+  storyAgeMinutes,
+  storyOwner,
   STORY_SLOTS,
   storySlotY,
   streamSize,
@@ -625,6 +628,153 @@ async function shareStory(/** @type {unknown} */ audience) {
   return { shared: await leftScreen(serial, "your_story_share_shortcut_button") };
 }
 
+// ---- Highlights -------------------------------------------------------------------------------
+
+/** How long a just-shared Story is given to finish uploading before the Highlight step gives up. */
+const UPLOAD_WAIT_MS = 8 * 60_000;
+
+/**
+ * Adds the Story that was just shared to one of the account's Highlights, the free way: open the
+ * posted Story, More, Highlight, then the Highlight with exactly this name. Sharing straight to a
+ * Highlight is a paid Instagram feature, and nothing here goes near that.
+ *
+ * Nothing is added unless exactly one Highlight has the name. A Story still uploading cannot be
+ * read (its spinner never lets the screen settle), so the wait for it is simply "until the screen reads".
+ *
+ * @param {import("electron").WebContents} sender
+ * @param {unknown} rawName
+ * @param {unknown} rawMaxAge how recent (minutes) the Story must be to count as the one just shared
+ * @returns {Promise<{ added: boolean, note: string }>}
+ */
+async function addToHighlight(sender, rawName, rawMaxAge) {
+  const serial = await requireDevice();
+  const name = typeof rawName === "string" ? rawName.trim().slice(0, 60) : "";
+  if (!name) return { added: false, note: "No Highlight name was given." };
+  const maxAge = typeof rawMaxAge === "number" && rawMaxAge > 0 && rawMaxAge <= 1440 ? rawMaxAge : 20;
+  const mine = { cancelled: false };
+  job = mine;
+  const say = (/** @type {string} */ label) => {
+    if (!sender.isDestroyed()) sender.send("phone:step", label);
+  };
+  const back = () => sh(serial, ["input", "keyevent", "4"]);
+  /** Closes whatever of the sheet, the menu and the viewer is still open, without pressing Back past Instagram's feed. */
+  const leave = async () => {
+    for (let i = 0; i < 4; i++) {
+      const nodes = await look(serial);
+      if (!nodes.length || findUi(nodes, { id: "feed_tab" })) return;
+      await back();
+      await wait(900);
+    }
+  };
+
+  try {
+    say("Opening your Story");
+    if ((await instagramHome()).state !== "home") return { added: false, note: "Instagram has something else open, so the Story was not added to a Highlight." };
+    await wait(1800);
+    const feed = await look(serial);
+    const label = feed.find((n) => n.id === "username" && n.text.trim() === "Your story");
+    const entry = label && feed.find((n) => storyOwner(n.desc) !== null && Math.abs(n.x - label.x) < 90 && n.y < label.y);
+    const me = entry ? storyOwner(entry.desc) : null;
+    if (!entry || !me) return { added: false, note: "Your Story was not found on Instagram's home screen." };
+    await tap(serial, entry);
+
+    // Find the Story just shared: the newest of the account's own, once it has finished uploading.
+    say("Waiting for Instagram to finish uploading the Story");
+    const size = screenSize(await sh(serial, ["wm", "size"], 6000)) ?? { width: 1080, height: 2424 };
+    const until = Date.now() + UPLOAD_WAIT_MS;
+    let advances = 0;
+    let reopened = 0;
+    let ready = false;
+    while (Date.now() < until) {
+      if (mine.cancelled) throw new Stopped("Stopped.");
+      const nodes = await look(serial);
+      if (!nodes.length) {
+        await wait(2500);
+        continue;
+      }
+      if (findUi(nodes, { id: "feed_tab" })) {
+        // The viewer closed by itself (it does after the last Story): open it again.
+        if (++reopened > 4) break;
+        const again = nodes.find((n) => storyOwner(n.desc) === me && n.y < 800);
+        if (!again) break;
+        await tap(serial, again);
+        await wait(1500);
+        continue;
+      }
+      const head = findUi(nodes, { id: "reel_viewer_text_container" });
+      if (!head) {
+        await wait(1200);
+        continue;
+      }
+      if (storyOwner(head.desc) !== me) {
+        await leave();
+        return { added: false, note: "The Story just shared was not found among your Stories; nothing was added to a Highlight." };
+      }
+      const age = storyAgeMinutes(head.desc);
+      if (age !== null && age <= maxAge && findUi(nodes, { id: "self_toolbar_menu_button" })) {
+        ready = true;
+        break;
+      }
+      // One of the account's older Stories: on to the next.
+      if (++advances > 15) break;
+      await sh(serial, ["input", "tap", String(Math.round(size.width * 0.9)), String(Math.round(size.height * 0.5))]);
+      await wait(1300);
+    }
+    if (!ready) {
+      await leave();
+      return { added: false, note: "The Story was still uploading, or was not found, so it was not added to a Highlight. Add it by hand from the Story's More menu." };
+    }
+
+    say(`Adding the Story to "${name}"`);
+    const menu = await waitFor(serial, { id: "self_toolbar_menu_button" }, 8000);
+    if (!menu) throw new Error("The Story's More button was not found.");
+    await tap(serial, menu.hit);
+    const row = await waitFor(serial, { id: "action_sheet_row_text_view", text: "Highlight" }, 8000);
+    if (!row) throw new Error("Instagram's menu did not offer Highlight.");
+    await tap(serial, row.hit);
+    const sheet = await waitFor(serial, { id: "header_text", text: "Add to highlights" }, 8000);
+    if (!sheet) throw new Error("Instagram did not show the list of Highlights.");
+
+    // The list scrolls sideways; look along it until the name turns up or nothing new comes into view.
+    let found = findHighlight(sheet.nodes, name);
+    let nodes = sheet.nodes;
+    for (let i = 0; i < 8 && found.count === 0; i++) {
+      const anyLabel = nodes.find((n) => n.id === "username" && n.y > sheet.hit.y);
+      if (!anyLabel) break;
+      const before = found.seen.join("|");
+      await sh(serial, ["input", "swipe", String(Math.round(size.width * 0.85)), String(anyLabel.y - 110), String(Math.round(size.width * 0.2)), String(anyLabel.y - 110), "450"]);
+      await wait(900);
+      nodes = await look(serial);
+      found = findHighlight(nodes, name);
+      if (found.seen.join("|") === before) break;
+    }
+    if (found.count !== 1 || !found.label) {
+      await leave();
+      return {
+        added: false,
+        note: found.count > 1 ? `More than one Highlight is called "${name}", so nothing was added. Give them different names on Instagram.` : `No Highlight is called "${name}", so nothing was added.`,
+      };
+    }
+    const target = found.label;
+    const picture = nodes.find((n) => n.id === "avatar_image_view" && Math.abs(n.x - target.x) < 70 && n.y < target.y && target.y - n.y < 260);
+    await tap(serial, picture ?? { x: target.x, y: target.y - 124 });
+    let gone = false;
+    for (let i = 0; i < 5 && !gone; i++) {
+      await wait(1200);
+      const now = await look(serial);
+      gone = now.length > 0 && !findUi(now, { id: "header_text", text: "Add to highlights" });
+    }
+    await leave();
+    return gone ? { added: true, note: `Added to the Highlight "${name}".` } : { added: false, note: `"${name}" was tapped, but Instagram's list stayed open, so check the Highlight on your profile.` };
+  } catch (err) {
+    await leave().catch(() => undefined);
+    if (err instanceof Stopped) return { added: false, note: "Stopped before the Story was added to a Highlight." };
+    return { added: false, note: `${err instanceof Error ? err.message : String(err)} Nothing was added to a Highlight.` };
+  } finally {
+    if (job === mine) job = null;
+  }
+}
+
 /** How long Instagram is given to leave the screen it was shared from. */
 const SHARE_WAIT_MS = 90_000;
 
@@ -721,6 +871,7 @@ export function registerPhone() {
   handle("phone:reel", (event, uri, options) => runReel(event.sender, String(uri), options && typeof options === "object" ? options : {}));
   handle("phone:story", (event, uri, options) => runStory(event.sender, String(uri), options && typeof options === "object" ? options : {}));
   handle("phone:shareStory", (_event, audience) => shareStory(audience));
+  handle("phone:highlight", (event, name, maxAgeMinutes) => addToHighlight(event.sender, name, maxAgeMinutes));
   handle("phone:cancel", () => {
     if (job) job.cancelled = true;
   });

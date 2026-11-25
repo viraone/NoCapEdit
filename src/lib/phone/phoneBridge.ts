@@ -76,6 +76,11 @@ export interface DesktopPhoneBridge {
   story(uri: string, options: StoryOptions): Promise<ReelOutcome>;
   /** Shares the open Story to "Your story" or to Close Friends. */
   shareStory(audience: "story" | "close"): Promise<{ shared: boolean }>;
+  /**
+   * Adds the Story just shared to the Highlight with exactly this name, once Instagram has finished
+   * uploading it (that wait can be minutes). `note` says what happened either way.
+   */
+  highlight(name: string, maxAgeMinutes?: number): Promise<{ added: boolean; note: string }>;
   onStep(fn: ((label: string) => void) | null): void;
   cancel(): Promise<void>;
   share(): Promise<{ shared: boolean }>;

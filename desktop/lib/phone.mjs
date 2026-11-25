@@ -209,3 +209,45 @@ export function cleanLinkUrl(text) {
   }
   return t;
 }
+
+/**
+ * Whose Story a viewer heading or a tray entry is for, from its description
+ * ("someone's story, 10 hours ago" / "someone's story, 0 of 4, Seen."). Null when it is not one.
+ * @param {string} desc
+ * @returns {string | null}
+ */
+export function storyOwner(desc) {
+  const m = desc.match(/^(.+?)'s story, /);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * How long ago a Story was posted, in minutes, from the viewer's heading
+ * ("…'s story, 54 seconds ago", "… 2 minutes ago", "… 10 hours ago", "… just now"). Null when it does not say.
+ * @param {string} desc
+ * @returns {number | null}
+ */
+export function storyAgeMinutes(desc) {
+  if (/'s story, just now/i.test(desc)) return 0;
+  const m = desc.match(/'s story, (\d+) (second|minute|hour|day|week)s? ago/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const per = { second: 1 / 60, minute: 1, hour: 60, day: 1440, week: 10080 }[m[2].toLowerCase()] ?? 1;
+  return n * per;
+}
+
+/**
+ * The Highlight to add to, in Instagram's "Add to highlights" list: the one whose name is exactly
+ * `name` (letter case aside). `count` is how many carry that name; more than one means it cannot be told apart.
+ * `seen` lists the names on screen, to notice when a sideways scroll brought nothing new.
+ * @param {UiNode[]} nodes
+ * @param {string} name
+ * @returns {{ label: UiNode | null, count: number, seen: string[] }}
+ */
+export function findHighlight(nodes, name) {
+  const header = nodes.find((n) => n.id === "header_text");
+  const labels = nodes.filter((n) => n.id === "username" && n.text.trim() !== "" && (!header || n.y > header.y));
+  const want = name.trim().toLowerCase();
+  const hits = labels.filter((n) => n.text.trim().toLowerCase() === want);
+  return { label: hits[0] ?? null, count: hits.length, seen: labels.map((n) => `${n.text.trim()}@${n.x}`) };
+}

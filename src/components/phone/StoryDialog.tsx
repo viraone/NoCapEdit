@@ -77,6 +77,7 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
   const [linkLabel, setLinkLabel] = useState(saved.current.linkLabel);
   const [linkAt, setLinkAt] = useState<StorySlot>(saved.current.linkAt);
   const [overlayAt, setOverlayAt] = useState<StorySlot>(saved.current.overlayAt);
+  const [highlight, setHighlight] = useState(saved.current.highlight);
   /* eslint-enable react-hooks/refs */
   const [overlay, setOverlay] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
@@ -107,12 +108,32 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
       try {
         setPhase({ kind: "running", label: "Sharing the Story (Instagram can take a minute)" });
         const r = await api!.shareStory(audience);
-        setPhase({
-          kind: "done",
-          ok: r.shared,
-          outcome,
-          headline: r.shared ? (audience === "close" ? "Shared to Close Friends. Instagram is uploading it." : "Shared to your story. Instagram is uploading it.") : "Share was tapped, but Instagram was still on the Story screen 90 seconds later, so it may not have posted. Look at the phone panel before sharing again, or it could post twice.",
-        });
+        const sharedLine = audience === "close" ? "Shared to Close Friends." : "Shared to your story.";
+        if (!r.shared) {
+          setPhase({
+            kind: "done",
+            ok: false,
+            outcome,
+            headline: "Share was tapped, but Instagram was still on the Story screen 90 seconds later, so it may not have posted. Look at the phone panel before sharing again, or it could post twice.",
+          });
+          return;
+        }
+        const into = highlight.trim();
+        if (!into) {
+          setPhase({ kind: "done", ok: true, outcome, headline: `${sharedLine} Instagram is uploading it.` });
+          return;
+        }
+        // The Story is posted; now the Highlight, which has to wait for Instagram's upload to finish.
+        running.current = true;
+        api!.onStep((label) => setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p)));
+        setPhase({ kind: "running", label: "Opening your Story" });
+        try {
+          const h = await api!.highlight(into);
+          setPhase({ kind: "done", ok: h.added, outcome, headline: `${sharedLine} ${h.note}` });
+        } finally {
+          running.current = false;
+          api!.onStep(null);
+        }
       } catch (e) {
         setPhase({
           kind: "done",
@@ -122,14 +143,14 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
         });
       }
     })();
-  }, [phase, audience]);
+  }, [phase, audience, highlight]);
 
   const go = async () => {
     const api = phoneBridge();
     if (!api) return;
     cancelled.current = false;
     running.current = true;
-    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt });
+    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim() });
     const options: StoryOptions = { mute, overlay: overlay.trim(), overlayAt, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt };
     setPhase({ kind: "running", label: "Sending the video to the phone" });
     api.onStep((label) => setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p)));
@@ -216,6 +237,12 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
             </button>
           </div>
           <Check name="share" checked={share} onChange={setShare} label="Tap Share" hint={`Posts the Story. The finished Story shows for ${SHARE_COUNTDOWN} seconds first, with a button to cancel. Off: stop with the Story ready on the phone.`} />
+          <Field
+            label="Add to Highlight"
+            hint={share ? "Optional. The exact name of one of your Highlights. Added after Instagram finishes uploading the Story, which can take a few minutes." : "Needs Tap Share on: a Story has to be posted before it can go into a Highlight."}
+          >
+            <Input value={highlight} onChange={(e) => setHighlight(e.target.value)} placeholder="Name of the Highlight" maxLength={60} disabled={!share} data-story-highlight />
+          </Field>
         </fieldset>
 
         {phase.kind === "running" && (

@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
     reel: (uri, options) => ipcRenderer.invoke("phone:reel", uri, options),
     story: (uri, options) => ipcRenderer.invoke("phone:story", uri, options),
     shareStory: (audience) => ipcRenderer.invoke("phone:shareStory", audience),
+    highlight: (name, maxAgeMinutes) => ipcRenderer.invoke("phone:highlight", name, maxAgeMinutes),
     onStep: (fn) => {
       onPhoneStep = typeof fn === "function" ? fn : null;
     },

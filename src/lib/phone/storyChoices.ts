@@ -8,9 +8,11 @@ export interface StoryChoices {
   linkLabel: string;
   linkAt: StorySlot;
   overlayAt: StorySlot;
+  /** The exact name of the Highlight to add the shared Story to, or "" for none. */
+  highlight: string;
 }
 
-export const STORY_DEFAULTS: StoryChoices = { mute: false, share: true, audience: "story", linkUrl: "", linkLabel: "", linkAt: "bottom", overlayAt: "top" };
+export const STORY_DEFAULTS: StoryChoices = { mute: false, share: true, audience: "story", linkUrl: "", linkLabel: "", linkAt: "bottom", overlayAt: "top", highlight: "" };
 
 const KEY = "reelflow.storyChoices";
 
@@ -31,6 +33,7 @@ export function parseStoryChoices(text: string | null): StoryChoices {
       linkLabel: typeof raw.linkLabel === "string" ? raw.linkLabel.slice(0, 60) : "",
       linkAt: slot(raw.linkAt, STORY_DEFAULTS.linkAt),
       overlayAt: slot(raw.overlayAt, STORY_DEFAULTS.overlayAt),
+      highlight: typeof raw.highlight === "string" ? raw.highlight.slice(0, 60) : "",
     };
   } catch {
     return { ...STORY_DEFAULTS };

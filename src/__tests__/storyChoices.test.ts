@@ -15,7 +15,7 @@ describe("parseStoryChoices", () => {
   });
 
   it("parses valid choices correctly", () => {
-    const json = '{"mute":true,"share":false,"audience":"close","linkUrl":"https://example.com","linkLabel":"SIGN UP NOW!","linkAt":"top","overlayAt":"bottom"}';
+    const json = '{"mute":true,"share":false,"audience":"close","linkUrl":"https://example.com","linkLabel":"SIGN UP NOW!","linkAt":"top","overlayAt":"bottom","highlight":"Shows"}';
     expect(parseStoryChoices(json)).toEqual({
       mute: true,
       share: false,
@@ -24,20 +24,23 @@ describe("parseStoryChoices", () => {
       linkLabel: "SIGN UP NOW!",
       linkAt: "top",
       overlayAt: "bottom",
+      highlight: "Shows",
     });
   });
 
   it("falls back to defaults for wrong types", () => {
-    const json = '{"mute":"yes","share":1,"audience":"everyone","linkUrl":5,"linkLabel":null,"linkAt":"left","overlayAt":7}';
+    const json = '{"mute":"yes","share":1,"audience":"everyone","linkUrl":5,"linkLabel":null,"linkAt":"left","overlayAt":7,"highlight":9}';
     expect(parseStoryChoices(json)).toEqual(STORY_DEFAULTS);
   });
 
   it("truncates linkUrl to 200 characters and linkLabel to 60 characters", () => {
     const longUrl = "a".repeat(300);
     const longLabel = "b".repeat(100);
-    const json = JSON.stringify({ linkUrl: longUrl, linkLabel: longLabel });
+    const longHighlight = "c".repeat(100);
+    const json = JSON.stringify({ linkUrl: longUrl, linkLabel: longLabel, highlight: longHighlight });
     const result = parseStoryChoices(json);
     expect(result.linkUrl.length).toBe(200);
     expect(result.linkLabel.length).toBe(60);
+    expect(result.highlight.length).toBe(60);
   });
 });
