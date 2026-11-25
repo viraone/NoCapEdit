@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AnnexBSplitter, FrameAssembler } from "@/lib/phone/h264";
-import { clampPanelWidth, PANEL_MIN_WIDTH, panelHeightFor, panelWidthFor } from "@/lib/phone/panelSize";
+import { clampPanelWidth, PANEL_MIN_WIDTH, panelHeightFor, panelWidthFor, pictureSize } from "@/lib/phone/panelSize";
 import { parsePeople, toPhonePoint } from "@/lib/phone/phoneBridge";
 import { parseReelChoices, typeableNote, untypeable } from "@/lib/phone/reelChoices";
 
@@ -97,5 +97,14 @@ describe("the phone panel's size", () => {
   it("never takes more than 60% of a narrow window, nor less than the minimum", () => {
     expect(clampPanelWidth(5000, { height: 3000, windowWidth: 1000 }, phone)).toBe(600);
     expect(clampPanelWidth(5000, { height: 300, windowWidth: 1000 }, phone)).toBe(PANEL_MIN_WIDTH);
+  });
+
+  it("draws the picture in the phone's own shape, whichever side is the tight one", () => {
+    const tall = pictureSize({ width: 240, height: 846 }, phone);
+    expect(tall.width).toBe(222);
+    expect(Math.abs(tall.height / tall.width - 2424 / 1080)).toBeLessThan(0.02);
+    const wide = pictureSize({ width: 900, height: 846 }, phone);
+    expect(wide.height).toBe(750);
+    expect(Math.abs(wide.height / wide.width - 2424 / 1080)).toBeLessThan(0.02);
   });
 });
