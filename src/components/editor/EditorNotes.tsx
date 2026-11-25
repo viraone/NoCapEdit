@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { ArrowUp, Check, Copy, ExternalLink, NotebookPen, RefreshCw, Settings, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useEditor } from "@/store/editorStore";
@@ -24,9 +25,17 @@ const ICON = "rounded p-0.5 text-label-3 hover:bg-sys-gray4 hover:text-white";
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Notes beside the chat. Each one becomes a row (Date, Note) in the owner's Google Sheet. */
+/** Id of the element in the top bar that holds the closed Notes button. */
+export const NOTES_BUTTON_SLOT = "editor-notes-button-slot";
+
+const noSubscription = () => () => undefined;
+const findSlot = () => document.getElementById(NOTES_BUTTON_SLOT);
+
 export function EditorNotes() {
   const ready = useEditor((s) => !!s.project);
   const [open, setOpen] = useState(() => loadNotesOpen());
+  // The closed-state button sits in the top bar, after Export video (TopBar renders the slot).
+  const slot = useSyncExternalStore(noSubscription, findSlot, () => null);
   const [url, setUrl] = useState(() => loadNotesUrl());
   const [notes, setNotes] = useState<Note[]>(() => loadCachedNotes());
   const [sheetUrl, setSheetUrl] = useState("");
@@ -233,11 +242,14 @@ export function EditorNotes() {
           </form>
         </section>
       </aside>
-      {!open && (
-        <button type="button" onClick={() => show(true)} className="card order-last flex h-10 w-10 shrink-0 items-center justify-center self-start text-label-2 hover:text-white" aria-label="Notes" title="Notes" data-editor-notes-open>
-          <NotebookPen size={18} />
-        </button>
-      )}
+      {!open &&
+        slot &&
+        createPortal(
+          <button type="button" onClick={() => show(true)} className="card flex h-[38px] w-[38px] shrink-0 items-center justify-center text-label-2 hover:text-white" aria-label="Notes" title="Notes" data-editor-notes-open>
+            <NotebookPen size={18} />
+          </button>,
+          slot,
+        )}
     </>
   );
 }

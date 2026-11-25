@@ -1,4 +1,5 @@
 "use client";
+import { NOTES_BUTTON_SLOT } from "./EditorNotes";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History, AlertTriangle, Mic } from "lucide-react";
@@ -237,6 +238,8 @@ export function TopBar() {
         <Button variant="primary" size="bar" onClick={() => setTool("export")}>
           <Share size={17} /> Export video
         </Button>
+        {/* The Notes button, while the notes are closed (EditorNotes puts it here). */}
+        <div id={NOTES_BUTTON_SLOT} className="contents" />
       </div>
     </header>
   );
