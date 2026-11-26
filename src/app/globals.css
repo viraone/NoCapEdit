@@ -392,20 +392,173 @@ body {
   .rf-saved-check, .rf-saved-glow { animation: none; }
 }
 
-/* The Export panel in the desktop app only (ExportPanel adds .rf-export-skin there), matching
-   the Instagram windows. The website's panel is untouched. */
-.rf-export-skin {
+/* The tool panels in the desktop app only, matching the Instagram windows. EditorShell adds
+   .rf-skin to the panel there (ExportPanel adds .rf-export-skin itself, for its extra layout
+   below). The website's panels are untouched. */
+:is(.rf-skin, .rf-export-skin) {
   --rf-hot: linear-gradient(90deg, var(--color-sys-purple), var(--color-sys-pink), var(--color-sys-orange));
   padding-bottom: 10px;
 }
-/* Header: scrolls with the page, a hot line on top, the three steps side by side. */
-.rf-export-skin > div:first-child {
+/* Header: scrolls with the page, a hot line on top. */
+:is(.rf-skin, .rf-export-skin) > div:first-of-type {
   position: static;
   border-bottom: 0;
   padding-bottom: 2px;
   background: var(--rf-hot) top / 100% 4px no-repeat;
 }
-.rf-export-skin > div:first-child .rf-steps {
+/* A clip name or count in the header stops short of the close button. */
+.rf-skin > div:first-of-type > div:first-child {
+  padding-right: 30px;
+}
+.rf-skin > div:first-of-type .rf-read {
+  font-size: 13.5px;
+}
+/* Each group is a card. */
+:is(.rf-skin, .rf-export-skin) > section {
+  flex-shrink: 0;
+  margin: 10px 10px 0;
+  padding: 14px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+}
+:is(.rf-skin, .rf-export-skin) > section h3.caps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+:is(.rf-skin, .rf-export-skin) > section h3.caps::before {
+  content: "";
+  flex-shrink: 0;
+  width: 4px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--color-sys-purple), var(--color-sys-orange));
+}
+.rf-skin > section > div:has(> h3.caps) {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+/* The panel's close button floats over the cards once scrolled, so give it a backing. */
+.rf-skin > [data-tool-panel-close],
+.rf-panel:has(> .rf-export-skin) > [data-tool-panel-close] {
+  border-radius: 999px;
+  background: rgba(38, 38, 40, 0.95);
+}
+:is(.rf-skin, .rf-export-skin) .rf-read-note {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+:is(.rf-skin, .rf-export-skin) :is(select, textarea, input:not([type="range"], [type="checkbox"], [type="radio"], [type="color"], [type="file"])) {
+  border-radius: 12px;
+  background-color: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+:is(.rf-skin, .rf-export-skin) select {
+  height: 40px;
+}
+.rf-skin select.w-full {
+  padding-inline: 8px 2px;
+  font-size: 12.5px;
+}
+:is(.rf-skin, .rf-export-skin) button[role="switch"][aria-checked="true"] > span:last-child {
+  background: var(--rf-hot);
+}
+:is(.rf-skin, .rf-export-skin) .rf-range::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(255, 55, 95, 0.3);
+}
+:is(.rf-skin, .rf-export-skin) .rf-progress-fill {
+  background: var(--rf-hot);
+}
+/* Tiles and option cards: glass, and the chosen one glows. */
+.rf-skin .tile {
+  padding-inline: 0;
+  letter-spacing: -0.03em;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.rf-skin .tile:enabled:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.rf-skin .tile[data-active="true"] {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(191, 90, 242, 0.45), rgba(255, 55, 95, 0.36), rgba(255, 159, 10, 0.3));
+  border-color: rgba(255, 255, 255, 0.5);
+}
+/* Buttons: pills; the main action of a card wears the gradient. */
+.rf-skin button.whitespace-nowrap {
+  border-radius: 999px;
+}
+.rf-skin button.whitespace-nowrap:is(.bg-sys-gray4, .bg-sys-gray5) {
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.rf-skin button.whitespace-nowrap:is(.bg-sys-gray4, .bg-sys-gray5):enabled:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+.rf-skin button.whitespace-nowrap.bg-sys-blue {
+  background-image: var(--rf-hot);
+  box-shadow: 0 8px 22px rgba(255, 55, 95, 0.25);
+}
+.rf-skin button.whitespace-nowrap.bg-sys-blue:enabled:hover {
+  filter: brightness(1.1);
+}
+/* Long labels still fit inside their card. */
+.rf-skin button.whitespace-nowrap.w-full {
+  padding-inline: 6px;
+  font-size: 13px;
+}
+.rf-skin section .grid-cols-3 > button.whitespace-nowrap {
+  gap: 2px;
+  padding-inline: 0;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+}
+.rf-skin section :is(.grid:has(> .tile), .grid-cols-3:has(> button.whitespace-nowrap)) {
+  gap: 4px;
+}
+/* A caption's start and end times get the same width, enough to read them. */
+.rf-skin [data-cue] div.relative {
+  flex: none;
+  width: 4.5rem;
+}
+.rf-skin [data-cue] input[type="number"] {
+  width: 100%;
+  padding-inline: 6px 2px;
+  font-size: 12px;
+}
+/* Drop areas and the boxes inside a card. */
+.rf-skin [role="button"].border-dashed {
+  border-radius: 16px;
+  border-color: rgba(191, 90, 242, 0.5);
+  background: linear-gradient(135deg, rgba(191, 90, 242, 0.12), rgba(255, 55, 95, 0.07), rgba(255, 159, 10, 0.05));
+}
+.rf-skin [role="button"].border-dashed:hover {
+  border-color: var(--color-sys-pink);
+}
+.rf-skin section :is(.rounded-lg, .rounded-xl).border:is(.border-sys-gray3, .border-sys-gray4, .border-sys-gray5):not(input, select, textarea, .whitespace-nowrap) {
+  border-radius: 14px;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+/* What is chosen (a style, a clip, a layer) or being worked on: pink instead of blue. */
+.rf-skin section :is(button, div, li):is(.border-sys-blue, .border-sys-blue\/60) {
+  border-color: rgba(255, 55, 95, 0.85);
+  background-image: linear-gradient(135deg, rgba(191, 90, 242, 0.2), rgba(255, 55, 95, 0.14), rgba(255, 159, 10, 0.1));
+  --tw-ring-color: rgba(255, 55, 95, 0.5);
+}
+/* Numbered steps wear the gradient too. */
+.rf-skin .rf-steps > li::before {
+  background: var(--rf-hot);
+  color: #fff;
+}
+/* The Export panel only: the three steps side by side. */
+.rf-export-skin .rf-steps {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
@@ -427,54 +580,6 @@ body {
 }
 .rf-export-skin .rf-steps ~ p {
   display: none;
-}
-/* Each group is a card. */
-.rf-export-skin > section {
-  margin: 10px 10px 0;
-  padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.035);
-}
-.rf-export-skin > section h3.caps {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #fff;
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-.rf-export-skin > section h3.caps::before {
-  content: "";
-  width: 4px;
-  height: 14px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--color-sys-purple), var(--color-sys-orange));
-}
-/* The panel's close button floats over the cards once scrolled, so give it a backing. */
-.rf-panel:has(> .rf-export-skin) > [data-tool-panel-close] {
-  border-radius: 999px;
-  background: rgba(38, 38, 40, 0.95);
-}
-.rf-export-skin .rf-read-note {
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-.rf-export-skin select {
-  height: 40px;
-  border-radius: 12px;
-  background-color: rgba(0, 0, 0, 0.35);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-.rf-export-skin button[role="switch"][aria-checked="true"] > span:last-child {
-  background: var(--rf-hot);
-}
-.rf-export-skin .rf-range::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px rgba(255, 55, 95, 0.3);
-}
-.rf-export-skin .rf-progress-fill {
-  background: var(--rf-hot);
 }
 .rf-export-skin [data-export-gif],
 .rf-export-skin [data-export-transparent],

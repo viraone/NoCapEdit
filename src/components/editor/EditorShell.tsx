@@ -12,6 +12,8 @@ import { EditorChat } from "./EditorChat";
 import { EditorNotes } from "./EditorNotes";
 import { InstagramPanel } from "@/components/phone/InstagramPanel";
 import { PhonePanel } from "@/components/phone/PhonePanel";
+import { phoneBridge } from "@/lib/phone/phoneBridge";
+import { cx } from "@/lib/utils/cx";
 import { useFitPictureToSong, useStillLength } from "@/components/panels/useStillLength";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { ToolRail } from "@/components/panels/ToolRail";
@@ -95,6 +97,8 @@ export function EditorShell() {
   const project = useEditor((s) => s.project);
   const assetUrls = useEditor((s) => s.assetUrls);
   useFitPictureToSong();
+  // The desktop app's panel look. Export adds its own and Instagram is drawn that way already.
+  const skin = !!phoneBridge() && tool !== "export" && tool !== "instagram";
 
   useEffect(() => {
     engine.onTime = (t) => useEditor.getState().setTime(t);
@@ -226,7 +230,7 @@ export function EditorShell() {
               <ToolRail />
               {panelOpen && (
                 /* Keyed by tool so each one opens at its top, not where the last one was scrolled to. */
-                <aside key={tool} className="rf-panel card relative flex w-[24rem] flex-col overflow-y-auto">
+                <aside key={tool} className={cx("rf-panel card relative flex w-[24rem] flex-col overflow-y-auto", skin && "rf-skin")}>
                   <button type="button" data-tool-panel-close aria-label="Close panel" title="Close panel" onClick={() => setPanelOpen(false)} className="sticky top-2 z-20 -mb-9 mr-2 mt-2 grid h-7 w-7 shrink-0 place-items-center self-end rounded-md text-muted hover:bg-white/10 hover:text-white">
                     <X size={16} />
                   </button>
