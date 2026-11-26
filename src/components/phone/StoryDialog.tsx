@@ -58,7 +58,7 @@ function SlotPicker({ value, onChange, name }: { value: StorySlot; onChange: (v:
  * The Story window: what Instagram should be walked through on the phone, then Go.
  * `prepare` copies the video to the phone (once) and returns its gallery address.
  */
-export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: boolean; onClose: () => void; prepare: (onLabel: (label: string) => void) => Promise<string>; video: Blob; /** Takes these words to the editor's Text tool to be styled; missing when the video is a picked file, which the editor cannot change. */ onStyle?: (text: string, slot: StorySlot) => void }) {
+export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: boolean; onClose: () => void; prepare: (onLabel: (label: string) => void) => Promise<string>; video: Blob; /** Takes these words to the editor's Text tool to be styled; missing when the video is a picked file, which the editor cannot change. */ onStyle?: (text: string, slot: StorySlot, ai: boolean) => void }) {
   const saved = useRef(loadStoryChoices());
   // The saved choices are read once, when the window first mounts. Newer React lint forbids reading a
   // ref during render even for this one-time read; the values below never change on later renders.
@@ -78,6 +78,8 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
   const [gemini, setGemini] = useState(false);
   /** DeepSeek steps in when Gemini is busy. */
   const [spare, setSpare] = useState(false);
+  /** DeepSeek is set up, so Style it asks it for a look. */
+  const [aiLook, setAiLook] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
   const runRef = useRef<Run | null>(null);
 
@@ -102,6 +104,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
         if (gone) return;
         setGemini(i.available);
         setSpare(!!i.spare);
+        setAiLook(!!i.style);
       })
       .catch(() => undefined);
     return () => {
@@ -230,7 +233,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
     setOverlay("");   // otherwise Instagram would type the same words a second time
     setPhase({ kind: "form" });
     onClose();
-    onStyle(text, overlayAt);
+    onStyle(text, overlayAt, aiLook);
   };
 
   const busy = phase.kind === "running" || phase.kind === "countdown";
@@ -270,7 +273,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
                 <button type="button" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-linear-to-r from-sys-purple to-sys-pink px-2.5 py-1 text-[11px] font-bold text-white transition enabled:hover:brightness-110 disabled:opacity-45" disabled={!overlay.trim()} onClick={styleIt} data-story-style>
                   <Sparkles size={11} /> Style it
                 </button>
-                <span className="rf-read-face text-[12px] leading-snug text-white/55">Fonts, colours and size in the editor. The words become part of the video; emoji work too.</span>
+                <span className="rf-read-face text-[12px] leading-snug text-white/55">{aiLook ? "DeepSeek suggests a look, using these words and one frame of the video. See it on the preview, try another, or change it. The words become part of the video." : "Fonts, colours and size in the editor. The words become part of the video; emoji work too."}</span>
               </div>
             )}
           </Card>

@@ -17,6 +17,7 @@ import { ColorInput } from "@/components/ui/ColorInput";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { Toggle } from "@/components/ui/Toggle";
 import { TrackControls } from "./TrackControls";
+import { AiStyleCard } from "@/components/phone/AiStyleCard";
 
 export function TextPanel() {
   const project = useProject();
@@ -95,6 +96,7 @@ export function TextPanel() {
           </>
         }
       />
+      <AiStyleCard />
       <PanelSection>
         <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" onClick={() => add("title")} disabled={!project.clips.length}>

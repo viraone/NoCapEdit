@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
     info: () => ipcRenderer.invoke("caption:info"),
     polish: (notes) => ipcRenderer.invoke("caption:polish", notes),
     cover: (frames) => ipcRenderer.invoke("caption:cover", frames),
+    style: (look) => ipcRenderer.invoke("caption:style", look),
   },
   ffmpeg: {
     info: () => ipcRenderer.invoke("ffmpeg:info"),

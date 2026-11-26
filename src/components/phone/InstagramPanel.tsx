@@ -12,6 +12,7 @@ import { projectDuration } from "@/lib/models/timeline";
 import { usePhone, type FinishedExport } from "@/lib/phone/phoneStore";
 import { formatBytes } from "@/lib/utils/time";
 import { useEditor } from "@/store/editorStore";
+import { useAiStyle } from "@/lib/phone/aiStyle";
 import { exportFits } from "@/lib/phone/exportFits";
 import { exportForPhone } from "@/lib/phone/exportForPhone";
 import { friendlyExportError } from "@/lib/export/friendlyError";
@@ -118,7 +119,7 @@ function Body({ done }: { done: FinishedExport | null }) {
   };
 
   /** "Style it" in the Story window: the words become an editor title, selected in the Text tool. */
-  const styleText = (text: string, slot: StorySlot) => {
+  const styleText = (text: string, slot: StorySlot, ai: boolean) => {
     const editor = useEditor.getState();
     if (!editor.project) return;
     let title = findStoryTitle(editor.project.overlays, text);
@@ -129,6 +130,7 @@ function Body({ done }: { done: FinishedExport | null }) {
     }
     editor.select({ kind: "overlay", id: title.id });
     editor.setTool("text");
+    if (ai && posting) void useAiStyle.getState().start({ overlayId: title.id, words: text, slot, video: posting.video });
   };
 
   const act = async (what: Action) => {

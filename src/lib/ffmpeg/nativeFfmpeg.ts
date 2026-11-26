@@ -29,7 +29,7 @@ declare global {
       ffmpeg?: DesktopFfmpegBridge;
       studio?: { info(): Promise<{ available: boolean; model?: string; name?: string }> };
       phone?: import("@/lib/phone/phoneBridge").DesktopPhoneBridge;
-      caption?: { info(): Promise<{ available: boolean; model?: string; spare?: boolean }>; polish(notes: string): Promise<string>; cover(frames: string[]): Promise<{ frame: number; center: number; by?: string }> };
+      caption?: { info(): Promise<{ available: boolean; model?: string; spare?: boolean; style?: boolean }>; polish(notes: string): Promise<string>; cover(frames: string[]): Promise<{ frame: number; center: number; by?: string }>; style?(look: { words: string; slot: "top" | "middle" | "bottom"; frame: string; previous: string[] }): Promise<{ name: string; why: string; font: string; color: string; background: string | null; size: number; bold: boolean; italic: boolean }> };
     };
   }
 }

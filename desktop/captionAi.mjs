@@ -1,5 +1,6 @@
 // Google's Gemini, for the desktop app only: "AI polish" for an Instagram caption, and picking a
 // Highlight's cover from a few frames of the video (the frames are sent only when that switch is on).
+// "Style it" asks DeepSeek (not Gemini) for the look of the Story's words, with one frame of the video.
 //
 // A local config file, outside the project, says which file holds the key and which model to ask:
 //   ~/.config/nocap-edit/gemini.json
@@ -16,6 +17,7 @@ import path from "node:path";
 import { isAppUrl } from "./lib/appUrl.mjs";
 import { captionRequest, captionFromReply, parseGeminiConfig } from "./lib/captionAi.mjs";
 import { coverFromReply, coverRequest, validCoverFrames } from "./lib/coverAi.mjs";
+import { styleFromReply, styleRequest, validStyleAsk } from "./lib/styleAi.mjs";
 import { asGeminiReply, keyFromFile, parseDeepseekConfig, toDeepseekRequest } from "./lib/deepseek.mjs";
 
 const CONFIG_FILE = process.env.NOCAP_GEMINI_CONFIG ?? path.join(os.homedir(), ".config", "nocap-edit", "gemini.json");
@@ -150,6 +152,15 @@ async function pickCover(frames) {
   return { ...pick, by };
 }
 
+/** @param {{ words: string, slot: string, frame: string, previous: string[] }} look */
+async function styleText(look) {
+  const spare = await loadSpare();
+  if (!spare) throw new Error("DeepSeek is not set up on this Mac.");
+  const style = styleFromReply(await askDeepseek(spare, styleRequest(look)));
+  if (!style) throw new Error("DeepSeek's answer could not be used. Try again.");
+  return style;
+}
+
 export function registerCaptionAi() {
   /** @param {string} channel @param {(...args: any[]) => unknown} fn */
   const handle = (channel, fn) =>
@@ -159,10 +170,12 @@ export function registerCaptionAi() {
     });
   // Available only once there is a key to use, so the button never appears just to fail.
   handle("caption:info", async () => {
+    // "style" needs only DeepSeek; the rest need Gemini.
+    const spare = !!(await loadSpare());
     const config = await loadConfig();
-    if (!config) return { available: false };
+    if (!config) return { available: false, style: spare };
     const key = await fsp.readFile(config.apiKeyFile, "utf8").catch(() => "");
-    return key.trim() ? { available: true, model: config.model, spare: !!(await loadSpare()) } : { available: false };
+    return key.trim() ? { available: true, model: config.model, spare, style: spare } : { available: false, style: spare };
   });
   handle("caption:polish", (notes) => {
     if (typeof notes !== "string" || !notes.trim()) throw new Error("Write a few notes first.");
@@ -171,5 +184,9 @@ export function registerCaptionAi() {
   handle("caption:cover", (frames) => {
     if (!validCoverFrames(frames)) throw new Error("The video's frames could not be used.");
     return pickCover(/** @type {string[]} */ (frames));
+  });
+  handle("caption:style", (look) => {
+    if (!validStyleAsk(look)) throw new Error("The words or the picture could not be used.");
+    return styleText(/** @type {{ words: string, slot: string, frame: string, previous: string[] }} */ (look));
   });
 }
