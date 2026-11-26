@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/Button";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection } from "@/components/ui/Panel";
 import { emulatorIsOff } from "@/lib/phone/emulatorStart";
-import { phoneBridge, sendToPhone, type PhoneInfo } from "@/lib/phone/phoneBridge";
+import { phoneBridge, sendToPhone, type PhoneInfo, type StorySlot } from "@/lib/phone/phoneBridge";
+import { findStoryTitle, storyTitle } from "@/lib/phone/storyTitle";
+import { projectDuration } from "@/lib/models/timeline";
 import { usePhone, type FinishedExport } from "@/lib/phone/phoneStore";
 import { formatBytes } from "@/lib/utils/time";
 import { useEditor } from "@/store/editorStore";
@@ -113,6 +115,20 @@ function Body({ done }: { done: FinishedExport | null }) {
     const { uri } = await sendToPhone(api, from, fileName);
     usePhone.getState().setSent({ video: from, uri });
     return uri;
+  };
+
+  /** "Style it" in the Story window: the words become an editor title, selected in the Text tool. */
+  const styleText = (text: string, slot: StorySlot) => {
+    const editor = useEditor.getState();
+    if (!editor.project) return;
+    let title = findStoryTitle(editor.project.overlays, text);
+    if (!title) {
+      const made = storyTitle(text, slot, projectDuration(editor.project.clips));
+      editor.update((p) => void p.overlays.push(made));
+      title = made;
+    }
+    editor.select({ kind: "overlay", id: title.id });
+    editor.setTool("text");
   };
 
   const act = async (what: Action) => {
@@ -298,6 +314,7 @@ function Body({ done }: { done: FinishedExport | null }) {
           video={posting.video}
           open={storyOpen}
           onClose={() => setStoryOpen(false)}
+          onStyle={posting.fromProject ? styleText : undefined}
           prepare={async (onLabel) => {
             if (posting.fromProject && !exportFits(usePhone.getState().lastExport ?? null, useEditor.getState().project)) throw new Error("The project changed since this window opened. Close it and press the button again.");
             setPhoneOpen(true);

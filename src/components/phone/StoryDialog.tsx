@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link2, PlusCircle, Send, Star, Type } from "lucide-react";
+import { Link2, PlusCircle, Send, Sparkles, Star, Type } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { giveHighlightCover } from "@/lib/phone/highlightCover";
@@ -58,7 +58,7 @@ function SlotPicker({ value, onChange, name }: { value: StorySlot; onChange: (v:
  * The Story window: what Instagram should be walked through on the phone, then Go.
  * `prepare` copies the video to the phone (once) and returns its gallery address.
  */
-export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; onClose: () => void; prepare: (onLabel: (label: string) => void) => Promise<string>; video: Blob }) {
+export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: boolean; onClose: () => void; prepare: (onLabel: (label: string) => void) => Promise<string>; video: Blob; /** Takes these words to the editor's Text tool to be styled; missing when the video is a picked file, which the editor cannot change. */ onStyle?: (text: string, slot: StorySlot) => void }) {
   const saved = useRef(loadStoryChoices());
   // The saved choices are read once, when the window first mounts. Newer React lint forbids reading a
   // ref during render even for this one-time read; the values below never change on later renders.
@@ -223,6 +223,16 @@ export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; 
     onClose();
   };
 
+  const styleIt = () => {
+    const text = overlay.trim();
+    if (!onStyle || !text) return;
+    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover });
+    setOverlay("");   // otherwise Instagram would type the same words a second time
+    setPhase({ kind: "form" });
+    onClose();
+    onStyle(text, overlayAt);
+  };
+
   const busy = phase.kind === "running" || phase.kind === "countdown";
 
   if (!open) return null;
@@ -252,9 +262,17 @@ export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; 
             </Field>
           </Card>
           <Card icon={<Type size={16} />} tone="bg-sys-purple/15 text-sys-purple">
-            <Field label="Text on the picture" hint={typeableNote(overlay) ?? "Optional. Typed with Instagram's Text tool."} right={<SlotPicker value={overlayAt} onChange={setOverlayAt} name="overlay" />}>
+            <Field label="Text on the picture" hint={(typeableNote(overlay) && onStyle ? "Instagram's Text tool cannot type emoji or accents. Press Style it to keep them." : typeableNote(overlay)) ?? "Optional. Typed with Instagram's Text tool."} right={<SlotPicker value={overlayAt} onChange={setOverlayAt} name="overlay" />}>
               <Input value={overlay} onChange={(e) => setOverlay(e.target.value)} placeholder="Friday night open mic" maxLength={200} data-story-overlay />
             </Field>
+            {onStyle && (
+              <div className="flex items-center gap-3">
+                <button type="button" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-linear-to-r from-sys-purple to-sys-pink px-2.5 py-1 text-[11px] font-bold text-white transition enabled:hover:brightness-110 disabled:opacity-45" disabled={!overlay.trim()} onClick={styleIt} data-story-style>
+                  <Sparkles size={11} /> Style it
+                </button>
+                <span className="rf-read-face text-[12px] leading-snug text-white/55">Fonts, colours and size in the editor. The words become part of the video; emoji work too.</span>
+              </div>
+            )}
           </Card>
           <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
             <SwitchRow data={{ "data-story-check": "mute" }} checked={mute} onChange={setMute} label="Mute the video's sound" hint="For a flyer or clip whose own sound you do not want." />
