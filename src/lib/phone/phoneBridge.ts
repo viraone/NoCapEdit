@@ -48,6 +48,8 @@ export interface ReelOutcome {
   error?: string;
   /** Things the user should know: the place that was picked, characters left out, people not found. */
   notes: string[];
+  /** Things asked for that did not happen (a tag, the place, the mute, the link). Nothing is shared by itself while there are any. */
+  problems?: string[];
 }
 
 /** Where a sticker or a line of text goes on a Story. */

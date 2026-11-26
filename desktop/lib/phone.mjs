@@ -10,17 +10,16 @@ export const INSTAGRAM_REEL = `${INSTAGRAM}/com.instagram.share.handleractivity.
 export const INSTAGRAM_STORY = `${INSTAGRAM}/com.instagram.share.handleractivity.StoryShareHandlerActivity`;
 
 /**
- * The first device that is ready, from `adb devices`. Emulators first.
+ * The first ready emulator, from `adb devices`. A real phone is never picked: what the app taps can post publicly.
  * @param {string} text
  * @returns {string | null} serial, e.g. "emulator-5554"
  */
 export function firstDevice(text) {
-  const ready = [];
   for (const line of text.split("\n")) {
     const m = line.match(/^(\S+)\s+device\b/);
-    if (m) ready.push(m[1]);
+    if (m && /^emulator-\d+$/.test(m[1])) return m[1];
   }
-  return ready.find((s) => s.startsWith("emulator-")) ?? ready[0] ?? null;
+  return null;
 }
 
 /**

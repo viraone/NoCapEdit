@@ -5,12 +5,15 @@ import { createPortal } from "react-dom";
 import { Clapperboard, MapPin, MessageSquare, Scissors, Send, Sparkles, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, textareaClass } from "@/components/ui/Field";
+import { afterRun } from "@/lib/phone/afterRun";
 import { parsePeople, phoneBridge, type ReelOptions, type ReelOutcome } from "@/lib/phone/phoneBridge";
 import { loadReelChoices, saveReelChoices, typeableNote } from "@/lib/phone/reelChoices";
 import { Card, DialogHeader, SwitchRow, dialogClass, goButtonClass } from "./dialogParts";
 
 /** Seconds the final Instagram screen is shown before Share is tapped, with a button to cancel. */
 const SHARE_COUNTDOWN = 6;
+
+type Run = { cancelled: boolean; busy: boolean };
 
 type Phase = { kind: "form" } | { kind: "running"; label: string } | { kind: "countdown"; left: number; outcome: ReelOutcome } | { kind: "done"; headline: string; outcome: ReelOutcome | null; ok: boolean };
 
@@ -29,15 +32,15 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
   const [people, setPeople] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
   const [ai, setAi] = useState<{ available: boolean; spare: boolean; busy: boolean; error: string | null; before: string | null }>({ available: false, spare: false, busy: false, error: null, before: null });
-  const cancelled = useRef(false);
+  const runRef = useRef<Run | null>(null);
 
   // The window can be taken away mid-run (another tool opened, the project closed): the steps stop
   // then, and nothing is shared (the countdown's timer goes with the window).
-  const running = useRef(false);
   useEffect(
     () => () => {
-      if (!running.current) return;
-      cancelled.current = true;
+      const run = runRef.current;
+      if (!run?.busy) return;
+      run.cancelled = true;
       void phoneBridge()?.cancel().catch(() => undefined);
     },
     [],
@@ -64,13 +67,21 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
     }
     const outcome = phase.outcome;
     const api = phoneBridge();
-    setPhase({ kind: "running", label: "Sharing the reel (Instagram can take a minute)" });
+    const run = runRef.current;
+    if (!run) return;
     void (async () => {
+      const show = (p: Phase) => {
+        if (runRef.current === run) setPhase(p);
+      };
+      run.busy = true;
       try {
+        show({ kind: "running", label: "Sharing the reel (Instagram can take a minute)" });
         const r = await api!.share();
-        setPhase({ kind: "done", ok: r.shared, outcome, headline: r.shared ? "Shared. Instagram is uploading the reel." : "Share was tapped, but Instagram was still on the caption screen 90 seconds later, so it may not have posted. Look at the phone panel before sharing again, or it could post twice." });
+        show({ kind: "done", ok: r.shared, outcome, headline: r.shared ? "Shared. Instagram is uploading the reel." : "Share was tapped, but Instagram was still on the caption screen 90 seconds later, so it may not have posted. Look at the phone panel before sharing again, or it could post twice." });
       } catch (e) {
-        setPhase({ kind: "done", ok: false, outcome, headline: e instanceof Error ? e.message : "Share could not be tapped. Finish in the phone panel." });
+        show({ kind: "done", ok: false, outcome, headline: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "Share could not be tapped. Finish in the phone panel." });
+      } finally {
+        run.busy = false;
       }
     })();
   }, [phase]);
@@ -91,32 +102,39 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
   const go = async () => {
     const api = phoneBridge();
     if (!api) return;
-    cancelled.current = false;
-    running.current = true;
+    const run: Run = { cancelled: false, busy: true };
+    runRef.current = run;
+    const show = (p: Phase) => {
+      if (runRef.current === run) setPhase(p);
+    };
     saveReelChoices({ keepFull, next, share, location });
     const options: ReelOptions = { keepFull, next, overlay: overlay.trim(), caption: caption.trim(), location: location.trim(), people: parsePeople(people) };
-    setPhase({ kind: "running", label: "Sending the video to the phone" });
-    api.onStep((label) => setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p)));
+    show({ kind: "running", label: "Sending the video to the phone" });
+    api.onStep((label) => {
+      if (runRef.current === run) setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p));
+    });
     try {
-      const uri = await prepare((label) => setPhase({ kind: "running", label }));
-      if (cancelled.current) throw new Error("Stopped.");
+      const uri = await prepare((label) => show({ kind: "running", label }));
+      if (run.cancelled) throw new Error("Stopped.");
       const outcome = await api.reel(uri, options);
-      if (outcome.ready && share && !cancelled.current) setPhase({ kind: "countdown", left: SHARE_COUNTDOWN, outcome });
-      else if (outcome.ready) setPhase({ kind: "done", ok: true, outcome, headline: "Ready on the caption screen. Tap Share in the phone panel when you want to post." });
-      else if (outcome.stoppedAt === "trim") setPhase({ kind: "done", ok: true, outcome, headline: "Instagram's trim tools are open. Finish in the phone panel." });
-      else if (outcome.stoppedAt === "editor") setPhase({ kind: "done", ok: true, outcome, headline: "Stopped on the Reel editor. Finish in the phone panel." });
-      else if (outcome.stoppedAt === "cancelled") setPhase({ kind: "done", ok: false, outcome, headline: "Stopped. Instagram is where it was left, in the phone panel." });
-      else setPhase({ kind: "done", ok: false, outcome, headline: outcome.error ?? "A step failed. Finish in the phone panel." });
+      const next = afterRun(outcome, share, run.cancelled);
+      if (next === "countdown") show({ kind: "countdown", left: SHARE_COUNTDOWN, outcome });
+      else if (next === "ready") show({ kind: "done", ok: true, outcome, headline: "Ready on the caption screen. Tap Share in the phone panel when you want to post." });
+      else if (next === "held") show({ kind: "done", ok: false, outcome, headline: "Not shared, because something did not go through. Check it in the phone panel, and share it there if it looks right." });
+      else if (next === "trim") show({ kind: "done", ok: true, outcome, headline: "Instagram's trim tools are open. Finish in the phone panel." });
+      else if (next === "editor") show({ kind: "done", ok: true, outcome, headline: "Stopped on the Reel editor. Finish in the phone panel." });
+      else if (next === "stopped") show({ kind: "done", ok: false, outcome, headline: "Stopped. Instagram is where it was left, in the phone panel." });
+      else show({ kind: "done", ok: false, outcome, headline: outcome.error ?? "A step failed. Finish in the phone panel." });
     } catch (e) {
-      setPhase({ kind: "done", ok: false, outcome: null, headline: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The emulator did not answer." });
+      show({ kind: "done", ok: false, outcome: null, headline: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The emulator did not answer." });
     } finally {
-      running.current = false;
-      api.onStep(null);
+      run.busy = false;
+      if (runRef.current === run && !run.cancelled) api.onStep(null);
     }
   };
 
   const stop = () => {
-    cancelled.current = true;
+    if (runRef.current) runRef.current.cancelled = true;
     void phoneBridge()?.cancel();
   };
   const close = () => {
@@ -215,11 +233,26 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
             >
               Cancel, do not share
             </Button>
+            {/* Under Cancel and scrolling on their own, so a long list never pushes Cancel off a small window. */}
+            {phase.outcome.notes.length > 0 && (
+              <div className="max-h-20 space-y-1 overflow-y-auto">
+              {phase.outcome.notes.map((n) => (
+                <p key={n} className="rf-read-note [overflow-wrap:anywhere]">
+                  {n}
+                </p>
+              ))}
+              </div>
+            )}
           </div>
         )}
         {phase.kind === "done" && (
           <div className={`space-y-1 rounded-2xl border p-2.5 max-h-40 overflow-y-auto ${phase.ok ? "border-sys-green/40 bg-sys-green/10" : "border-sys-red/40 bg-sys-red/10"}`} data-reel-result>
             <p className={`rf-read-note ${phase.ok ? "rf-ok" : "rf-error"}`}>{phase.headline}</p>
+            {phase.outcome?.problems?.map((p) => (
+              <p key={p} className="rf-read-note rf-warn [overflow-wrap:anywhere]">
+                {p}
+              </p>
+            ))}
             {phase.outcome?.notes.map((n) => (
               <p key={n} className="rf-read-note [overflow-wrap:anywhere]">
                 {n}

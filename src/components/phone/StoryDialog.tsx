@@ -6,6 +6,7 @@ import { Link2, PlusCircle, Send, Star, Type } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { giveHighlightCover } from "@/lib/phone/highlightCover";
+import { afterRun } from "@/lib/phone/afterRun";
 import { phoneBridge, type ReelOutcome, type StoryOptions, type StorySlot } from "@/lib/phone/phoneBridge";
 import { typeableNote } from "@/lib/phone/reelChoices";
 import { loadStoryChoices, saveStoryChoices } from "@/lib/phone/storyChoices";
@@ -13,6 +14,8 @@ import { Card, DialogHeader, SwitchRow, dialogClass, goButtonClass, segment, seg
 
 /** Seconds the finished Story is shown before Share is tapped, with a button to cancel. */
 const SHARE_COUNTDOWN = 6;
+
+type Run = { cancelled: boolean; busy: boolean };
 
 type Phase = { kind: "form" } | { kind: "running"; label: string } | { kind: "countdown"; left: number; outcome: ReelOutcome } | { kind: "done"; headline: string; outcome: ReelOutcome | null; ok: boolean };
 
@@ -76,15 +79,15 @@ export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; 
   /** DeepSeek steps in when Gemini is busy. */
   const [spare, setSpare] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
-  const cancelled = useRef(false);
+  const runRef = useRef<Run | null>(null);
 
   // The window can be taken away mid-run (another tool opened, the project closed): the steps stop
   // then, and nothing is shared (the countdown's timer goes with the window).
-  const running = useRef(false);
   useEffect(
     () => () => {
-      if (!running.current) return;
-      cancelled.current = true;
+      const run = runRef.current;
+      if (!run?.busy) return;
+      run.cancelled = true;
       void phoneBridge()?.cancel().catch(() => undefined);
     },
     [],
@@ -115,13 +118,19 @@ export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; 
     }
     const outcome = phase.outcome;
     const api = phoneBridge();
+    const run = runRef.current;
+    if (!run) return;
     void (async () => {
+      const show = (p: Phase) => {
+        if (runRef.current === run) setPhase(p);
+      };
+      run.busy = true;
       try {
-        setPhase({ kind: "running", label: "Sharing the Story (Instagram can take a minute)" });
+        show({ kind: "running", label: "Sharing the Story (Instagram can take a minute)" });
         const r = await api!.shareStory(audience);
         const sharedLine = audience === "close" ? "Shared to Close Friends." : "Shared to your story.";
         if (!r.shared) {
-          setPhase({
+          show({
             kind: "done",
             ok: false,
             outcome,
@@ -131,40 +140,43 @@ export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; 
         }
         const into = highlight.trim();
         if (!into) {
-          setPhase({ kind: "done", ok: true, outcome, headline: `${sharedLine} Instagram is uploading it.` });
+          show({ kind: "done", ok: true, outcome, headline: `${sharedLine} Instagram is uploading it.` });
+          return;
+        }
+        if (run.cancelled) {
+          show({ kind: "done", ok: true, outcome, headline: `${sharedLine} Stopped, so it was not added to a Highlight.` });
           return;
         }
         // The Story is posted; now the Highlight, which has to wait for Instagram's upload to finish.
-        running.current = true;
-        api!.onStep((label) => setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p)));
-        setPhase({ kind: "running", label: "Opening your Story" });
-        try {
-          const h = await api!.highlight(into);
-          const ai = window.nocapDesktop?.caption;
-          if (!h.added || !cover || !gemini || !ai || cancelled.current) {
-            setPhase({ kind: "done", ok: h.added, outcome, headline: `${sharedLine} ${h.note}` });
-            return;
-          }
-          const c = await giveHighlightCover({
-            video,
-            name: into,
-            pick: (frames) => ai.cover(frames),
-            setCover: (name, jpeg) => api!.highlightCover(name, jpeg),
-            onStep: (label) => setPhase({ kind: "running", label }),
-            stopped: () => cancelled.current,
-          });
-          setPhase({ kind: "done", ok: c.set, outcome, headline: `${sharedLine} ${h.note} ${c.note}` });
-        } finally {
-          running.current = false;
-          api!.onStep(null);
+        api!.onStep((label) => {
+          if (runRef.current === run) setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p));
+        });
+        show({ kind: "running", label: "Opening your Story" });
+        const h = await api!.highlight(into);
+        const ai = window.nocapDesktop?.caption;
+        if (!h.added || !cover || !gemini || !ai || run.cancelled) {
+          show({ kind: "done", ok: h.added, outcome, headline: `${sharedLine} ${h.note}` });
+          return;
         }
+        const c = await giveHighlightCover({
+          video,
+          name: into,
+          pick: (frames) => ai.cover(frames),
+          setCover: (name, jpeg) => api!.highlightCover(name, jpeg),
+          onStep: (label) => show({ kind: "running", label }),
+          stopped: () => run.cancelled,
+        });
+        show({ kind: "done", ok: c.set, outcome, headline: `${sharedLine} ${h.note} ${c.note}` });
       } catch (e) {
-        setPhase({
+        show({
           kind: "done",
           ok: false,
           outcome,
           headline: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The Story could not be shared. Finish in the phone panel.",
         });
+      } finally {
+        run.busy = false;
+        if (runRef.current === run && !run.cancelled) api!.onStep(null);
       }
     })();
   }, [phase, audience, highlight, cover, gemini, video]);
@@ -172,30 +184,37 @@ export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; 
   const go = async () => {
     const api = phoneBridge();
     if (!api) return;
-    cancelled.current = false;
-    running.current = true;
+    const run: Run = { cancelled: false, busy: true };
+    runRef.current = run;
+    const show = (p: Phase) => {
+      if (runRef.current === run) setPhase(p);
+    };
     saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover });
     const options: StoryOptions = { mute, overlay: overlay.trim(), overlayAt, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt };
-    setPhase({ kind: "running", label: "Sending the video to the phone" });
-    api.onStep((label) => setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p)));
+    show({ kind: "running", label: "Sending the video to the phone" });
+    api.onStep((label) => {
+      if (runRef.current === run) setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p));
+    });
     try {
-      const uri = await prepare((label) => setPhase({ kind: "running", label }));
-      if (cancelled.current) throw new Error("Stopped.");
+      const uri = await prepare((label) => show({ kind: "running", label }));
+      if (run.cancelled) throw new Error("Stopped.");
       const outcome = await api.story(uri, options);
-      if (outcome.ready && share && !cancelled.current) setPhase({ kind: "countdown", left: SHARE_COUNTDOWN, outcome });
-      else if (outcome.ready) setPhase({ kind: "done", ok: true, outcome, headline: "Ready on the Story screen. Share it in the phone panel when you want to post." });
-      else if (outcome.stoppedAt === "cancelled") setPhase({ kind: "done", ok: false, outcome, headline: "Stopped. Instagram is where it was left, in the phone panel." });
-      else setPhase({ kind: "done", ok: false, outcome, headline: outcome.error ?? "A step failed. Finish in the phone panel." });
+      const next = afterRun(outcome, share, run.cancelled);
+      if (next === "countdown") show({ kind: "countdown", left: SHARE_COUNTDOWN, outcome });
+      else if (next === "ready") show({ kind: "done", ok: true, outcome, headline: "Ready on the Story screen. Share it in the phone panel when you want to post." });
+      else if (next === "held") show({ kind: "done", ok: false, outcome, headline: "Not shared, because something did not go through. Check it in the phone panel, and share it there if it looks right." });
+      else if (next === "stopped") show({ kind: "done", ok: false, outcome, headline: "Stopped. Instagram is where it was left, in the phone panel." });
+      else show({ kind: "done", ok: false, outcome, headline: outcome.error ?? "A step failed. Finish in the phone panel." });
     } catch (e) {
-      setPhase({ kind: "done", ok: false, outcome: null, headline: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The emulator did not answer." });
+      show({ kind: "done", ok: false, outcome: null, headline: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The emulator did not answer." });
     } finally {
-      running.current = false;
-      api.onStep(null);
+      run.busy = false;
+      if (runRef.current === run && !run.cancelled) api.onStep(null);
     }
   };
 
   const stop = () => {
-    cancelled.current = true;
+    if (runRef.current) runRef.current.cancelled = true;
     void phoneBridge()?.cancel();
   };
   const close = () => {
@@ -301,11 +320,26 @@ export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; 
             >
               Cancel, do not share
             </Button>
+            {/* Under Cancel and scrolling on their own, so a long list never pushes Cancel off a small window. */}
+            {phase.outcome.notes.length > 0 && (
+              <div className="max-h-20 space-y-1 overflow-y-auto">
+              {phase.outcome.notes.map((n) => (
+                <p key={n} className="rf-read-note [overflow-wrap:anywhere]">
+                  {n}
+                </p>
+              ))}
+              </div>
+            )}
           </div>
         )}
         {phase.kind === "done" && (
           <div className={`space-y-1 rounded-2xl border p-2.5 max-h-40 overflow-y-auto ${phase.ok ? "border-sys-green/40 bg-sys-green/10" : "border-sys-red/40 bg-sys-red/10"}`} data-story-result>
             <p className={`rf-read-note ${phase.ok ? "rf-ok" : "rf-error"}`}>{phase.headline}</p>
+            {phase.outcome?.problems?.map((p) => (
+              <p key={p} className="rf-read-note rf-warn [overflow-wrap:anywhere]">
+                {p}
+              </p>
+            ))}
             {phase.outcome?.notes.map((n) => (
               <p key={n} className="rf-read-note [overflow-wrap:anywhere]">
                 {n}

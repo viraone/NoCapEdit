@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import { findUi, firstDevice, inputTextPieces, parseUi, phoneFileName, pickResult, screenSize, shellQuote, streamSize, typeable } from "../../desktop/lib/phone.mjs";
 
 describe("reading adb's answers", () => {
-  it("picks a ready device, emulators first", () => {
+  it("picks a ready emulator and never a real phone", () => {
     expect(firstDevice("List of devices attached\nemulator-5554\tdevice\n")).toBe("emulator-5554");
     expect(firstDevice("List of devices attached\nR58M123\tdevice\nemulator-5554\tdevice\n")).toBe("emulator-5554");
     expect(firstDevice("List of devices attached\nemulator-5554\toffline\n")).toBeNull();
     expect(firstDevice("")).toBeNull();
+    expect(firstDevice("List of devices attached\nR58M123\tdevice\n")).toBeNull();
+    expect(firstDevice("List of devices attached\nR58M123\tdevice\nemulator-5554\toffline\n")).toBeNull();
+    expect(firstDevice("List of devices attached\nemulator-5554\toffline\nemulator-5556\tdevice\n")).toBe("emulator-5556");
+    expect(firstDevice("List of devices attached\n192.168.1.20:5555\tdevice\n")).toBeNull();
   });
 
   it("reads the screen size, an override winning", () => {

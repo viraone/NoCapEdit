@@ -13,6 +13,7 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isAppUrl } from "./lib/appUrl.mjs";
+import { createGate } from "./lib/oneAtATime.mjs";
 import {
   ANIMATION_KEYS,
   avdImageDir,
@@ -598,8 +599,8 @@ async function instagramHome() {
   return { state: "busy" };
 }
 
-/** @type {{ cancelled: boolean } | null} */
-let job = null;
+/** Everything that drives Instagram goes through here, one at a time: two at once would tap each other's screens. */
+const gate = createGate();
 
 class Stopped extends Error {}
 
@@ -608,8 +609,9 @@ class Stopped extends Error {}
  * @param {import("electron").WebContents} sender
  * @param {string} uri
  * @param {Record<string, unknown>} raw
+ * @param {{ cancelled: boolean }} mine this run's own Stop flag
  */
-async function runReel(sender, uri, raw) {
+async function runReel(sender, uri, raw, mine) {
   const serial = await requireDevice();
   const o = {
     keepFull: raw.keepFull !== false,
@@ -619,10 +621,10 @@ async function runReel(sender, uri, raw) {
     location: typeof raw.location === "string" ? raw.location.trim().slice(0, 80) : "",
     people: Array.isArray(raw.people) ? raw.people.filter((p) => typeof p === "string").map((p) => p.trim().replace(/^@/, "")).filter((p) => /^[A-Za-z0-9._]{1,30}$/.test(p)).slice(0, 10) : [],
   };
-  const mine = { cancelled: false };
-  job = mine;
   /** @type {string[]} */
   const notes = [];
+  /** Things asked for that did not happen: nothing is shared by itself while there are any. @type {string[]} */
+  const problems = [];
   const step = async (/** @type {string} */ label, /** @type {() => Promise<void>} */ fn) => {
     if (mine.cancelled) throw new Stopped("Stopped.");
     if (!sender.isDestroyed()) sender.send("phone:step", label);
@@ -646,7 +648,7 @@ async function runReel(sender, uri, raw) {
         const { hit } = await need({ id: "clips_left_action_button" }, "the Edit video button");
         await tap(serial, hit);
       });
-      return { ready: false, stoppedAt: "trim", notes };
+      return { ready: false, stoppedAt: "trim", notes, problems };
     }
 
     if (o.overlay) {
@@ -662,7 +664,7 @@ async function runReel(sender, uri, raw) {
       });
     }
 
-    if (!o.next) return { ready: false, stoppedAt: "editor", notes };
+    if (!o.next) return { ready: false, stoppedAt: "editor", notes, problems };
 
     await step("Going to the caption screen", async () => {
       const { hit } = await need({ id: "clips_right_action_button" }, "the Next button");
@@ -699,7 +701,7 @@ async function runReel(sender, uri, raw) {
         await wait(3500);
         const row = pickResult(await look(serial), "row_venue_title", o.location);
         if (!row) {
-          notes.push(`No place found for "${o.location}".`);
+          problems.push(`No place found for "${o.location}".`);
           await sh(serial, ["input", "keyevent", "4"]);
           await wait(600);
           if (!(await waitFor(serial, { id: "caption_input_text_view" }, 3000))) await sh(serial, ["input", "keyevent", "4"]);
@@ -728,7 +730,7 @@ async function runReel(sender, uri, raw) {
             await tap(serial, row);
             notes.push(`Tagged @${person}`);
           } else {
-            notes.push(`No account named exactly @${person}; not tagged.`);
+            problems.push(`No account named exactly @${person}; not tagged.`);
             await sh(serial, ["input", "keyevent", "4"]);
             await wait(600);
             if (!(await waitFor(serial, { id: "add_people_tag_button" }, 3000))) await sh(serial, ["input", "keyevent", "4"]);
@@ -740,12 +742,12 @@ async function runReel(sender, uri, raw) {
       });
     }
 
-    return { ready: true, notes };
+    // Stop pressed during the last step must not read as "ready".
+    if (mine.cancelled) throw new Stopped("Stopped.");
+    return { ready: true, notes, problems };
   } catch (err) {
-    if (err instanceof Stopped) return { ready: false, stoppedAt: "cancelled", notes };
-    return { ready: false, stoppedAt: "failed", error: err instanceof Error ? err.message : String(err), notes };
-  } finally {
-    if (job === mine) job = null;
+    if (err instanceof Stopped) return { ready: false, stoppedAt: "cancelled", notes, problems };
+    return { ready: false, stoppedAt: "failed", error: err instanceof Error ? err.message : String(err), notes, problems };
   }
 }
 
@@ -797,8 +799,9 @@ const isTextSticker = (/** @type {import("./lib/phone.mjs").UiNode} */ n) => n.d
  * @param {import("electron").WebContents} sender
  * @param {string} uri
  * @param {Record<string, unknown>} raw
+ * @param {{ cancelled: boolean }} mine this run's own Stop flag
  */
-async function runStory(sender, uri, raw) {
+async function runStory(sender, uri, raw, mine) {
   const serial = await requireDevice();
   const slot = (/** @type {unknown} */ v) => (typeof v === "string" && /** @type {readonly string[]} */ (STORY_SLOTS).includes(v) ? v : "middle");
   const o = {
@@ -809,11 +812,11 @@ async function runStory(sender, uri, raw) {
     linkLabel: typeof raw.linkLabel === "string" ? typeable(raw.linkLabel.trim().slice(0, 60)).lines.join(" ").trim() : "",
     linkAt: slot(raw.linkAt),
   };
-  const mine = { cancelled: false };
-  job = mine;
   /** @type {string[]} */
   const notes = [];
-  if (typeof raw.linkUrl === "string" && raw.linkUrl.trim() && !o.linkUrl) notes.push("The link is not a web address the phone can type, so no link sticker was added.");
+  /** Things asked for that did not happen: nothing is shared by itself while there are any. @type {string[]} */
+  const problems = [];
+  if (typeof raw.linkUrl === "string" && raw.linkUrl.trim() && !o.linkUrl) problems.push("The link is not a web address the phone can type, so no link sticker was added.");
   const step = async (/** @type {string} */ label, /** @type {() => Promise<void>} */ fn) => {
     if (mine.cancelled) throw new Stopped("Stopped.");
     if (!sender.isDestroyed()) sender.send("phone:step", label);
@@ -839,7 +842,7 @@ async function runStory(sender, uri, raw) {
         const { nodes } = await editor();
         const off = findUi(nodes, { desc: "Mute volume" });
         if (off) await tap(serial, off);
-        else if (!findUi(nodes, { desc: "Unmute volume" })) notes.push("The mute button was not found; the sound was left as it is.");
+        else if (!findUi(nodes, { desc: "Unmute volume" })) problems.push("The mute button was not found; the sound was left as it is.");
       });
     }
 
@@ -863,7 +866,7 @@ async function runStory(sender, uri, raw) {
             if (row) await tap(serial, row);
             await need({ id: "link_sticker_custom_cta_edit_text" }, "the sticker text box");
           }
-          if (!(await typeChecked(serial, "link_sticker_custom_cta_edit_text", o.linkLabel))) notes.push("The sticker's text did not type correctly; check it in the phone panel.");
+          if (!(await typeChecked(serial, "link_sticker_custom_cta_edit_text", o.linkLabel))) problems.push("The sticker's text did not type correctly; check it in the phone panel.");
         }
         const done = findUi(await look(serial), { id: "link_sticker_list_done_icon_button" });
         if (!done) throw new Error("Instagram did not show the link's Done button. Finish in the phone panel.");
@@ -891,21 +894,21 @@ async function runStory(sender, uri, raw) {
     }
 
     await editor();
-    return { ready: true, notes };
+    if (mine.cancelled) throw new Stopped("Stopped.");
+    return { ready: true, notes, problems };
   } catch (err) {
-    if (err instanceof Stopped) return { ready: false, stoppedAt: "cancelled", notes };
-    return { ready: false, stoppedAt: "failed", error: err instanceof Error ? err.message : String(err), notes };
-  } finally {
-    if (job === mine) job = null;
+    if (err instanceof Stopped) return { ready: false, stoppedAt: "cancelled", notes, problems };
+    return { ready: false, stoppedAt: "failed", error: err instanceof Error ? err.message : String(err), notes, problems };
   }
 }
 
 /** Shares the Story that is open. Only ever called when the page asks, after its own countdown. */
-async function shareStory(/** @type {unknown} */ audience) {
+async function shareStory(/** @type {unknown} */ audience, /** @type {{ cancelled: boolean }} */ mine) {
   const serial = await requireDevice();
   const id = audience === "close" ? "close_friends_story_share_shortcut_button" : "your_story_share_shortcut_button";
   const found = await waitFor(serial, { id }, 8000);
   if (!found) throw new Error("Instagram's share button is not on screen. Finish in the phone panel.");
+  if (mine.cancelled) throw new Stopped("Stopped before Share was tapped. Nothing was posted.");
   await tap(serial, found.hit);
   return { shared: await leftScreen(serial, "your_story_share_shortcut_button") };
 }
@@ -926,15 +929,14 @@ const UPLOAD_WAIT_MS = 8 * 60_000;
  * @param {import("electron").WebContents} sender
  * @param {unknown} rawName
  * @param {unknown} rawMaxAge how recent (minutes) the Story must be to count as the one just shared
+ * @param {{ cancelled: boolean }} mine this run's own Stop flag
  * @returns {Promise<{ added: boolean, note: string }>}
  */
-async function addToHighlight(sender, rawName, rawMaxAge) {
+async function addToHighlight(sender, rawName, rawMaxAge, mine) {
   const serial = await requireDevice();
   const name = typeof rawName === "string" ? rawName.trim().slice(0, 60) : "";
   if (!name) return { added: false, note: "No Highlight name was given." };
   const maxAge = typeof rawMaxAge === "number" && rawMaxAge > 0 && rawMaxAge <= 1440 ? rawMaxAge : 20;
-  const mine = { cancelled: false };
-  job = mine;
   const say = (/** @type {string} */ label) => {
     if (!sender.isDestroyed()) sender.send("phone:step", label);
   };
@@ -950,6 +952,7 @@ async function addToHighlight(sender, rawName, rawMaxAge) {
   };
 
   try {
+    if (mine.cancelled) throw new Stopped("Stopped.");
     say("Opening your Story");
     if ((await instagramHome()).state !== "home") return { added: false, note: "Instagram has something else open, so the Story was not added to a Highlight." };
     await wait(1800);
@@ -1059,6 +1062,8 @@ async function addToHighlight(sender, rawName, rawMaxAge) {
     }
     const target = found.label;
     const picture = nodes.find((n) => n.id === "avatar_image_view" && Math.abs(n.x - target.x) < 70 && n.y < target.y && target.y - n.y < 260);
+    // This tap is what changes the profile.
+    if (mine.cancelled) throw new Stopped("Stopped.");
     await tap(serial, picture ?? { x: target.x, y: target.y - 124 });
     let gone = false;
     for (let i = 0; i < 5 && !gone; i++) {
@@ -1072,8 +1077,6 @@ async function addToHighlight(sender, rawName, rawMaxAge) {
     await leave().catch(() => undefined);
     if (err instanceof Stopped) return { added: false, note: "Stopped before the Story was added to a Highlight." };
     return { added: false, note: `${err instanceof Error ? err.message : String(err)} Nothing was added to a Highlight.` };
-  } finally {
-    if (job === mine) job = null;
   }
 }
 
@@ -1099,10 +1102,11 @@ async function leftScreen(serial, id) {
 }
 
 /** Taps Instagram's Share. Only ever called when the page asks, after its own countdown. */
-async function shareReel() {
+async function shareReel(/** @type {{ cancelled: boolean }} */ mine) {
   const serial = await requireDevice();
   const first = await waitFor(serial, { id: "share_button" }, 8000);
   if (!first) throw new Error("Instagram's Share button is not on screen. Finish in the phone panel.");
+  if (mine.cancelled) throw new Stopped("Stopped before Share was tapped. Nothing was posted.");
   await tap(serial, first.hit);
   // The first time, Instagram puts up a notice about original audio with its own Share button.
   for (let i = 0; i < 4; i++) {
@@ -1110,6 +1114,7 @@ async function shareReel() {
     const nodes = await look(serial);
     const sheetShare = nodes.find((n) => n.text.trim() === "Share" && nodes.some((s) => s.id.startsWith("clips_original_audio_nux_sheet")));
     if (!sheetShare) break;
+    if (mine.cancelled) throw new Stopped("Stopped on Instagram's original audio notice. Look at the phone panel.");
     await tap(serial, sheetShare);
   }
   return { shared: await leftScreen(serial, "caption_input_text_view") };
@@ -1149,16 +1154,15 @@ async function pushCover(/** @type {string} */ serial, /** @type {Uint8Array} */
  * @param {import("electron").WebContents} sender
  * @param {unknown} rawName
  * @param {unknown} jpeg
+ * @param {{ cancelled: boolean }} mine this run's own Stop flag
  */
-async function setHighlightCover(sender, rawName, jpeg) {
+async function setHighlightCover(sender, rawName, jpeg, mine) {
   const serial = await requireDevice();
   const name = typeof rawName === "string" ? rawName.trim().slice(0, 60) : "";
   if (!name) return { set: false, note: "No Highlight name was given." };
   if (!(jpeg instanceof Uint8Array) || jpeg.length < 100 || jpeg.length > COVER_MAX_BYTES || jpeg[0] !== 0xff || jpeg[1] !== 0xd8 || jpeg[2] !== 0xff) {
     return { set: false, note: "The cover picture could not be used." };
   }
-  const mine = { cancelled: false };
-  job = mine;
   const say = (/** @type {string} */ label) => {
     if (!sender.isDestroyed()) sender.send("phone:step", label);
   };
@@ -1194,6 +1198,7 @@ async function setHighlightCover(sender, rawName, jpeg) {
   };
 
   try {
+    stopCheck();
     say("Sending the cover picture to the phone");
     await pushCover(serial, jpeg);
     stopCheck();
@@ -1293,8 +1298,6 @@ async function setHighlightCover(sender, rawName, jpeg) {
   } catch (err) {
     if (err instanceof Stopped) return await notSet("Stopped.");
     return await notSet(err instanceof Error ? err.message : String(err));
-  } finally {
-    if (job === mine) job = null;
   }
 }
 
@@ -1350,18 +1353,15 @@ export function registerPhone() {
   });
   handle("phone:input", (_event, action) => phoneInput(action));
 
-  handle("phone:open", async (_event, mode, uri) => {
-    const serial = await requireDevice();
-    await openInstagram(serial, mode === "story" ? "story" : "reel", String(uri));
-  });
-  handle("phone:instagramHome", async () => withStillScreen(await requireDevice(), () => instagramHome()));
-  handle("phone:reel", (event, uri, options) => runReel(event.sender, String(uri), options && typeof options === "object" ? options : {}));
-  handle("phone:story", (event, uri, options) => runStory(event.sender, String(uri), options && typeof options === "object" ? options : {}));
-  handle("phone:shareStory", (_event, audience) => shareStory(audience));
-  handle("phone:highlight", async (event, name, maxAgeMinutes) => withStillScreen(await requireDevice(), () => addToHighlight(event.sender, name, maxAgeMinutes)));
-  handle("phone:highlightCover", async (event, name, jpeg) => withStillScreen(await requireDevice(), () => setHighlightCover(event.sender, name, jpeg)));
-  handle("phone:cancel", () => {
-    if (job) job.cancelled = true;
-  });
-  handle("phone:share", () => shareReel());
+  handle("phone:open", (_event, mode, uri) =>
+    gate.run(async () => openInstagram(await requireDevice(), mode === "story" ? "story" : "reel", String(uri))),
+  );
+  handle("phone:instagramHome", () => gate.run(async () => withStillScreen(await requireDevice(), () => instagramHome())));
+  handle("phone:reel", (event, uri, options) => gate.run((job) => runReel(event.sender, String(uri), options && typeof options === "object" ? options : {}, job)));
+  handle("phone:story", (event, uri, options) => gate.run((job) => runStory(event.sender, String(uri), options && typeof options === "object" ? options : {}, job)));
+  handle("phone:shareStory", (_event, audience) => gate.run((job) => shareStory(audience, job)));
+  handle("phone:highlight", (event, name, maxAgeMinutes) => gate.run(async (job) => withStillScreen(await requireDevice(), () => addToHighlight(event.sender, name, maxAgeMinutes, job))));
+  handle("phone:highlightCover", (event, name, jpeg) => gate.run(async (job) => withStillScreen(await requireDevice(), () => setHighlightCover(event.sender, name, jpeg, job))));
+  handle("phone:cancel", () => gate.cancel());
+  handle("phone:share", () => gate.run((job) => shareReel(job)));
 }
