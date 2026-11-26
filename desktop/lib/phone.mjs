@@ -251,3 +251,94 @@ export function findHighlight(nodes, name) {
   const hits = labels.filter((n) => n.text.trim().toLowerCase() === want);
   return { label: hits[0] ?? null, count: hits.length, seen: labels.map((n) => `${n.text.trim()}@${n.x}`) };
 }
+
+// ---- Starting the emulator ----
+
+/**
+ * The virtual phone names from `emulator -list-avds`. Blank lines and log lines are dropped.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function parseAvdList(text) {
+  const seen = new Set();
+  /** @type {string[]} */
+  const out = [];
+  for (const line of text.split("\n")) {
+    const name = line.trim();
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) continue;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+/**
+ * Which virtual phone to start: the one asked for if it exists, else the remembered one if it exists,
+ * else the first available. Null when there are none.
+ * @param {string[]} avds
+ * @param {string | null | undefined} asked
+ * @param {string | null | undefined} remembered
+ * @returns {string | null}
+ */
+export function pickAvd(avds, asked, remembered) {
+  if (asked && avds.includes(asked)) return asked;
+  if (remembered && avds.includes(remembered)) return remembered;
+  return avds[0] ?? null;
+}
+
+/**
+ * The emulator's state from `adb devices`. Real phones are ignored.
+ * @param {string} text
+ * @returns {{ serial: string | null, state: "ready" | "starting" | "none" }}
+ */
+export function emulatorStatus(text) {
+  /** @type {string | null} */
+  let readySerial = null;
+  /** @type {string | null} */
+  let firstEmulator = null;
+  for (const line of text.split("\n")) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2) continue;
+    if (!/^emulator-\d+$/.test(parts[0])) continue;
+    if (firstEmulator === null) firstEmulator = parts[0];
+    if (parts[1] === "device" && readySerial === null) readySerial = parts[0];
+  }
+  if (readySerial !== null) return { serial: readySerial, state: "ready" };
+  if (firstEmulator !== null) return { serial: firstEmulator, state: "starting" };
+  return { serial: null, state: "none" };
+}
+
+/**
+ * One plain line saying why the emulator closed right after it was started, from its log text.
+ * @param {string} log
+ * @returns {string}
+ */
+export function launchFailure(log) {
+  const lines = log.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  let chosen = null;
+  for (const line of lines) {
+    if (line.startsWith("ERROR") || line.startsWith("FATAL")) chosen = line;
+  }
+  if (chosen === null && lines.length > 0) chosen = lines[lines.length - 1];
+  if (chosen === null) return "The emulator closed right after it was started.";
+  // The one people actually meet: the phone is already open in another emulator window.
+  if (/multiple emulators with the same AVD/i.test(chosen)) return "That phone is already open in another emulator window.";
+  const cleaned = chosen.replace(/^(ERROR|FATAL|WARNING|INFO)\s*\|\s*/, "");
+  if (cleaned === "") return "The emulator closed right after it was started.";
+  return cleaned.slice(0, 200);
+}
+
+/**
+ * The system image a virtual phone runs, from its config.ini (`image.sysdir.1=system-images/android-36/...`):
+ * a folder inside the Android SDK. It tells which SDK on this Mac can start that phone.
+ * @param {string} config
+ * @returns {string | null}
+ */
+export function avdImageDir(config) {
+  const m = config.match(/^\s*image\.sysdir\.1\s*=\s*(.+?)\s*$/m);
+  if (!m) return null;
+  const dir = m[1].replace(/\\/g, "/").replace(/\/+$/, "");
+  // Only a plain folder inside the SDK: nothing absolute, nothing that climbs out.
+  return dir && !dir.startsWith("/") && !dir.split("/").includes("..") ? dir : null;
+}

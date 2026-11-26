@@ -11,6 +11,14 @@ export interface PhoneInfo {
   width?: number;
   height?: number;
   instagram?: boolean;
+  /** The emulator itself: on (finished starting up), starting, or off. A plugged-in real phone does not count. */
+  emulator?: "on" | "starting" | "off";
+  /** The virtual phones that can be started, by name. Sent while the emulator is not on. */
+  avds?: string[];
+  /** The virtual phone that is running, or the one Start would pick. */
+  avd?: string;
+  /** Why the last start from the app did not work. */
+  launchError?: string;
 }
 
 export type PhoneInput =
@@ -62,6 +70,8 @@ export interface StoryOptions {
 /** What desktop/preload.cjs exposes as `window.nocapDesktop.phone`. */
 export interface DesktopPhoneBridge {
   info(): Promise<PhoneInfo>;
+  /** Starts a virtual phone (the one used last when no name is given). Returns at once; `info()` says when it is on. */
+  launch(avd?: string): Promise<{ state: "on" | "starting"; avd: string }>;
   begin(): Promise<string>;
   write(id: string, data: Uint8Array): Promise<void>;
   send(id: string, name: string): Promise<{ path: string; uri: string }>;

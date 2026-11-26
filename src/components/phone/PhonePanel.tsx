@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, GripVertical, House, LayoutGrid, Smartphone, X } from "lucide-react";
+import { emulatorIsOff } from "@/lib/phone/emulatorStart";
 import { AnnexBSplitter, FrameAssembler } from "@/lib/phone/h264";
 import { phoneBridge, toPhonePoint, type PhoneInfo } from "@/lib/phone/phoneBridge";
 import { clampPanelWidth, loadPanelWidth, PANEL_DEFAULT_WIDTH, pictureSize, savePanelWidth } from "@/lib/phone/panelSize";
 import { usePhone } from "@/lib/phone/phoneStore";
+import { EmulatorStart } from "./EmulatorStart";
 
 /** Id of the element in the top bar that holds the phone button. */
 export const PHONE_BUTTON_SLOT = "editor-phone-button-slot";
@@ -38,6 +40,7 @@ export function PhonePanel() {
   const [live, setLive] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [round, setRound] = useState(0);
+  const phoneRound = usePhone((s) => s.phoneRound);
   // Until the user drags the handle on its left edge the phone is as large as the column's height allows
   // (null). A dragged width is theirs, and can only be smaller than that.
   const [width, setWidth] = useState<number | null>(() => loadPanelWidth());
@@ -138,7 +141,7 @@ export function PhonePanel() {
         /* already closed */
       }
     };
-  }, [open, round]);
+  }, [open, round, phoneRound]);
 
   useEffect(() => {
     if (!open) return;
@@ -324,7 +327,11 @@ export function PhonePanel() {
               </span>
             </h4>
             <div className="relative flex min-h-0 flex-1 items-center justify-center p-2">
-              {info && !info.available ? (
+              {info && !info.available && info.emulator && emulatorIsOff(info) ? (
+                <div className="w-full max-w-[22rem]" data-phone-missing>
+                  <EmulatorStart info={info} onCheck={() => setRound((r) => r + 1)} />
+                </div>
+              ) : info && !info.available ? (
                 <p className="rf-read-note px-3 text-center" data-phone-missing>
                   {info.reason ?? "Start the Android emulator first."}{" "}
                   <button type="button" className="underline hover:text-white" onClick={() => setRound((r) => r + 1)}>

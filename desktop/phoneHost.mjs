@@ -14,7 +14,9 @@ import os from "node:os";
 import path from "node:path";
 import { isAppUrl } from "./lib/appUrl.mjs";
 import {
+  avdImageDir,
   cleanLinkUrl,
+  emulatorStatus,
   findHighlight,
   findUi,
   firstDevice,
@@ -22,9 +24,12 @@ import {
   INSTAGRAM,
   INSTAGRAM_REEL,
   INSTAGRAM_STORY,
+  launchFailure,
+  parseAvdList,
   parseUi,
   PHONE_FOLDER,
   phoneFileName,
+  pickAvd,
   pickResult,
   screenSize,
   shellQuote,
@@ -110,10 +115,214 @@ async function requireDevice() {
   return serial;
 }
 
+// ---- Starting the emulator ------------------------------------------------------------------
+
+/** How long a started emulator may take to show up before it counts as not running. */
+const LAUNCH_WAIT_MS = 5 * 60_000;
+
+/** @type {string[] | undefined} */
+let emulatorPaths;
+
+/**
+ * Every emulator program on this Mac. There can be two (Android Studio's SDK and the command-line
+ * tools'), each with its own system images, so a virtual phone made with one only starts from that one.
+ */
+async function findEmulators() {
+  if (emulatorPaths !== undefined) return emulatorPaths;
+  emulatorPaths = [];
+  if (process.env.NOCAP_EMULATOR === "off") return emulatorPaths;
+  const places = [process.env.NOCAP_EMULATOR, path.join(os.homedir(), "Library/Android/sdk/emulator/emulator"), "/opt/homebrew/share/android-commandlinetools/emulator/emulator"];
+  for (const file of places) {
+    if (typeof file !== "string" || file === "" || emulatorPaths.includes(file)) continue;
+    try {
+      await fsp.access(file, fs.constants.X_OK);
+      emulatorPaths.push(file);
+    } catch {
+      // not here; try the next place
+    }
+  }
+  return emulatorPaths;
+}
+
+const findEmulator = async () => (await findEmulators())[0] ?? null;
+
+/**
+ * The emulator program that can start this virtual phone: the one whose SDK holds the phone's
+ * system image. Falls back to the first program found.
+ * @param {string} avd
+ * @returns {Promise<{ file: string, sdk: string | null } | null>}
+ */
+async function emulatorFor(avd) {
+  const all = await findEmulators();
+  if (all.length === 0) return null;
+  try {
+    const home = process.env.ANDROID_AVD_HOME || path.join(os.homedir(), ".android/avd");
+    const image = avdImageDir(await fsp.readFile(path.join(home, `${avd}.avd`, "config.ini"), "utf8"));
+    for (const file of image ? all : []) {
+      const sdk = path.dirname(path.dirname(file));
+      if (fs.existsSync(path.join(sdk, /** @type {string} */ (image)))) return { file, sdk };
+    }
+  } catch {
+    // no readable config: let the first program work it out
+  }
+  return { file: all[0], sdk: null };
+}
+
+/** @type {{ at: number, list: string[] } | null} */
+let avdCache = null;
+
+/** The virtual phones set up on this Mac, by name. Empty when the emulator program is missing. */
+async function listAvds() {
+  const file = await findEmulator();
+  if (!file) return [];
+  if (avdCache && Date.now() - avdCache.at < 30_000) return avdCache.list;
+  const list = await new Promise((/** @type {(list: string[]) => void} */ resolve) => {
+    execFile(file, ["-list-avds"], { timeout: 10_000 }, (err, stdout) => resolve(err ? [] : parseAvdList(String(stdout))));
+  });
+  avdCache = { at: Date.now(), list };
+  return list;
+}
+
+// The virtual phone that ran last is the one the button starts. Kept beside the projects, not in them.
+const lastAvdFile = () => path.join(app.getPath("userData"), "emulator.json");
+/** @type {string | null | undefined} */
+let lastAvdName;
+
+function lastAvd() {
+  if (lastAvdName !== undefined) return lastAvdName;
+  lastAvdName = null;
+  try {
+    const saved = JSON.parse(fs.readFileSync(lastAvdFile(), "utf8")).avd;
+    if (typeof saved === "string") lastAvdName = saved;
+  } catch {
+    // nothing remembered yet
+  }
+  return lastAvdName;
+}
+
+function rememberAvd(/** @type {string} */ name) {
+  if (!/^[A-Za-z0-9._-]+$/.test(name) || name === lastAvd()) return;
+  lastAvdName = name;
+  try {
+    fs.writeFileSync(lastAvdFile(), JSON.stringify({ avd: name }));
+  } catch {
+    // remembering is a convenience; the first phone in the list is started instead
+  }
+}
+
+/** The emulator this app started and is still waiting for. @type {{ avd: string, at: number, until: number } | null} */
+let launch = null;
+/** Why the last start did not work, until the next one. @type {string | null} */
+let launchError = null;
+
+/**
+ * Whether an emulator is on (running and finished starting up), starting, or off.
+ * @param {string} devices what `adb devices` printed
+ * @returns {Promise<{ state: "on" | "starting" | "off", avd?: string }>}
+ */
+async function emulatorState(devices) {
+  const emu = emulatorStatus(devices);
+  if (emu.state === "ready" && emu.serial) {
+    let booted = false;
+    let name = "";
+    try {
+      booted = (await sh(emu.serial, ["getprop", "sys.boot_completed"], 5000)).trim() === "1";
+      if (booted) name = (await sh(emu.serial, ["getprop", "ro.boot.qemu.avd_name"], 5000)).trim();
+    } catch {
+      // it is listed but not answering yet
+    }
+    if (!booted) return { state: "starting", avd: launch?.avd };
+    if (name) rememberAvd(name);
+    launch = null;
+    launchError = null;
+    return { state: "on", avd: name || undefined };
+  }
+  if (emu.state === "starting") return { state: "starting", avd: launch?.avd };
+  if (launch && Date.now() < launch.until) return { state: "starting", avd: launch.avd };
+  launch = null;
+  return { state: "off" };
+}
+
+async function devicesText() {
+  try {
+    return await adb(["devices"], { timeout: 6000 });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Starts a virtual phone in the emulator's own window and returns at once; the page then asks
+ * `phone:info` until it is on. The emulator keeps running when this app quits.
+ * @param {unknown} asked the virtual phone's name, or nothing for the one used last
+ */
+async function launchEmulator(asked) {
+  if (!(await findEmulator())) throw new Error("The Android emulator program was not found on this Mac.");
+  const now = await emulatorState(await devicesText());
+  if (now.state !== "off") return { state: now.state, avd: now.avd ?? "" };
+  avdCache = null;
+  const avd = pickAvd(await listAvds(), typeof asked === "string" ? asked : null, lastAvd());
+  if (!avd) throw new Error("No virtual phone is set up yet. Make one in Android Studio (Device Manager) first.");
+
+  const program = await emulatorFor(avd);
+  if (!program) throw new Error("The Android emulator program was not found on this Mac.");
+
+  launchError = null;
+  // What the emulator prints goes to a file, so a start that fails can say why.
+  const logFile = path.join(app.getPath("userData"), "emulator.log");
+  const out = fs.openSync(logFile, "w");
+  let child;
+  try {
+    // The SDK is named so the emulator looks for the phone's system image in the right one.
+    const env = program.sdk ? { ...process.env, ANDROID_SDK_ROOT: program.sdk, ANDROID_HOME: program.sdk } : process.env;
+    child = spawn(program.file, ["-avd", avd], { detached: true, stdio: ["ignore", out, out], env });
+  } finally {
+    fs.closeSync(out);
+  }
+  const mine = { avd, at: Date.now(), until: Date.now() + LAUNCH_WAIT_MS };
+  launch = mine;
+  child.on("error", (e) => {
+    if (launch !== mine) return;
+    launch = null;
+    launchError = `The emulator could not be started: ${e.message}`.slice(0, 300);
+  });
+  child.on("exit", (code) => {
+    // Still waiting for it and it has gone: the start failed. (Once it is on, `launch` is cleared.)
+    if (launch !== mine) return;
+    if (code === 0) {
+      // A clean exit can be the starter handing over to the emulator proper: give that a moment to appear.
+      mine.until = Math.min(mine.until, Date.now() + 30_000);
+      return;
+    }
+    launch = null;
+    let log = "";
+    try {
+      log = fs.readFileSync(logFile, "utf8").slice(-4000);
+    } catch {
+      // no log; the plain message is used
+    }
+    launchError = launchFailure(log);
+  });
+  child.unref();
+  return { state: "starting", avd };
+}
+
 async function phoneInfo() {
-  if (!(await findAdb())) return { available: false, reason: "The Android tool (adb) is not installed on this Mac." };
-  const serial = await device();
-  if (!serial) return { available: false, reason: "Start the Android emulator first." };
+  if (!(await findAdb())) return { available: false, reason: "The Android tool (adb) is not installed on this Mac.", emulator: "off" };
+  const devices = await devicesText();
+  const emu = await emulatorState(devices);
+  /** What the Start button needs: the state, the virtual phones to pick from, and the one it would start. */
+  let extra;
+  if (emu.state === "on") {
+    extra = { emulator: emu.state, avd: emu.avd };
+  } else {
+    const avds = await listAvds();
+    extra = { emulator: emu.state, avds, avd: emu.avd ?? pickAvd(avds, null, lastAvd()) ?? undefined, launchError: launchError ?? undefined };
+  }
+  // While it starts up nothing is sent anywhere, not even to a real phone that happens to be plugged in.
+  if (emu.state === "starting") return { available: false, reason: "The Android emulator is starting up.", ...extra };
+  const serial = firstDevice(devices);
+  if (!serial) return { available: false, reason: "The Android emulator is off.", ...extra };
   let size = null;
   let instagram = false;
   try {
@@ -122,7 +331,7 @@ async function phoneInfo() {
   } catch {
     // answered once already, so it is there; the details are optional
   }
-  return { available: true, device: serial, width: size?.width ?? 1080, height: size?.height ?? 1920, instagram };
+  return { available: true, device: serial, width: size?.width ?? 1080, height: size?.height ?? 1920, instagram, ...extra };
 }
 
 // ---- Sending a video ------------------------------------------------------------------------
@@ -830,6 +1039,7 @@ export function registerPhone() {
     });
 
   handle("phone:info", () => phoneInfo());
+  handle("phone:launch", (_event, avd) => launchEmulator(avd));
 
   handle("phone:begin", async (event) => {
     const id = `u${nextUpload++}`;

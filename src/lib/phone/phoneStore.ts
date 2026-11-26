@@ -24,6 +24,12 @@ interface PhoneState {
   /** The video already copied to the phone, so a second button does not copy it again. */
   sent: { video: Blob; uri: string } | null;
   setSent(sent: { video: Blob; uri: string } | null): void;
+  /** Starting the emulator from the app: under way, or why it did not work. Shared, so both Start buttons agree. */
+  emulator: { state: "starting"; avd: string } | { state: "failed"; text: string } | null;
+  setEmulator(emulator: PhoneState["emulator"]): void;
+  /** Goes up when the emulator comes on or goes away, so the panels ask about the phone again. */
+  phoneRound: number;
+  phoneChanged(): void;
 }
 
 export const usePhone = create<PhoneState>((set) => ({
@@ -33,4 +39,8 @@ export const usePhone = create<PhoneState>((set) => ({
   setLastExport: (lastExport) => set({ lastExport }),
   sent: null,
   setSent: (sent) => set({ sent }),
+  emulator: null,
+  setEmulator: (emulator) => set({ emulator }),
+  phoneRound: 0,
+  phoneChanged: () => set((s) => ({ phoneRound: s.phoneRound + 1 })),
 }));

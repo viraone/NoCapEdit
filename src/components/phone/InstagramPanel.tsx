@@ -5,10 +5,12 @@ import { CheckCircle2, ChevronRight, Clapperboard, FolderOpen, PlusCircle, Send,
 import { Button } from "@/components/ui/Button";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection } from "@/components/ui/Panel";
+import { emulatorIsOff } from "@/lib/phone/emulatorStart";
 import { phoneBridge, sendToPhone, type PhoneInfo } from "@/lib/phone/phoneBridge";
 import { usePhone, type FinishedExport } from "@/lib/phone/phoneStore";
 import { formatBytes } from "@/lib/utils/time";
 import { useEditor } from "@/store/editorStore";
+import { EmulatorStart } from "./EmulatorStart";
 import { PostReelDialog } from "./PostReelDialog";
 import { StoryDialog } from "./StoryDialog";
 
@@ -63,6 +65,7 @@ function Body({ done }: { done: FinishedExport | null }) {
   const [picked, setPicked] = useState<{ video: Blob; name: string; chosen: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pending = useRef<Action | null>(null);
+  const phoneRound = usePhone((s) => s.phoneRound);
 
   useEffect(() => {
     const api = phoneBridge();
@@ -75,7 +78,7 @@ function Body({ done }: { done: FinishedExport | null }) {
     return () => {
       gone = true;
     };
-  }, [round]);
+  }, [round, phoneRound]);
 
   if (!phoneBridge()) {
     return (
@@ -141,6 +144,13 @@ function Body({ done }: { done: FinishedExport | null }) {
     <>
       <PanelHeader title="Instagram" description="Post it from the phone on the right." />
       <PanelSection>
+        {info && emulatorIsOff(info) && (
+          <EmulatorStart
+            info={info}
+            onCheck={() => setRound((r) => r + 1)}
+            onStart={() => setPhoneOpen(true)}
+          />
+        )}
         {picked?.chosen ? (
           <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3" data-instagram-video>
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sys-blue/15 text-sys-blue"><FolderOpen size={17} /></span>
@@ -186,7 +196,7 @@ function Body({ done }: { done: FinishedExport | null }) {
           <ActionCard icon={<Send size={19} />} title="Send to phone" text="Copy to the gallery." disabled={!ready || busy} onClick={() => void act("send")} data-instagram-send />
         </div>
 
-        {info && !info.available && (
+        {info && !info.available && !emulatorIsOff(info) && (
           <p className="rf-read-note rf-warn" data-instagram-missing>
             {info.reason ?? "Start the Android emulator first."}{" "}
             <button type="button" className="underline hover:text-white" onClick={() => setRound((r) => r + 1)}>

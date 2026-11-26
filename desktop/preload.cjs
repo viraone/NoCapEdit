@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
   studio: { info: () => ipcRenderer.invoke("studio:info") },
   phone: {
     info: () => ipcRenderer.invoke("phone:info"),
+    launch: (avd) => ipcRenderer.invoke("phone:launch", typeof avd === "string" ? avd : null),
     begin: () => ipcRenderer.invoke("phone:begin"),
     write: (id, data) => ipcRenderer.invoke("phone:write", id, data),
     send: (id, name) => ipcRenderer.invoke("phone:send", id, name),
