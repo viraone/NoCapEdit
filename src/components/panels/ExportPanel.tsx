@@ -95,6 +95,10 @@ export function ExportPanel() {
       setError(blocked);
       return;
     }
+    if (phoneBridge() && usePhone.getState().rendering) {
+      setError("A video is already being made. Wait for it to finish.");
+      return;
+    }
     // The save dialog must open inside the click gesture, before any await.
     let sink: OutputSink | null = null;
     if (toDisk) {
@@ -112,6 +116,7 @@ export function ExportPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     setProgress({ stage: "preparing", progress: 0, message: "Starting" });
+    usePhone.getState().setRendering(true);
     setEngine(null);
     // A long export should not be interrupted by the screen going to sleep.
     const releaseLock = await acquireWakeLock();
@@ -137,7 +142,7 @@ export function ExportPanel() {
       if (res.vtt) downloadBlob(res.vtt, `${base}.vtt`);
       // Desktop app: the finished video goes to the Instagram panel, which takes this panel's place.
       if (phoneBridge() && (res.video || saved)) {
-        usePhone.getState().setLastExport({ video: res.video ?? null, loadVideo: res.video ? null : saved, fileName: res.fileName, bytes: res.bytes, streamed: res.streamed, at: Date.now() });
+        usePhone.getState().setLastExport({ video: res.video ?? null, loadVideo: res.video ? null : saved, fileName: res.fileName, bytes: res.bytes, streamed: res.streamed, at: Date.now(), project });
         useEditor.getState().setTool("instagram");
       }
     } catch (e) {
@@ -147,6 +152,7 @@ export function ExportPanel() {
       releaseLock();
       abortRef.current = null;
       setProgress(null);
+      usePhone.getState().setRendering(false);
     }
   };
 

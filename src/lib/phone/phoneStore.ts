@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { VideoProject } from "@/lib/models/project";
 
 /** The export the Instagram panel offers to post: kept here so it outlives the Export panel that made it. */
 export interface FinishedExport {
@@ -12,6 +13,10 @@ export interface FinishedExport {
   streamed: boolean;
   /** When it finished; also tells one export from the next. */
   at: number;
+  /** The project as it was when the video was made. */
+  project: VideoProject;
+  /** Made by the Instagram panel itself: not saved as a file. */
+  inApp?: boolean;
 }
 
 /** The phone panel's state, shared by the top bar button, the phone panel, the Export panel and the Instagram panel. */
@@ -30,17 +35,28 @@ interface PhoneState {
   /** Goes up when the emulator comes on or goes away, so the panels ask about the phone again. */
   phoneRound: number;
   phoneChanged(): void;
+  /** Goes up when the Export panel finishes a video: the Instagram panel starts afresh then. */
+  exportRound: number;
+  /** Keeps a video the Instagram panel made, without starting the panel afresh. */
+  setOwnExport(done: FinishedExport): void;
+  /** A video is being made right now: no second export is started. */
+  rendering: boolean;
+  setRendering(rendering: boolean): void;
 }
 
 export const usePhone = create<PhoneState>((set) => ({
   open: false,
   setOpen: (open) => set({ open }),
   lastExport: null,
-  setLastExport: (lastExport) => set({ lastExport }),
+  setLastExport: (lastExport) => set((s) => ({ lastExport, exportRound: s.exportRound + 1 })),
   sent: null,
   setSent: (sent) => set({ sent }),
   emulator: null,
   setEmulator: (emulator) => set({ emulator }),
   phoneRound: 0,
   phoneChanged: () => set((s) => ({ phoneRound: s.phoneRound + 1 })),
+  exportRound: 0,
+  setOwnExport: (lastExport) => set({ lastExport }),
+  rendering: false,
+  setRendering: (rendering) => set({ rendering }),
 }));
