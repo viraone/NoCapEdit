@@ -12,9 +12,11 @@ export interface StoryChoices {
   highlight: string;
   /** Have Gemini pick a new cover for that Highlight after the Story is added. */
   cover: boolean;
+  /** Add the posted Story to the Highlight named in `highlight`. */
+  addToHighlight: boolean;
 }
 
-export const STORY_DEFAULTS: StoryChoices = { mute: false, share: true, audience: "story", linkUrl: "", linkLabel: "", linkAt: "bottom", overlayAt: "top", highlight: "", cover: false };
+export const STORY_DEFAULTS: StoryChoices = { mute: false, share: true, audience: "story", linkUrl: "", linkLabel: "", linkAt: "bottom", overlayAt: "top", highlight: "", cover: false, addToHighlight: false };
 
 const KEY = "reelflow.storyChoices";
 
@@ -37,6 +39,9 @@ export function parseStoryChoices(text: string | null): StoryChoices {
       overlayAt: slot(raw.overlayAt, STORY_DEFAULTS.overlayAt),
       highlight: typeof raw.highlight === "string" ? raw.highlight.slice(0, 60) : "",
       cover: flag(raw.cover, STORY_DEFAULTS.cover),
+      addToHighlight: typeof raw.addToHighlight === "boolean"
+        ? raw.addToHighlight
+        : typeof raw.highlight === "string" && raw.highlight.trim() !== "",
     };
   } catch {
     return { ...STORY_DEFAULTS };

@@ -72,6 +72,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
   const [overlayAt, setOverlayAt] = useState<StorySlot>(saved.current.overlayAt);
   const [highlight, setHighlight] = useState(saved.current.highlight);
   const [cover, setCover] = useState(saved.current.cover);
+  const [addToHighlight, setAddToHighlight] = useState(saved.current.addToHighlight);
   /* eslint-enable react-hooks/refs */
   const [overlay, setOverlay] = useState("");
   /** Gemini has a key on this Mac, so it can be asked to pick a cover. */
@@ -141,7 +142,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
           });
           return;
         }
-        const into = highlight.trim();
+        const into = addToHighlight ? highlight.trim() : "";
         if (!into) {
           show({ kind: "done", ok: true, outcome, headline: `${sharedLine} Instagram is uploading it.` });
           return;
@@ -182,7 +183,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
         if (runRef.current === run && !run.cancelled) api!.onStep(null);
       }
     })();
-  }, [phase, audience, highlight, cover, gemini, video]);
+  }, [phase, audience, highlight, cover, gemini, video, addToHighlight]);
 
   const go = async () => {
     const api = phoneBridge();
@@ -192,7 +193,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
     const show = (p: Phase) => {
       if (runRef.current === run) setPhase(p);
     };
-    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover });
+    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover, addToHighlight });
     const options: StoryOptions = { mute, overlay: overlay.trim(), overlayAt, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt };
     show({ kind: "running", label: "Sending the video to the phone" });
     api.onStep((label) => {
@@ -229,7 +230,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
   const styleIt = () => {
     const text = overlay.trim();
     if (!onStyle || !text) return;
-    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover });
+    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover, addToHighlight });
     setOverlay("");   // otherwise Instagram would type the same words a second time
     setPhase({ kind: "form" });
     onClose();
@@ -305,21 +306,33 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
             <SwitchRow data={{ "data-story-check": "share" }} checked={share} onChange={setShare} label="Tap Share" hint={`Shows the finished Story for ${SHARE_COUNTDOWN} seconds, with a cancel button, then posts it.`} />
           </div>
           <Card icon={<Star size={16} />} tone="bg-sys-orange/15 text-sys-orange">
-            <Field
-              label="Add to Highlight"
-              hint={share ? "Optional. Exact name of one of your Highlights. Added after the upload, which can take a few minutes." : "Needs Tap Share on."}
-            >
-              <Input value={highlight} onChange={(e) => setHighlight(e.target.value)} placeholder="Name of the Highlight" maxLength={60} disabled={!share} data-story-highlight />
-            </Field>
-            {gemini && (
-              <SwitchRow
-                data={{ "data-story-check": "cover" }}
-                checked={cover}
-                onChange={setCover}
-                disabled={!share || !highlight.trim()}
-                label="Gemini picks the cover"
-                hint={share && highlight.trim() ? `Sends a few frames of this video to Gemini${spare ? " (DeepSeek if Gemini is busy)" : ""}, then replaces that Highlight's cover. Off leaves the cover as it is.` : "Needs a Highlight name above."}
-              />
+            <SwitchRow
+              data={{ "data-story-check": "addhighlight" }}
+              checked={addToHighlight}
+              onChange={setAddToHighlight}
+              disabled={!share}
+              label="Add to a Highlight"
+              hint={!share ? "Needs Tap Share on." : addToHighlight ? "After it is posted, the Story is added to the Highlight named below." : "Off: the Story is posted and not added to any Highlight."}
+            />
+            {addToHighlight && (
+              <>
+                <Field
+                  label="Highlight name"
+                  hint={highlight.trim() ? "The exact name of one of your Highlights. Adding it waits for the upload, which can take a few minutes." : "Type the exact name of one of your Highlights. With no name it is not added."}
+                >
+                  <Input value={highlight} onChange={(e) => setHighlight(e.target.value)} placeholder="Name of the Highlight" maxLength={60} disabled={!share} data-story-highlight />
+                </Field>
+                {gemini && (
+                  <SwitchRow
+                    data={{ "data-story-check": "cover" }}
+                    checked={cover}
+                    onChange={setCover}
+                    disabled={!share || !highlight.trim()}
+                    label="Gemini picks the cover"
+                    hint={share && highlight.trim() ? `Sends a few frames of this video to Gemini${spare ? " (DeepSeek if Gemini is busy)" : ""}, then replaces that Highlight's cover. Off leaves the cover as it is.` : "Needs a Highlight name above."}
+                  />
+                )}
+              </>
             )}
           </Card>
         </fieldset>
@@ -333,6 +346,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
         {phase.kind === "countdown" && (
           <div className="space-y-2 rounded-2xl border border-sys-orange/40 bg-sys-orange/10 p-2.5" data-story-countdown>
             <p className="rf-read-note">Everything is on the Story. Check the phone panel. Sharing in {phase.left} s.</p>
+            <p className="rf-read-note" data-story-then>{addToHighlight && highlight.trim() ? `Then it is added to the Highlight "${highlight.trim()}"${cover && gemini ? " and gets a new cover" : ""}.` : "It will not be added to a Highlight."}</p>
             <Button
               variant="danger"
               size="sm"

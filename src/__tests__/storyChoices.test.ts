@@ -15,7 +15,7 @@ describe("parseStoryChoices", () => {
   });
 
   it("parses valid choices correctly", () => {
-    const json = '{"mute":true,"share":false,"audience":"close","linkUrl":"https://example.com","linkLabel":"SIGN UP NOW!","linkAt":"top","overlayAt":"bottom","highlight":"Shows","cover":true}';
+    const json = '{"mute":true,"share":false,"audience":"close","linkUrl":"https://example.com","linkLabel":"SIGN UP NOW!","linkAt":"top","overlayAt":"bottom","highlight":"Shows","cover":true,"addToHighlight":true}';
     expect(parseStoryChoices(json)).toEqual({
       mute: true,
       share: false,
@@ -26,11 +26,12 @@ describe("parseStoryChoices", () => {
       overlayAt: "bottom",
       highlight: "Shows",
       cover: true,
+      addToHighlight: true,
     });
   });
 
   it("falls back to defaults for wrong types", () => {
-    const json = '{"mute":"yes","share":1,"audience":"everyone","linkUrl":5,"linkLabel":null,"linkAt":"left","overlayAt":7,"highlight":9,"cover":"yes"}';
+    const json = '{"mute":"yes","share":1,"audience":"everyone","linkUrl":5,"linkLabel":null,"linkAt":"left","overlayAt":7,"highlight":9,"cover":"yes","addToHighlight":"yes"}';
     expect(parseStoryChoices(json)).toEqual(STORY_DEFAULTS);
   });
 
@@ -50,5 +51,19 @@ describe("parseStoryChoices", () => {
     expect(result.linkUrl.length).toBe(200);
     expect(result.linkLabel.length).toBe(60);
     expect(result.highlight.length).toBe(60);
+  });
+
+  it("addToHighlight keeps saved true and false values", () => {
+    expect(parseStoryChoices('{"addToHighlight":true}').addToHighlight).toBe(true);
+    expect(parseStoryChoices('{"addToHighlight":false,"highlight":"Shows"}').addToHighlight).toBe(false);
+  });
+
+  it("addToHighlight defaults to true when highlight is a non-empty string and flag is missing", () => {
+    expect(parseStoryChoices('{"highlight":"Shows"}').addToHighlight).toBe(true);
+  });
+
+  it("addToHighlight defaults to false when highlight is empty or spaces-only and flag is missing", () => {
+    expect(parseStoryChoices('{"highlight":""}').addToHighlight).toBe(false);
+    expect(parseStoryChoices('{"highlight":"   "}').addToHighlight).toBe(false);
   });
 });
