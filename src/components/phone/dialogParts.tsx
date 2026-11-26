@@ -24,15 +24,15 @@ export function Card({ icon, tone, children }: { icon: ReactNode; tone: string; 
 export const segment = (on: boolean) => `rounded-full px-2.5 py-1 text-[12px] font-semibold normal-case transition-colors ${on ? "bg-white text-black shadow" : "text-white/60 enabled:hover:text-white"}`;
 export const segmentRow = "inline-flex items-center gap-0.5 rounded-full bg-black/40 p-0.5 ring-1 ring-inset ring-white/10";
 
-export function SwitchRow({ checked, onChange, label, hint, data }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string; data: Record<string, string> }) {
+export function SwitchRow({ checked, onChange, label, hint, data, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string; data: Record<string, string>; disabled?: boolean }) {
   return (
-    <label className="flex cursor-pointer items-center gap-3">
+    <label className={`flex items-center gap-3 ${disabled ? "cursor-not-allowed opacity-55" : "cursor-pointer"}`}>
       <span className="min-w-0 flex-1">
         <span className="block text-[13px] font-semibold text-white">{label}</span>
         <span className="rf-read-face mt-0.5 block text-[12px] leading-snug text-white/55">{hint}</span>
       </span>
       <span className="relative h-6 w-11 shrink-0">
-        <input type="checkbox" className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0" checked={checked} onChange={(e) => onChange(e.target.checked)} {...data} />
+        <input type="checkbox" className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed" disabled={disabled} checked={checked} onChange={(e) => onChange(e.target.checked)} {...data} />
         <span className={`absolute inset-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-sys-pink/70 ${checked ? "bg-linear-to-r from-sys-purple via-sys-pink to-sys-orange" : "bg-white/15"}`} />
         <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : ""}`} />
       </span>

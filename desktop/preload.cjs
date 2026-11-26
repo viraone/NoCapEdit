@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
     story: (uri, options) => ipcRenderer.invoke("phone:story", uri, options),
     shareStory: (audience) => ipcRenderer.invoke("phone:shareStory", audience),
     highlight: (name, maxAgeMinutes) => ipcRenderer.invoke("phone:highlight", name, maxAgeMinutes),
+    highlightCover: (name, jpeg) => ipcRenderer.invoke("phone:highlightCover", name, jpeg),
     onStep: (fn) => {
       onPhoneStep = typeof fn === "function" ? fn : null;
     },
@@ -57,6 +58,7 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
   caption: {
     info: () => ipcRenderer.invoke("caption:info"),
     polish: (notes) => ipcRenderer.invoke("caption:polish", notes),
+    cover: (frames) => ipcRenderer.invoke("caption:cover", frames),
   },
   ffmpeg: {
     info: () => ipcRenderer.invoke("ffmpeg:info"),

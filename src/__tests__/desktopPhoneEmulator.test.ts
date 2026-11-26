@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { avdImageDir, emulatorStatus, launchFailure, parseAvdList, pickAvd } from "../../desktop/lib/phone.mjs";
+import { avdImageDir, restoreSetting, emulatorStatus, launchFailure, parseAvdList, pickAvd } from "../../desktop/lib/phone.mjs";
 
 describe("starting the emulator", () => {
   it("parses the AVD list", () => {
@@ -59,5 +59,14 @@ describe("starting the emulator", () => {
     // Never a folder outside the SDK.
     expect(avdImageDir("image.sysdir.1=/etc/\n")).toBeNull();
     expect(avdImageDir("image.sysdir.1=system-images/../../secret\n")).toBeNull();
+  });
+});
+
+describe("putting the emulator's animation speeds back", () => {
+  it("deletes a speed that was never set, writes one that was, and falls back to normal", () => {
+    expect(restoreSetting("animator_duration_scale", "null\n")).toEqual(["settings", "delete", "global", "animator_duration_scale"]);
+    expect(restoreSetting("window_animation_scale", "0.5")).toEqual(["settings", "put", "global", "window_animation_scale", "0.5"]);
+    expect(restoreSetting("window_animation_scale", "")).toEqual(["settings", "put", "global", "window_animation_scale", "1.0"]);
+    expect(restoreSetting("window_animation_scale", "1.0; reboot")).toEqual(["settings", "put", "global", "window_animation_scale", "1.0"]);
   });
 });

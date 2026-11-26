@@ -91,6 +91,8 @@ export interface DesktopPhoneBridge {
    * uploading it (that wait can be minutes). `note` says what happened either way.
    */
   highlight(name: string, maxAgeMinutes?: number): Promise<{ added: boolean; note: string }>;
+  /** Replaces the cover of the Highlight with exactly this name with this picture (a square JPEG). */
+  highlightCover(name: string, jpeg: Uint8Array): Promise<{ set: boolean; note: string }>;
   onStep(fn: ((label: string) => void) | null): void;
   cancel(): Promise<void>;
   share(): Promise<{ shared: boolean }>;

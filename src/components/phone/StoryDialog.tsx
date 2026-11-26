@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Link2, PlusCircle, Send, Star, Type } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
+import { giveHighlightCover } from "@/lib/phone/highlightCover";
 import { phoneBridge, type ReelOutcome, type StoryOptions, type StorySlot } from "@/lib/phone/phoneBridge";
 import { typeableNote } from "@/lib/phone/reelChoices";
 import { loadStoryChoices, saveStoryChoices } from "@/lib/phone/storyChoices";
@@ -54,7 +55,7 @@ function SlotPicker({ value, onChange, name }: { value: StorySlot; onChange: (v:
  * The Story window: what Instagram should be walked through on the phone, then Go.
  * `prepare` copies the video to the phone (once) and returns its gallery address.
  */
-export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose: () => void; prepare: (onLabel: (label: string) => void) => Promise<string> }) {
+export function StoryDialog({ open, onClose, prepare, video }: { open: boolean; onClose: () => void; prepare: (onLabel: (label: string) => void) => Promise<string>; video: Blob }) {
   const saved = useRef(loadStoryChoices());
   // The saved choices are read once, when the window first mounts. Newer React lint forbids reading a
   // ref during render even for this one-time read; the values below never change on later renders.
@@ -67,8 +68,13 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
   const [linkAt, setLinkAt] = useState<StorySlot>(saved.current.linkAt);
   const [overlayAt, setOverlayAt] = useState<StorySlot>(saved.current.overlayAt);
   const [highlight, setHighlight] = useState(saved.current.highlight);
+  const [cover, setCover] = useState(saved.current.cover);
   /* eslint-enable react-hooks/refs */
   const [overlay, setOverlay] = useState("");
+  /** Gemini has a key on this Mac, so it can be asked to pick a cover. */
+  const [gemini, setGemini] = useState(false);
+  /** DeepSeek steps in when Gemini is busy. */
+  const [spare, setSpare] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
   const cancelled = useRef(false);
 
@@ -83,6 +89,22 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
     },
     [],
   );
+
+  useEffect(() => {
+    if (!open) return;
+    let gone = false;
+    void window.nocapDesktop?.caption
+      ?.info()
+      .then((i) => {
+        if (gone) return;
+        setGemini(i.available);
+        setSpare(!!i.spare);
+      })
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+    };
+  }, [open]);
 
   // The countdown before Share: the finished Story is on the phone panel; Cancel leaves it there.
   useEffect(() => {
@@ -118,7 +140,20 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
         setPhase({ kind: "running", label: "Opening your Story" });
         try {
           const h = await api!.highlight(into);
-          setPhase({ kind: "done", ok: h.added, outcome, headline: `${sharedLine} ${h.note}` });
+          const ai = window.nocapDesktop?.caption;
+          if (!h.added || !cover || !gemini || !ai || cancelled.current) {
+            setPhase({ kind: "done", ok: h.added, outcome, headline: `${sharedLine} ${h.note}` });
+            return;
+          }
+          const c = await giveHighlightCover({
+            video,
+            name: into,
+            pick: (frames) => ai.cover(frames),
+            setCover: (name, jpeg) => api!.highlightCover(name, jpeg),
+            onStep: (label) => setPhase({ kind: "running", label }),
+            stopped: () => cancelled.current,
+          });
+          setPhase({ kind: "done", ok: c.set, outcome, headline: `${sharedLine} ${h.note} ${c.note}` });
         } finally {
           running.current = false;
           api!.onStep(null);
@@ -132,14 +167,14 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
         });
       }
     })();
-  }, [phase, audience, highlight]);
+  }, [phase, audience, highlight, cover, gemini, video]);
 
   const go = async () => {
     const api = phoneBridge();
     if (!api) return;
     cancelled.current = false;
     running.current = true;
-    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim() });
+    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover });
     const options: StoryOptions = { mute, overlay: overlay.trim(), overlayAt, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt };
     setPhase({ kind: "running", label: "Sending the video to the phone" });
     api.onStep((label) => setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p)));
@@ -236,6 +271,16 @@ export function StoryDialog({ open, onClose, prepare }: { open: boolean; onClose
             >
               <Input value={highlight} onChange={(e) => setHighlight(e.target.value)} placeholder="Name of the Highlight" maxLength={60} disabled={!share} data-story-highlight />
             </Field>
+            {gemini && (
+              <SwitchRow
+                data={{ "data-story-check": "cover" }}
+                checked={cover}
+                onChange={setCover}
+                disabled={!share || !highlight.trim()}
+                label="Gemini picks the cover"
+                hint={share && highlight.trim() ? `Sends a few frames of this video to Gemini${spare ? " (DeepSeek if Gemini is busy)" : ""}, then replaces that Highlight's cover. Off leaves the cover as it is.` : "Needs a Highlight name above."}
+              />
+            )}
           </Card>
         </fieldset>
       </div>

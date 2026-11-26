@@ -7,13 +7,14 @@
 //
 // Sharing is its own call ("phone:share"), made only when the page asks for it.
 import { app, ipcMain } from "electron";
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isAppUrl } from "./lib/appUrl.mjs";
 import {
+  ANIMATION_KEYS,
   avdImageDir,
   cleanLinkUrl,
   emulatorStatus,
@@ -31,6 +32,7 @@ import {
   phoneFileName,
   pickAvd,
   pickResult,
+  restoreSetting,
   screenSize,
   shellQuote,
   storyAgeMinutes,
@@ -38,7 +40,9 @@ import {
   STORY_SLOTS,
   storySlotY,
   streamSize,
+  thumbnailMinutes,
   typeable,
+  wallMinutes,
 } from "./lib/phone.mjs";
 
 const MEDIA_URI = /^content:\/\/media\/external\/video\/media\/\d+$/;
@@ -448,7 +452,9 @@ async function phoneInput(action) {
 async function look(/** @type {string} */ serial) {
   for (let i = 0; i < 4; i++) {
     try {
-      const xml = await adb(["shell", "uiautomator dump /sdcard/nocap-ui.xml >/dev/null 2>&1; cat /sdcard/nocap-ui.xml"], { serial, timeout: 20_000 });
+      // The old file goes first: Android's reader gives up on a screen that keeps moving ("could not get
+      // idle state"), and the last screen it did read must not be taken for this one.
+      const xml = await adb(["shell", "rm -f /sdcard/nocap-ui.xml; uiautomator dump /sdcard/nocap-ui.xml >/dev/null 2>&1; cat /sdcard/nocap-ui.xml"], { serial, timeout: 20_000 });
       if (xml.includes("<hierarchy")) return parseUi(xml);
     } catch {
       // try again
@@ -456,6 +462,73 @@ async function look(/** @type {string} */ serial) {
     await wait(700);
   }
   return [];
+}
+
+// Instagram's speech bubbles and feed never stop moving, and Android will not read a moving screen.
+// For the steps that need those screens (Highlight, cover, Home) the emulator's animations are turned
+// off and then put back. Only ever on an emulator: a real phone's settings are left alone.
+
+/** What the speeds were, kept on disk while they are off, so a quit in the middle can still be undone. */
+const stillFile = () => path.join(app.getPath("userData"), "emulator-animations.json");
+/** @type {{ serial: string, depth: number, before: Promise<Record<string, string>> } | null} */
+let still = null;
+/** Putting back runs to its end before the speeds are read again. */
+let restoring = Promise.resolve();
+
+async function stopAnimations(/** @type {string} */ serial) {
+  await restoring;
+  /** @type {Record<string, string>} */
+  let before = {};
+  try {
+    // Left over from a run that never finished: those are the real values, not the zeros on the phone now.
+    before = JSON.parse(await fsp.readFile(stillFile(), "utf8"));
+  } catch {
+    for (const key of ANIMATION_KEYS) before[key] = (await sh(serial, ["settings", "get", "global", key], 6000)).trim();
+    await fsp.writeFile(stillFile(), JSON.stringify(before));
+  }
+  for (const key of ANIMATION_KEYS) await sh(serial, ["settings", "put", "global", key, "0"], 6000);
+  return before;
+}
+
+async function restoreAnimations(/** @type {string} */ serial, /** @type {Record<string, string>} */ before) {
+  for (const key of ANIMATION_KEYS) await sh(serial, restoreSetting(key, before[key]), 6000);
+  await fsp.rm(stillFile(), { force: true });
+}
+
+/**
+ * Runs `work` with the emulator's animations off. Calls inside one another share the one switch.
+ * @template T
+ * @param {string} serial
+ * @param {() => Promise<T>} work
+ * @returns {Promise<T>}
+ */
+async function withStillScreen(serial, work) {
+  if (!serial.startsWith("emulator-")) return work();
+  still ??= { serial, depth: 0, before: stopAnimations(serial).catch(() => ({})) };
+  const mine = still;
+  mine.depth++;
+  try {
+    await mine.before;
+    return await work();
+  } finally {
+    if (--mine.depth === 0) {
+      still = null;
+      restoring = mine.before.then((before) => (Object.keys(before).length ? restoreAnimations(serial, before) : undefined)).catch(() => undefined);
+      await restoring;
+    }
+  }
+}
+
+/** The app is quitting in the middle of a step: put the speeds back before it goes. */
+function restoreAnimationsNow() {
+  if (!still || !adbPath) return;
+  try {
+    const before = JSON.parse(fs.readFileSync(stillFile(), "utf8"));
+    for (const key of ANIMATION_KEYS) execFileSync(adbPath, ["-s", still.serial, "shell", restoreSetting(key, before[key]).map(shellQuote).join(" ")], { timeout: 5000 });
+    fs.rmSync(stillFile(), { force: true });
+  } catch {
+    // the file stays, and the next step puts them back
+  }
 }
 
 /**
@@ -881,6 +954,7 @@ async function addToHighlight(sender, rawName, rawMaxAge) {
     if ((await instagramHome()).state !== "home") return { added: false, note: "Instagram has something else open, so the Story was not added to a Highlight." };
     await wait(1800);
     const feed = await look(serial);
+    if (!feed.length) return { added: false, note: "Instagram's home screen could not be read because something on it kept moving, so the Story was not added to a Highlight. Add it by hand: open your Story, More, Highlight." };
     const label = feed.find((n) => n.id === "username" && n.text.trim() === "Your story");
     const entry = label && feed.find((n) => storyOwner(n.desc) !== null && Math.abs(n.x - label.x) < 90 && n.y < label.y);
     const me = entry ? storyOwner(entry.desc) : null;
@@ -893,7 +967,10 @@ async function addToHighlight(sender, rawName, rawMaxAge) {
     const until = Date.now() + UPLOAD_WAIT_MS;
     let advances = 0;
     let reopened = 0;
-    let ready = false;
+    let unknown = 0;
+    let opens = 0;
+    /** The menu's Highlight row, once the menu is open over the right Story. */
+    let row = null;
     while (Date.now() < until) {
       if (mine.cancelled) throw new Stopped("Stopped.");
       const nodes = await look(serial);
@@ -912,35 +989,51 @@ async function addToHighlight(sender, rawName, rawMaxAge) {
       }
       const head = findUi(nodes, { id: "reel_viewer_text_container" });
       if (!head) {
+        // An advert between Stories has no heading: if it stays, close it and start from the home screen.
+        if (++unknown >= 3) {
+          unknown = 0;
+          await leave();
+        }
         await wait(1200);
         continue;
       }
+      unknown = 0;
       if (storyOwner(head.desc) !== me) {
+        // Instagram has moved on to other people's Stories: back to the home screen and in again.
         await leave();
-        return { added: false, note: "The Story just shared was not found among your Stories; nothing was added to a Highlight." };
+        if (++reopened > 4) return { added: false, note: "The Story just shared was not found among your Stories; nothing was added to a Highlight." };
+        continue;
       }
       const age = storyAgeMinutes(head.desc);
-      if (age !== null && age <= maxAge && findUi(nodes, { id: "self_toolbar_menu_button" })) {
-        ready = true;
-        break;
+      const more = findUi(nodes, { id: "self_toolbar_menu_button" });
+      if (age !== null && age <= maxAge && more) {
+        // Reading a playing Story takes seconds, long enough for Instagram to move on, so More is tapped
+        // at once: it pauses the Story. The heading behind the open menu then says which Story it is for.
+        await tap(serial, more);
+        const menu = await waitFor(serial, { id: "action_sheet_row_text_view", text: "Highlight" }, 12_000);
+        const behind = menu && findUi(menu.nodes, { id: "reel_viewer_text_container" });
+        const behindAge = behind ? storyAgeMinutes(behind.desc) : null;
+        if (menu && behind && storyOwner(behind.desc) === me && behindAge !== null && behindAge <= maxAge) {
+          row = menu.hit;
+          break;
+        }
+        if (++opens >= 3) break;
+        // Not the Story meant, or no menu: close whatever opened and look again.
+        await leave();
+        continue;
       }
       // One of the account's older Stories: on to the next.
       if (++advances > 15) break;
       await sh(serial, ["input", "tap", String(Math.round(size.width * 0.9)), String(Math.round(size.height * 0.5))]);
       await wait(1300);
     }
-    if (!ready) {
+    if (!row) {
       await leave();
       return { added: false, note: "The Story was still uploading, or was not found, so it was not added to a Highlight. Add it by hand from the Story's More menu." };
     }
 
     say(`Adding the Story to "${name}"`);
-    const menu = await waitFor(serial, { id: "self_toolbar_menu_button" }, 8000);
-    if (!menu) throw new Error("The Story's More button was not found.");
-    await tap(serial, menu.hit);
-    const row = await waitFor(serial, { id: "action_sheet_row_text_view", text: "Highlight" }, 8000);
-    if (!row) throw new Error("Instagram's menu did not offer Highlight.");
-    await tap(serial, row.hit);
+    await tap(serial, row);
     const sheet = await waitFor(serial, { id: "header_text", text: "Add to highlights" }, 8000);
     if (!sheet) throw new Error("Instagram did not show the list of Highlights.");
 
@@ -1022,11 +1115,195 @@ async function shareReel() {
   return { shared: await leftScreen(serial, "caption_input_text_view") };
 }
 
+// ---- Highlight cover --------------------------------------------------------------------------
+
+/** Folder for cover pictures: Android's gallery lists pictures from here. */
+const COVER_FOLDER = "/sdcard/Pictures/NoCapEdit";
+const COVER_MAX_BYTES = 8 * 1024 * 1024;
+
+/** Copies the cover picture to the phone's gallery, newest first in its list of photos. */
+async function pushCover(/** @type {string} */ serial, /** @type {Uint8Array} */ jpeg) {
+  await fsp.mkdir(uploadRoot(), { recursive: true });
+  const name = `cover-${Date.now()}.jpg`;
+  const file = path.join(uploadRoot(), name);
+  const remote = `${COVER_FOLDER}/${name}`;
+  try {
+    await fsp.writeFile(file, jpeg);
+    await sh(serial, ["mkdir", "-p", COVER_FOLDER]);
+    await adb(["push", file, remote], { serial, timeout: 60_000 });
+    await sh(serial, ["content", "call", "--uri", "content://media", "--method", "scan_file", "--arg", remote], 30_000);
+  } finally {
+    await fsp.rm(file, { force: true });
+  }
+}
+
+/**
+ * Gives the Highlight with exactly this name a new cover picture: press and hold it on the profile,
+ * Edit highlight, Edit cover, pick the picture just copied across, Done.
+ *
+ * The cover is only saved when every screen on the way is the expected one: the Highlight's name on
+ * the edit screen matches, and the photo picked is one made in the last few minutes. When something
+ * is off, the screens are left without saving; if Instagram then asks whether to discard, that
+ * question is left on the phone for the user.
+ *
+ * @param {import("electron").WebContents} sender
+ * @param {unknown} rawName
+ * @param {unknown} jpeg
+ */
+async function setHighlightCover(sender, rawName, jpeg) {
+  const serial = await requireDevice();
+  const name = typeof rawName === "string" ? rawName.trim().slice(0, 60) : "";
+  if (!name) return { set: false, note: "No Highlight name was given." };
+  if (!(jpeg instanceof Uint8Array) || jpeg.length < 100 || jpeg.length > COVER_MAX_BYTES || jpeg[0] !== 0xff || jpeg[1] !== 0xd8 || jpeg[2] !== 0xff) {
+    return { set: false, note: "The cover picture could not be used." };
+  }
+  const mine = { cancelled: false };
+  job = mine;
+  const say = (/** @type {string} */ label) => {
+    if (!sender.isDestroyed()) sender.send("phone:step", label);
+  };
+  const stopCheck = () => {
+    if (mine.cancelled) throw new Stopped("Stopped.");
+  };
+  let asking = false;
+  /** Leaves the cover screens without saving, never answering Instagram's "discard?" question itself. */
+  const leave = async () => {
+    for (let i = 0; i < 5; i++) {
+      const nodes = await look(serial);
+      if (!nodes.length || findUi(nodes, { id: "feed_tab" })) return;
+      if (findUi(nodes, { id: "igds_alert_dialog_headline" })) {
+        asking = true;
+        return;
+      }
+      const cancel = findUi(nodes, { id: "profile_picture_cancel_button" });
+      if (cancel) await tap(serial, cancel);
+      else await sh(serial, ["input", "keyevent", "4"]);
+      await wait(1200);
+    }
+  };
+  const notSet = async (/** @type {string} */ why) => {
+    await leave().catch(() => undefined);
+    const question = asking ? " Instagram is asking whether to discard the change; answer it in the phone panel." : "";
+    return { set: false, note: `${why} The cover was not changed.${question}` };
+  };
+  const need = async (/** @type {{ id?: string, text?: string, desc?: string }} */ want, /** @type {string} */ missing, ms = 10_000) => {
+    stopCheck();
+    const found = await waitFor(serial, want, ms);
+    if (!found) throw new Error(missing);
+    return found;
+  };
+
+  try {
+    say("Sending the cover picture to the phone");
+    await pushCover(serial, jpeg);
+    stopCheck();
+
+    say(`Opening the Highlight "${name}"`);
+    if ((await instagramHome()).state !== "home") return { set: false, note: "Instagram has something else open, so the cover was not changed." };
+    await wait(1200);
+    const profile = await need({ id: "profile_tab" }, "Instagram's profile button was not found.");
+    await tap(serial, profile.hit);
+    // A second tap scrolls a profile that was left further down back to the top, where the Highlights are.
+    await wait(1500);
+    await tap(serial, profile.hit);
+    await wait(1800);
+
+    const size = screenSize(await sh(serial, ["wm", "size"], 6000)) ?? { width: 1080, height: 2424 };
+    let nodes = await look(serial);
+    let found = findHighlight(nodes, name);
+    for (let i = 0; i < 8 && found.count === 0; i++) {
+      stopCheck();
+      const anyLabel = nodes.find((n) => n.id === "username");
+      if (!anyLabel) break;
+      const before = found.seen.join("|");
+      await sh(serial, ["input", "swipe", String(Math.round(size.width * 0.85)), String(anyLabel.y - 124), String(Math.round(size.width * 0.2)), String(anyLabel.y - 124), "450"]);
+      await wait(1000);
+      nodes = await look(serial);
+      found = findHighlight(nodes, name);
+      if (found.seen.join("|") === before) break;
+    }
+    if (found.count !== 1 || !found.label) {
+      return await notSet(found.count > 1 ? `More than one Highlight is called "${name}".` : `No Highlight called "${name}" was found on your profile.`);
+    }
+    const target = found.label;
+    const picture = nodes.find((n) => n.id === "avatar_image_view" && Math.abs(n.x - target.x) < 70 && n.y < target.y && target.y - n.y < 260);
+    const at = picture ?? { x: target.x, y: target.y - 124 };
+    stopCheck();
+    await sh(serial, ["input", "swipe", String(at.x), String(at.y), String(at.x), String(at.y), "1200"]);
+    await tap(serial, (await need({ id: "context_menu_item_label", text: "Edit highlight" }, "Instagram did not offer Edit highlight.")).hit);
+
+    // The edit screen must be for this Highlight and no other.
+    const title = await need({ id: "highlight_title" }, "Instagram's edit screen did not open.");
+    if (title.hit.text.trim().toLowerCase() !== name.toLowerCase()) return await notSet(`Instagram opened "${title.hit.text.trim()}" instead of "${name}".`);
+
+    say("Choosing the new cover");
+    await tap(serial, (await need({ id: "edit_cover_link" }, "Instagram's Edit cover was not found.")).hit);
+    await tap(serial, (await need({ desc: "Open Gallery" }, "Instagram's photo button was not found.")).hit);
+    const grid = await need({ id: "gallery_grid_item_thumbnail" }, "Instagram did not show your photos. It may be asking for permission in the phone panel.", 12_000);
+
+    // The first photo in the list must be the one just copied across.
+    const first = grid.nodes.filter((n) => n.id === "gallery_grid_item_thumbnail").sort((a, b) => a.y - b.y || a.x - b.x)[0];
+    const now = wallMinutes(await sh(serial, ["date", "+%Y-%m-%d %H:%M"], 6000));
+    const made = thumbnailMinutes(first.desc);
+    if (now === null || made === null || now - made > 5 || made - now > 3) return await notSet("Instagram's photo list did not show the new picture first.");
+    if (first.desc.startsWith("Unselected")) {
+      await tap(serial, first);
+      await wait(900);
+    }
+    stopCheck();
+    await tap(serial, (await need({ id: "profile_picture_done_button" }, "Instagram's Done button was not found.")).hit);
+    await wait(2000);
+
+    // Instagram comes back to Edit cover (Done again) or straight to the edit screen.
+    let screen = await look(serial);
+    if (!findUi(screen, { id: "highlight_title" })) {
+      const done = findUi(screen, { desc: "Done" });
+      if (!done) return await notSet("Instagram's cover screen did not look as expected.");
+      stopCheck();
+      await tap(serial, done);
+      await wait(2000);
+      screen = await look(serial);
+    }
+    const again = findUi(screen, { id: "highlight_title" });
+    const save = findUi(screen, { desc: "Done" });
+    if (!again || !save || again.text.trim().toLowerCase() !== name.toLowerCase()) return await notSet("Instagram's edit screen did not come back as expected.");
+
+    say("Saving the new cover");
+    stopCheck();
+    await tap(serial, save);
+    // Saved once the edit screen is gone. Instagram may then offer to post the Highlight to the Story: Back closes that.
+    let saved = false;
+    for (let i = 0; i < 8; i++) {
+      await wait(1500);
+      const after = await look(serial);
+      if (!after.length) continue;
+      if (findUi(after, { text: "Try it" })) {
+        saved = true;
+        await sh(serial, ["input", "keyevent", "4"]);
+        break;
+      }
+      if (!findUi(after, { id: "highlight_title" })) {
+        saved = true;
+        if (i >= 3) break;
+      }
+    }
+    return saved
+      ? { set: true, note: `Gave "${name}" a new cover.` }
+      : { set: false, note: `Done was tapped, but Instagram stayed on the edit screen, so check "${name}" on your profile.` };
+  } catch (err) {
+    if (err instanceof Stopped) return await notSet("Stopped.");
+    return await notSet(err instanceof Error ? err.message : String(err));
+  } finally {
+    if (job === mine) job = null;
+  }
+}
+
 // ---- The fixed list the page can call --------------------------------------------------------
 
 export function registerPhone() {
   fs.rmSync(uploadRoot(), { recursive: true, force: true });
   app.on("will-quit", () => {
+    restoreAnimationsNow();
     stopScreen();
     fs.rmSync(uploadRoot(), { recursive: true, force: true });
   });
@@ -1077,11 +1354,12 @@ export function registerPhone() {
     const serial = await requireDevice();
     await openInstagram(serial, mode === "story" ? "story" : "reel", String(uri));
   });
-  handle("phone:instagramHome", () => instagramHome());
+  handle("phone:instagramHome", async () => withStillScreen(await requireDevice(), () => instagramHome()));
   handle("phone:reel", (event, uri, options) => runReel(event.sender, String(uri), options && typeof options === "object" ? options : {}));
   handle("phone:story", (event, uri, options) => runStory(event.sender, String(uri), options && typeof options === "object" ? options : {}));
   handle("phone:shareStory", (_event, audience) => shareStory(audience));
-  handle("phone:highlight", (event, name, maxAgeMinutes) => addToHighlight(event.sender, name, maxAgeMinutes));
+  handle("phone:highlight", async (event, name, maxAgeMinutes) => withStillScreen(await requireDevice(), () => addToHighlight(event.sender, name, maxAgeMinutes)));
+  handle("phone:highlightCover", async (event, name, jpeg) => withStillScreen(await requireDevice(), () => setHighlightCover(event.sender, name, jpeg)));
   handle("phone:cancel", () => {
     if (job) job.cancelled = true;
   });

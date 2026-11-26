@@ -28,7 +28,7 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
   const [location, setLocation] = useState(saved.current.location);
   const [people, setPeople] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
-  const [ai, setAi] = useState<{ available: boolean; busy: boolean; error: string | null; before: string | null }>({ available: false, busy: false, error: null, before: null });
+  const [ai, setAi] = useState<{ available: boolean; spare: boolean; busy: boolean; error: string | null; before: string | null }>({ available: false, spare: false, busy: false, error: null, before: null });
   const cancelled = useRef(false);
 
   // The window can be taken away mid-run (another tool opened, the project closed): the steps stop
@@ -48,7 +48,7 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
     let gone = false;
     void window.nocapDesktop?.caption
       ?.info()
-      .then((i) => !gone && setAi((a) => ({ ...a, available: i.available })))
+      .then((i) => !gone && setAi((a) => ({ ...a, available: i.available, spare: !!i.spare })))
       .catch(() => undefined);
     return () => {
       gone = true;
@@ -156,7 +156,7 @@ export function PostReelDialog({ open, onClose, prepare }: { open: boolean; onCl
           <Card icon={<MessageSquare size={16} />} tone="bg-sys-pink/15 text-sys-pink">
             <Field
               label="Caption"
-              hint={captionNote ?? "Rough notes are fine. AI polish writes the caption; you can edit it."}
+              hint={captionNote ?? `Rough notes are fine. AI polish writes the caption; you can edit it.${ai.spare ? " DeepSeek steps in if Gemini is busy." : ""}`}
               right={
                 ai.available ? (
                   <span className="flex items-center gap-1.5">

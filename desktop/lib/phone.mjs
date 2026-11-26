@@ -342,3 +342,73 @@ export function avdImageDir(config) {
   // Only a plain folder inside the SDK: nothing absolute, nothing that climbs out.
   return dir && !dir.startsWith("/") && !dir.split("/").includes("..") ? dir : null;
 }
+
+// ---- Highlight cover ----
+
+/**
+ * Minutes since epoch from "2026-11-25 23:27" (surrounding whitespace allowed).
+ * @param {string} text
+ * @returns {number | null}
+ */
+export function wallMinutes(text) {
+  if (typeof text !== "string") return null;
+  const m = text.trim().match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  return Date.UTC(year, month, day, hour, minute) / 60000;
+}
+
+const MONTHS = {
+  January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
+  July: 6, August: 7, September: 8, October: 9, November: 10, December: 11,
+};
+
+/**
+ * Minutes since epoch from a gallery thumbnail label like
+ * "Selected Photo thumbnail created on November 24, 2026 9:56 AM".
+ * Spaces may be ordinary, U+00A0, or U+202F.
+ * @param {string} desc
+ * @returns {number | null}
+ */
+export function thumbnailMinutes(desc) {
+  if (typeof desc !== "string") return null;
+  // \s in JS matches space, \t, \n, \r, \f, \v, \u00a0, \u202f, etc.
+  const m = desc.match(/created on ([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!m) return null;
+  const monthName = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+  const month = MONTHS[monthName];
+  if (month === undefined) return null;
+  const day = Number(m[2]);
+  const year = Number(m[3]);
+  let hour = Number(m[4]);
+  const minute = Number(m[5]);
+  const ampm = m[6].toUpperCase();
+  if (ampm === "AM") {
+    if (hour === 12) hour = 0;
+  } else {
+    if (hour !== 12) hour += 12;
+  }
+  return Date.UTC(year, month, day, hour, minute) / 60000;
+}
+
+// ---- Holding the screen still ----
+
+/** Android's three animation speeds. At 0 the screen holds still long enough to be read. */
+export const ANIMATION_KEYS = /** @type {const} */ (["animator_duration_scale", "transition_animation_scale", "window_animation_scale"]);
+
+/**
+ * The `settings` command that puts one animation speed back to what `settings get` answered before:
+ * "null" (never set) is deleted again, a number is written, anything else becomes the normal 1.0.
+ * @param {string} key
+ * @param {string} before
+ * @returns {string[]}
+ */
+export function restoreSetting(key, before) {
+  const value = String(before ?? "").trim();
+  if (value === "null") return ["settings", "delete", "global", key];
+  return ["settings", "put", "global", key, /^\d+(\.\d+)?$/.test(value) ? value : "1.0"];
+}

@@ -15,7 +15,7 @@ describe("parseStoryChoices", () => {
   });
 
   it("parses valid choices correctly", () => {
-    const json = '{"mute":true,"share":false,"audience":"close","linkUrl":"https://example.com","linkLabel":"SIGN UP NOW!","linkAt":"top","overlayAt":"bottom","highlight":"Shows"}';
+    const json = '{"mute":true,"share":false,"audience":"close","linkUrl":"https://example.com","linkLabel":"SIGN UP NOW!","linkAt":"top","overlayAt":"bottom","highlight":"Shows","cover":true}';
     expect(parseStoryChoices(json)).toEqual({
       mute: true,
       share: false,
@@ -25,12 +25,20 @@ describe("parseStoryChoices", () => {
       linkAt: "top",
       overlayAt: "bottom",
       highlight: "Shows",
+      cover: true,
     });
   });
 
   it("falls back to defaults for wrong types", () => {
-    const json = '{"mute":"yes","share":1,"audience":"everyone","linkUrl":5,"linkLabel":null,"linkAt":"left","overlayAt":7,"highlight":9}';
+    const json = '{"mute":"yes","share":1,"audience":"everyone","linkUrl":5,"linkLabel":null,"linkAt":"left","overlayAt":7,"highlight":9,"cover":"yes"}';
     expect(parseStoryChoices(json)).toEqual(STORY_DEFAULTS);
+  });
+
+  it("cover defaults to false, true is kept, non-boolean falls back to false", () => {
+    expect(parseStoryChoices("{}").cover).toBe(false);
+    expect(parseStoryChoices('{"cover":true}').cover).toBe(true);
+    expect(parseStoryChoices('{"cover":false}').cover).toBe(false);
+    expect(parseStoryChoices('{"cover":"yes"}').cover).toBe(false);
   });
 
   it("truncates linkUrl to 200 characters and linkLabel to 60 characters", () => {

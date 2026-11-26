@@ -10,9 +10,11 @@ export interface StoryChoices {
   overlayAt: StorySlot;
   /** The exact name of the Highlight to add the shared Story to, or "" for none. */
   highlight: string;
+  /** Have Gemini pick a new cover for that Highlight after the Story is added. */
+  cover: boolean;
 }
 
-export const STORY_DEFAULTS: StoryChoices = { mute: false, share: true, audience: "story", linkUrl: "", linkLabel: "", linkAt: "bottom", overlayAt: "top", highlight: "" };
+export const STORY_DEFAULTS: StoryChoices = { mute: false, share: true, audience: "story", linkUrl: "", linkLabel: "", linkAt: "bottom", overlayAt: "top", highlight: "", cover: false };
 
 const KEY = "reelflow.storyChoices";
 
@@ -34,6 +36,7 @@ export function parseStoryChoices(text: string | null): StoryChoices {
       linkAt: slot(raw.linkAt, STORY_DEFAULTS.linkAt),
       overlayAt: slot(raw.overlayAt, STORY_DEFAULTS.overlayAt),
       highlight: typeof raw.highlight === "string" ? raw.highlight.slice(0, 60) : "",
+      cover: flag(raw.cover, STORY_DEFAULTS.cover),
     };
   } catch {
     return { ...STORY_DEFAULTS };

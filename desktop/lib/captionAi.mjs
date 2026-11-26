@@ -28,6 +28,7 @@ const INSTRUCTIONS = [
   "The user gives rough notes (date, place, who, what happened). Turn them into one finished caption.",
   "Rules: keep every fact from the notes and add none; friendly and short (under 80 words); a first line that hooks;",
   "line breaks between ideas; 4 to 8 relevant hashtags on the last line; keep any @handles exactly as written.",
+  "Never name a city, region, venue or date that the notes do not name, in the text or in a hashtag.",
   "Use plain keyboard characters only: no emoji, no curly quotes, no long dashes.",
   "Reply with the caption text only, no preamble and no quotation marks around it.",
 ].join(" ");

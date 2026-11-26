@@ -255,6 +255,7 @@ function Body({ done }: { done: FinishedExport | null }) {
       )}
       {source && (
         <StoryDialog
+          video={source}
           open={storyOpen}
           onClose={() => setStoryOpen(false)}
           prepare={async (onLabel) => {
