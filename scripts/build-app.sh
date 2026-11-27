@@ -64,7 +64,15 @@ if [ -d "$DEST" ]; then
   HAVE="$(defaults read "$DEST/Contents/Info" CFBundleIdentifier 2>/dev/null || true)"
   [ "$HAVE" = "$BUNDLE_ID" ] || { echo "$DEST exists and is a different app ($HAVE); not touching it"; exit 1; }
   osascript -e "quit app id \"$BUNDLE_ID\"" 2>/dev/null || true
-  sleep 1
+  # With a Story scheduled the app asks before quitting: never replace it while it is still running.
+  for _ in $(seq 1 30); do
+    pgrep -f "$DEST/Contents/MacOS/" >/dev/null || break
+    sleep 1
+  done
+  if pgrep -f "$DEST/Contents/MacOS/" >/dev/null; then
+    echo "$APP is still running (it asks before quitting while a Story is scheduled). Quit it, then run this again."
+    exit 1
+  fi
   rm -rf "$DEST"
 fi
 cp -R "$BUILT" "$DEST"

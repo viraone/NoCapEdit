@@ -40,7 +40,7 @@ export function SwitchRow({ checked, onChange, label, hint, data, disabled = fal
   );
 }
 
-export function DialogHeader({ icon, title, onClose, closeData }: { icon: ReactNode; title: string; onClose: () => void; closeData: Record<string, string> }) {
+export function DialogHeader({ icon, title, onClose, closeData, subtitle = "Set it up, then press Go." }: { icon: ReactNode; title: string; onClose: () => void; closeData: Record<string, string>; subtitle?: string }) {
   return (
     <>
       <div className="h-1 shrink-0 bg-linear-to-r from-sys-purple via-sys-pink to-sys-orange" />
@@ -50,7 +50,7 @@ export function DialogHeader({ icon, title, onClose, closeData }: { icon: ReactN
         </span>
         <h3 className="min-w-0 flex-1">
           <span className="block text-[15px] font-bold tracking-wide text-white">{title}</span>
-          <span className="rf-read-face block text-[12px] font-normal text-white/55">Set it up, then press Go.</span>
+          <span className="rf-read-face block text-[12px] font-normal text-white/55">{subtitle}</span>
         </h3>
         <button type="button" onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/[0.06] text-white/60 transition-colors hover:bg-white/15 hover:text-white" aria-label="Close" {...closeData}>
           <X size={16} />

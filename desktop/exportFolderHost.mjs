@@ -16,7 +16,7 @@ import { numberedName, partName, safeExportName } from "./lib/exportFolder.mjs";
 const settingsFile = () => path.join(app.getPath("userData"), "export-folder.json");
 
 /** @returns {string | null} */
-function savedFolder() {
+export function savedFolder() {
   try {
     const { folder } = JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
     return typeof folder === "string" && path.isAbsolute(folder) ? folder : null;

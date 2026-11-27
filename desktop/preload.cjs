@@ -26,8 +26,46 @@ ipcRenderer.on("phone:step", (_event, label) => {
   if (onPhoneStep) onPhoneStep(label);
 });
 
+// Scheduled Stories (desktop/scheduleHost.mjs). One listener each; a "show" that arrives before the
+// page listens is kept until it does.
+/** @type {((state: unknown) => void) | null} */
+let onScheduleChange = null;
+/** @type {(() => void) | null} */
+let onScheduleShow = null;
+let scheduleShowWaiting = false;
+ipcRenderer.on("schedule:changed", (_event, state) => {
+  if (onScheduleChange) onScheduleChange(state);
+});
+ipcRenderer.on("schedule:show", () => {
+  if (onScheduleShow) onScheduleShow();
+  else scheduleShowWaiting = true;
+});
+
 contextBridge.exposeInMainWorld("nocapDesktop", {
   isDesktop: true,
+  // The queue of Stories to post later. The page names no path: files are picked in the Mac's own window.
+  schedule: {
+    state: () => ipcRenderer.invoke("schedule:state"),
+    pick: () => ipcRenderer.invoke("schedule:pick"),
+    discard: (draftId) => ipcRenderer.invoke("schedule:discard", draftId),
+    add: (draftId, wanted) => ipcRenderer.invoke("schedule:add", draftId, wanted),
+    change: (id, wanted) => ipcRenderer.invoke("schedule:change", id, wanted),
+    remove: (id) => ipcRenderer.invoke("schedule:remove", id),
+    postNow: (id) => ipcRenderer.invoke("schedule:postNow", id),
+    postpone: (id) => ipcRenderer.invoke("schedule:postpone", id),
+    setPaused: (paused) => ipcRenderer.invoke("schedule:pause", !!paused),
+    stop: () => ipcRenderer.invoke("schedule:stop"),
+    onChange: (fn) => {
+      onScheduleChange = typeof fn === "function" ? fn : null;
+    },
+    onShow: (fn) => {
+      onScheduleShow = typeof fn === "function" ? fn : null;
+      if (onScheduleShow && scheduleShowWaiting) {
+        scheduleShowWaiting = false;
+        onScheduleShow();
+      }
+    },
+  },
   // The Mac Studio model connection (desktop/studioProxy.mjs): only "is it set up, and which model".
   studio: { info: () => ipcRenderer.invoke("studio:info") },
   phone: {

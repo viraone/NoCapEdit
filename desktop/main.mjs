@@ -13,6 +13,7 @@ import { registerCaptionAi } from "./captionAi.mjs";
 import { registerExportFolder } from "./exportFolderHost.mjs";
 import { registerFfmpegHost } from "./ffmpegHost.mjs";
 import { registerPhone } from "./phoneHost.mjs";
+import { registerSchedule, scheduleKeepsRunning } from "./scheduleHost.mjs";
 import { handleStudioRequest, isStudioRequest, registerStudio } from "./studioProxy.mjs";
 import { APP_ORIGIN, APP_SCHEME, contentType, fileCandidates, isAppUrl, isExternalUrl, isolationHeaders } from "./lib/appUrl.mjs";
 
@@ -115,6 +116,18 @@ function createWindow() {
   return win;
 }
 
+/** Brings the window forward (opening one if it was closed) and asks the page for the Schedule window. */
+function showSchedule() {
+  if (!app.isReady()) return;
+  const win = mainWindow ?? createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  app.focus({ steal: true });
+  // A page still loading gets it once it has loaded; the preload keeps it until the page listens.
+  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", () => win.webContents.send("schedule:show"));
+  else win.webContents.send("schedule:show");
+}
+
 function buildMenu() {
   /** @type {import("electron").MenuItemConstructorOptions[]} */
   const template = [
@@ -125,6 +138,7 @@ function buildMenu() {
       label: "View",
       submenu: [
         { label: "Start Screen", accelerator: "CmdOrCtrl+Shift+H", click: () => void mainWindow?.loadURL(`${APP_ORIGIN}/`) },
+        { label: "Scheduled Stories…", click: () => showSchedule() },
         { type: "separator" },
         { role: "reload" },
         { role: "toggleDevTools" },
@@ -146,7 +160,10 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!mainWindow) return;
+    if (!mainWindow) {
+      if (app.isReady()) createWindow();
+      return;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
@@ -163,6 +180,12 @@ if (!app.requestSingleInstanceLock()) {
     registerPhone();
     registerCaptionAi();
     registerExportFolder();
+    try {
+      registerSchedule({ show: showSchedule });
+    } catch (error) {
+      // The editor still has to open when the schedule cannot.
+      console.error("[desktop] scheduled Stories could not start:", error);
+    }
     buildMenu();
     createWindow();
     app.on("activate", () => {
@@ -170,5 +193,8 @@ if (!app.requestSingleInstanceLock()) {
     });
   });
 
-  app.on("window-all-closed", () => app.quit());
+  // With a Story waiting to be posted the app stays running (in the Dock) without a window.
+  app.on("window-all-closed", () => {
+    if (!scheduleKeepsRunning()) app.quit();
+  });
 }

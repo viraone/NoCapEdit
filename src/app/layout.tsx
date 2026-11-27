@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ScheduleHost } from "@/components/schedule/ScheduleHost";
 import { ALL_FONT_CLASSES } from "@/lib/fonts";
 import { withBase } from "@/lib/basePath";
 
@@ -28,6 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full text-white">
         {children}
+        {/* Scheduled Stories, in the desktop app only; renders nothing on the website. */}
+        <ScheduleHost />
         {/* Keeps every caption font in the CSS bundle so canvas text can use them. */}
         <div aria-hidden className="hidden">
           {ALL_FONT_CLASSES.map((c) => (

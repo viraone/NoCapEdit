@@ -40,7 +40,7 @@ function candidates() {
   return [process.env.NOCAP_FFMPEG, path.join(app.getPath("userData"), "bin", "ffmpeg"), "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].filter((p) => typeof p === "string" && p !== "");
 }
 
-function findFfmpeg() {
+export function findFfmpeg() {
   found ??= (async () => {
     if (process.env.NOCAP_FFMPEG === "off" || !fs.existsSync(SANDBOX)) return null;
     for (const file of candidates()) {

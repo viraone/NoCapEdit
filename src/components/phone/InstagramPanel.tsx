@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { CheckCircle2, ChevronRight, Clapperboard, FolderOpen, PlusCircle, Send, Share } from "lucide-react";
+import { CalendarClock, CheckCircle2, ChevronRight, Clapperboard, FolderOpen, PlusCircle, Send, Share } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cx } from "@/lib/utils/cx";
 import { PanelHeader, PanelSection } from "@/components/ui/Panel";
@@ -17,6 +17,8 @@ import { useAiStyle } from "@/lib/phone/aiStyle";
 import { exportFits } from "@/lib/phone/exportFits";
 import { bakedMusicName } from "@/lib/phone/bakedMusic";
 import { exportForPhone } from "@/lib/phone/exportForPhone";
+import { scheduleBridge } from "@/lib/schedule/scheduleBridge";
+import { useScheduleWindow } from "@/lib/schedule/scheduleStore";
 import { friendlyExportError } from "@/lib/export/friendlyError";
 import { EmulatorStart } from "./EmulatorStart";
 import { PostReelDialog } from "./PostReelDialog";
@@ -262,6 +264,9 @@ function Body({ done }: { done: FinishedExport | null }) {
         <div className="flex flex-col gap-2">
           <ActionCard hero icon={<Clapperboard size={20} />} title="Post / Reel" text="Caption, location, tags." disabled={!ready || !info?.instagram || busy} onClick={() => void act("reel")} data-instagram-reel />
           <ActionCard icon={<PlusCircle size={20} />} title="Story" text="Link, text, Highlight." disabled={!ready || !info?.instagram || busy} onClick={() => void act("story")} data-instagram-story />
+          {scheduleBridge() && (
+            <ActionCard icon={<CalendarClock size={19} />} title="Schedule a Story" text="Pick a picture or video; the app posts it at the time you set." onClick={() => useScheduleWindow.getState().show()} data-instagram-schedule />
+          )}
           <ActionCard icon={<Send size={19} />} title="Send to phone" text="Copy to the gallery." disabled={!ready || busy} onClick={() => void act("send")} data-instagram-send />
         </div>
 

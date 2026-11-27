@@ -13,7 +13,7 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isAppUrl } from "./lib/appUrl.mjs";
-import { createGate } from "./lib/oneAtATime.mjs";
+import { Busy, createGate } from "./lib/oneAtATime.mjs";
 import {
   ANIMATION_KEYS,
   avdImageDir,
@@ -1428,6 +1428,126 @@ async function setHighlightCover(sender, rawName, jpeg, mine) {
   } catch (err) {
     if (err instanceof Stopped) return await notSet("Stopped.");
     return await notSet(err instanceof Error ? err.message : String(err));
+  }
+}
+
+// ---- Scheduled Stories (desktop/scheduleHost.mjs) ---------------------------------------------
+
+/** The scheduled run's Stop flag while it holds the gate. @type {{ cancelled: boolean } | null} */
+let scheduledRun = null;
+/** Stop was pressed for the scheduled Story, also while it still waits for the phone. */
+let scheduledStop = false;
+
+const STOPPED_BEFORE_SHARE = "Stopped before Share was tapped. Nothing was posted.";
+
+/** Starts the emulator if it is off, ahead of a scheduled Story. */
+export async function warmPhone() {
+  try {
+    if ((await phoneInfo()).emulator === "off") await launchEmulator(null);
+  } catch {
+    // the run itself says what is wrong
+  }
+}
+
+export function stopScheduledStory() {
+  scheduledStop = true;
+  if (scheduledRun) scheduledRun.cancelled = true;
+}
+
+/**
+ * Posts one scheduled Story from start to finish: emulator, video, Instagram's Story screen, Share,
+ * Highlight. Share is tapped only when every step asked for went through and `beforeShare` (which
+ * records it first) says yes.
+ *
+ * @param {{ file: string, name: string, audience: "story" | "close", highlight: string, options: Record<string, unknown>, until: number }} job
+ *   `until`: after this time nothing is started any more
+ * @param {{ step(label: string): void, beforeShare(): boolean }} hooks
+ * @returns {Promise<{ shared: boolean, why?: string, details: string[], tapped?: boolean }>}
+ *   `tapped` is left out when Share may or may not have been tapped
+ */
+export async function postScheduledStory(job, hooks) {
+  scheduledStop = false;
+  /** @type {string[]} */
+  const details = [];
+  const fail = (/** @type {string} */ why) => ({ shared: false, why, details, tapped: false });
+
+  hooks.step("Checking the emulator");
+  let info = await phoneInfo();
+  if (info.emulator === "off") {
+    hooks.step("Starting the emulator");
+    await launchEmulator(null);
+    info = await phoneInfo();
+  }
+  while (!info.available) {
+    if (scheduledStop) return fail(STOPPED_BEFORE_SHARE);
+    if (Date.now() > job.until) return fail("The Android emulator did not start in time. Nothing was posted.");
+    if ("launchError" in info && info.launchError) return fail(`${info.launchError} Nothing was posted.`);
+    hooks.step("Waiting for the emulator");
+    await wait(4000);
+    info = await phoneInfo();
+  }
+  if (!info.instagram) return fail("Instagram is not on the emulator. Nothing was posted.");
+
+  /** @param {{ cancelled: boolean }} mine */
+  const post = async (mine) => {
+    if (scheduledStop) return fail(STOPPED_BEFORE_SHARE);
+    if (Date.now() > job.until) return fail("The phone was busy until it was too late. Nothing was posted.");
+    scheduledRun = mine;
+    try {
+      const serial = await requireDevice();
+      await sh(serial, ["input", "keyevent", "224"]); // wake the screen
+      await sh(serial, ["wm", "dismiss-keyguard"]).catch(() => "");
+      hooks.step("Sending it to the phone");
+      const { uri } = await pushToPhone(job.file, job.name);
+      const sender = /** @type {import("electron").WebContents} */ (/** @type {unknown} */ ({
+        isDestroyed: () => false,
+        send: (/** @type {string} */ _channel, /** @type {string} */ label) => hooks.step(label),
+      }));
+      const out = await runStory(sender, uri, job.options, mine);
+      details.push(...out.notes, ...out.problems);
+      if (!out.ready) return fail(out.stoppedAt === "cancelled" ? STOPPED_BEFORE_SHARE : `${out.error ?? "A step failed."} Nothing was shared.`);
+      if (out.problems.length > 0) return fail("Not shared, because something did not go through. Instagram is where it was left, in the phone panel.");
+      const shareId = job.audience === "close" ? "close_friends_story_share_shortcut_button" : "your_story_share_shortcut_button";
+      if (!(await waitFor(serial, { id: shareId }, 8000))) return fail("Instagram's share button is not on screen. Nothing was shared.");
+      if (mine.cancelled) return fail(STOPPED_BEFORE_SHARE);
+      if (!hooks.beforeShare()) return fail("Not shared: it was stopped or paused, or it was more than 30 minutes late.");
+
+      hooks.step("Sharing");
+      let shared = false;
+      try {
+        ({ shared } = await shareStory(job.audience, mine));
+      } catch (err) {
+        if (err instanceof Stopped) return fail(STOPPED_BEFORE_SHARE);
+        return { shared: false, why: `${err instanceof Error ? err.message : String(err)} It may or may not have been posted: check Instagram.`, details };
+      }
+      if (!shared) return { shared: false, why: "Share was tapped, but Instagram stayed on the Story screen. Check Instagram before posting it again.", details, tapped: true };
+
+      // Posted. What follows cannot make it "not posted" again.
+      if (job.highlight) {
+        try {
+          const added = await withStillScreen(serial, () => addToHighlight(sender, job.highlight, 20, mine));
+          details.push(added.note);
+        } catch (err) {
+          details.push(`Not added to a Highlight: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return { shared: true, details };
+    } finally {
+      scheduledRun = null;
+    }
+  };
+
+  // Something else may be driving Instagram (the Story window): wait for it, up to the time limit.
+  for (;;) {
+    try {
+      return await gate.run(post);
+    } catch (err) {
+      if (!(err instanceof Busy)) throw err;
+      if (scheduledStop) return fail(STOPPED_BEFORE_SHARE);
+      if (Date.now() > job.until) return fail("The phone was busy until it was too late. Nothing was posted.");
+      hooks.step("Waiting for the phone to be free");
+      await wait(15_000);
+    }
   }
 }
 
