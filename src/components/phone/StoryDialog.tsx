@@ -9,6 +9,7 @@ import { giveHighlightCover } from "@/lib/phone/highlightCover";
 import { afterRun } from "@/lib/phone/afterRun";
 import { phoneBridge, type ReelOutcome, type StoryOptions, type StorySlot } from "@/lib/phone/phoneBridge";
 import { typeableNote } from "@/lib/phone/reelChoices";
+import { shouldWarnBakedMusic } from "@/lib/phone/bakedMusic";
 import { loadStoryChoices, saveStoryChoices } from "@/lib/phone/storyChoices";
 import { Card, DialogHeader, SwitchRow, dialogClass, goButtonClass, segment, segmentRow } from "./dialogParts";
 
@@ -58,7 +59,7 @@ function SlotPicker({ value, onChange, name }: { value: StorySlot; onChange: (v:
  * The Story window: what Instagram should be walked through on the phone, then Go.
  * `prepare` copies the video to the phone (once) and returns its gallery address.
  */
-export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: boolean; onClose: () => void; prepare: (onLabel: (label: string) => void) => Promise<string>; video: Blob; /** Takes these words to the editor's Text tool to be styled; missing when the video is a picked file, which the editor cannot change. */ onStyle?: (text: string, slot: StorySlot, ai: boolean) => void }) {
+export function StoryDialog({ open, onClose, prepare, video, onStyle, bakedMusic = null }: { open: boolean; onClose: () => void; prepare: (onLabel: (label: string) => void) => Promise<string>; video: Blob; /** Takes these words to the editor's Text tool to be styled; missing when the video is a picked file, which the editor cannot change. */ onStyle?: (text: string, slot: StorySlot, ai: boolean) => void; /** The name of the music track built into this video, or null. */ bakedMusic?: string | null }) {
   const saved = useRef(loadStoryChoices());
   // The saved choices are read once, when the window first mounts. Newer React lint forbids reading a
   // ref during render even for this one-time read; the values below never change on later renders.
@@ -78,6 +79,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
   /* eslint-enable react-hooks/refs */
   const wantsSong = musicTitle.trim() !== "" && musicArtist.trim() !== "";
   const halfSong = (musicTitle.trim() !== "") !== (musicArtist.trim() !== "");
+  const warnMusic = shouldWarnBakedMusic(bakedMusic, wantsSong, mute);
   const [overlay, setOverlay] = useState("");
   /** Gemini has a key on this Mac, so it can be asked to pick a cover. */
   const [gemini, setGemini] = useState(false);
@@ -350,6 +352,11 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
         </fieldset>
       </div>
       <div className="shrink-0 space-y-2.5 border-t border-white/10 bg-black/20 p-3">
+        {warnMusic && !busy && (
+          <p className="rf-read-note rounded-2xl border border-sys-orange/40 bg-sys-orange/10 p-2.5" data-story-bakedmusic>
+            This video has the music &quot;{bakedMusic}&quot; built in, and Instagram may post it silent. Fill in Music from Instagram above to add the song there instead.
+          </p>
+        )}
         {phase.kind === "running" && (
           <p className="rf-read-note animate-pulse" data-story-status>
             {phase.label}…
@@ -359,6 +366,11 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
           <div className="space-y-2 rounded-2xl border border-sys-orange/40 bg-sys-orange/10 p-2.5" data-story-countdown>
             <p className="rf-read-note">Everything is on the Story. Check the phone panel. Sharing in {phase.left} s.</p>
             <p className="rf-read-note" data-story-then>{addToHighlight && highlight.trim() ? `Then it is added to the Highlight "${highlight.trim()}"${cover && gemini ? " and gets a new cover" : ""}.` : "It will not be added to a Highlight."}</p>
+            {warnMusic && (
+              <p className="rf-read-note font-semibold" data-story-countdown-music>
+                No Instagram song is added, so &quot;{bakedMusic}&quot; may post silent. Cancel to add the song first.
+              </p>
+            )}
             <Button
               variant="danger"
               size="sm"

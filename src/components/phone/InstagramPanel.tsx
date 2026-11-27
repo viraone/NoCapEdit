@@ -14,6 +14,7 @@ import { formatBytes } from "@/lib/utils/time";
 import { useEditor } from "@/store/editorStore";
 import { useAiStyle } from "@/lib/phone/aiStyle";
 import { exportFits } from "@/lib/phone/exportFits";
+import { bakedMusicName } from "@/lib/phone/bakedMusic";
 import { exportForPhone } from "@/lib/phone/exportForPhone";
 import { friendlyExportError } from "@/lib/export/friendlyError";
 import { EmulatorStart } from "./EmulatorStart";
@@ -64,6 +65,7 @@ function Body({ done }: { done: FinishedExport | null }) {
   const setPhoneOpen = usePhone((s) => s.setOpen);
   const setTool = useEditor((s) => s.setTool);
   const project = useEditor((s) => s.project);
+  const music = useEditor((s) => s.project?.music ?? null);
   const [info, setInfo] = useState<PhoneInfo | null>(null);
   const [round, setRound] = useState(0);
   const [status, setStatus] = useState<{ text: string; kind: "busy" | "ok" | "error" } | null>(null);
@@ -317,6 +319,7 @@ function Body({ done }: { done: FinishedExport | null }) {
           open={storyOpen}
           onClose={() => setStoryOpen(false)}
           onStyle={posting.fromProject ? styleText : undefined}
+          bakedMusic={bakedMusicName({ music }, posting.fromProject)}
           prepare={async (onLabel) => {
             if (posting.fromProject && !exportFits(usePhone.getState().lastExport ?? null, useEditor.getState().project)) throw new Error("The project changed since this window opened. Close it and press the button again.");
             setPhoneOpen(true);
