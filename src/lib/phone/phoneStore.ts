@@ -11,6 +11,8 @@ export interface FinishedExport {
   bytes: number;
   /** True when it was saved straight to disk, false when it went to Downloads. */
   streamed: boolean;
+  /** The folder the video was saved in (desktop app), or null when it went elsewhere. */
+  savedTo?: string | null;
   /** When it finished; also tells one export from the next. */
   at: number;
   /** The project as it was when the video was made. */

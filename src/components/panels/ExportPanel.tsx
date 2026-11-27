@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Download, Square, CheckCircle2, FileText, Cpu, HardDrive, Sparkles } from "lucide-react";
+import { Download, Square, CheckCircle2, FileText, Cpu, FolderOpen, HardDrive, Sparkles } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject } from "./shared";
 import { getFormat } from "@/lib/models/formats";
@@ -15,7 +15,8 @@ import { setSingleThreadPreference, singleThreadPreferred, subscribeSingleThread
 import { ffmpegEngine, RESOLUTION_PRESETS, type X264Preset } from "@/lib/ffmpegEngine";
 import { GlTransitionRenderer } from "@/lib/gl/transitions";
 import { needsCompositor } from "@/lib/playback/compositor";
-import { downloadBlob, safeFilename } from "@/lib/utils/download";
+import { safeFilename } from "@/lib/utils/download";
+import { createFolderSink, exportFolderBridge, folderError, saveExportFile, useExportFolder, type ExportFolderInfo, type FolderSink, type SavedExport } from "@/lib/utils/exportFolder";
 import { formatBytes, formatTime } from "@/lib/utils/time";
 import { PanelHeader, PanelSection } from "@/components/ui/Panel";
 import { phoneBridge } from "@/lib/phone/phoneBridge";
@@ -28,6 +29,7 @@ import { Slider } from "@/components/ui/Slider";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { ExportCheck, usePreflight } from "./ExportCheck";
 import { ExportMore } from "./ExportMore";
+import { ExportFolderRow } from "./ExportFolderRow";
 
 const PRESET_CHOICES: { id: X264Preset; label: string }[] = [
   { id: "ultrafast", label: "Fastest" },
@@ -58,9 +60,13 @@ export function ExportPanel() {
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [result, setResult] = useState<ExportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The video's file in the chosen folder, once it is fully written. */
+  const [folderSaved, setFolderSaved] = useState<SavedExport | null>(null);
   /** The engine that actually ran (or is running) the latest export. */
   const [engine, setEngine] = useState<FFmpegInfo | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** An export is starting: the second half of a double click does nothing. */
+  const runGuard = useRef(false);
   /** A GIF, transparent video or timeline is being made in the section below. */
   const [moreBusy, setMoreBusy] = useState(false);
   const preflight = usePreflight(project, { captionSource: opts.captionSource, includeCaptions: opts.includeCaptions, includeOverlays: opts.includeOverlays });
@@ -68,6 +74,7 @@ export function ExportPanel() {
   const blocked = blocker ? `${blocker.title}. ${blocker.detail}` : null;
   const toDisk = toDiskChoice ?? disk;
   const setToDisk = setToDiskChoice;
+  const folder = useExportFolder((s) => s.folder);
 
   const format = getFormat(project.formatId);
   const duration = projectDuration(project.clips);
@@ -88,71 +95,111 @@ export function ExportPanel() {
   };
 
   const run = async () => {
-    setError(null);
-    setResult(null);
-    // The check above already read the media; an export that cannot finish is not started.
-    if (blocked) {
-      setError(blocked);
-      return;
-    }
-    if (phoneBridge() && usePhone.getState().rendering) {
-      setError("A video is already being made. Wait for it to finish.");
-      return;
-    }
-    // The save dialog must open inside the click gesture, before any await.
-    let sink: OutputSink | null = null;
-    if (toDisk) {
-      try {
-        sink = await requestDiskSink(`${base}.mp4`);
-      } catch (e) {
-        console.error("[export] save location failed", e);
-        setError(friendlyExportError(e));
+    if (runGuard.current) return;
+    runGuard.current = true;
+    try {
+      setError(null);
+      setResult(null);
+      setFolderSaved(null);
+      // The check above already read the media; an export that cannot finish is not started.
+      if (blocked) {
+        setError(blocked);
         return;
       }
-      if (!sink) return;
-    }
-    /** Reads back an export saved straight to disk, for the Instagram panel. */
-    const saved = sink?.file?.bind(sink) ?? null;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setProgress({ stage: "preparing", progress: 0, message: "Starting" });
-    usePhone.getState().setRendering(true);
-    setEngine(null);
-    // A long export should not be interrupted by the screen going to sleep.
-    const releaseLock = await acquireWakeLock();
-    try {
-      const imageIds = project.overlays.filter((o) => o.kind === "image").map((o) => (o as { assetId: string }).assetId);
-      const images = await loadImages([...new Set(imageIds)]);
-      const res = await exportProject(
-        project,
-        { getBlob: async (id) => (await getAsset(id))?.blob, getImage: (id) => images.get(id), urls: assetUrls },
-        opts,
-        (p) => {
-          setProgress(p);
-          if (p.engine) setEngine(p.engine);
-        },
-        controller.signal,
-        sink ?? undefined,
-      );
-      setEngine(res.info);
-      setResult(res);
-      if (res.video) downloadBlob(res.video, res.fileName);
-      if (res.srt) downloadBlob(res.srt, `${base}.srt`);
-      if (res.txt) downloadBlob(res.txt, `${base}.txt`);
-      if (res.vtt) downloadBlob(res.vtt, `${base}.vtt`);
-      // Desktop app: the finished video goes to the Instagram panel, which takes this panel's place.
-      if (phoneBridge() && (res.video || saved)) {
-        usePhone.getState().setLastExport({ video: res.video ?? null, loadVideo: res.video ? null : saved, fileName: res.fileName, bytes: res.bytes, streamed: res.streamed, at: Date.now(), project });
-        useEditor.getState().setTool("instagram");
+      if (phoneBridge() && usePhone.getState().rendering) {
+        setError("A video is already being made. Wait for it to finish.");
+        return;
       }
-    } catch (e) {
-      console.error("[export] export failed", e);
-      setError(friendlyExportError(e));
+      // With a folder chosen, the file goes straight there and no save window opens.
+      const bridge = exportFolderBridge();
+      let folderSink: FolderSink | null = null;
+      if (bridge) {
+        let chosen: ExportFolderInfo | null = null;
+        try {
+          chosen = await bridge.info();
+        } catch {
+          chosen = null;
+        }
+        if (chosen) {
+          try {
+            folderSink = await createFolderSink(bridge, `${base}.mp4`);
+          } catch (e) {
+            setError(folderError(e));
+            return;
+          }
+        }
+      }
+      // No folder chosen: ask where to save, before the export starts.
+      let sink: OutputSink | null = folderSink;
+      if (!sink && toDisk) {
+        try {
+          sink = await requestDiskSink(`${base}.mp4`);
+        } catch (e) {
+          console.error("[export] save location failed", e);
+          setError(friendlyExportError(e));
+          return;
+        }
+        if (!sink) return;
+      }
+      /** Reads back an export saved straight to disk, for the Instagram panel. */
+      const readBack = sink?.file?.bind(sink) ?? null;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setProgress({ stage: "preparing", progress: 0, message: "Starting" });
+      usePhone.getState().setRendering(true);
+      setEngine(null);
+      // A long export should not be interrupted by the screen going to sleep.
+      const releaseLock = await acquireWakeLock();
+      try {
+        const imageIds = project.overlays.filter((o) => o.kind === "image").map((o) => (o as { assetId: string }).assetId);
+        const images = await loadImages([...new Set(imageIds)]);
+        const res = await exportProject(
+          project,
+          { getBlob: async (id) => (await getAsset(id))?.blob, getImage: (id) => images.get(id), urls: assetUrls },
+          opts,
+          (p) => {
+            setProgress(p);
+            if (p.engine) setEngine(p.engine);
+          },
+          controller.signal,
+          sink ?? undefined,
+        );
+        setEngine(res.info);
+        setResult(res);
+        // The exporter closes a folder file itself; the sidecars are saved one after another.
+        let videoSaved: SavedExport | null = folderSink?.saved() ?? null;
+        if (res.video) videoSaved = await saveExportFile(res.video, res.fileName);
+        if (res.srt) await saveExportFile(res.srt, `${base}.srt`);
+        if (res.txt) await saveExportFile(res.txt, `${base}.txt`);
+        if (res.vtt) await saveExportFile(res.vtt, `${base}.vtt`);
+        if (videoSaved) setFolderSaved(videoSaved);
+        // Desktop app: the finished video goes to the Instagram panel, which takes this panel's place.
+        if (phoneBridge() && (res.video || readBack)) {
+          usePhone.getState().setLastExport({
+            video: res.video ?? null,
+            loadVideo: res.video ? null : readBack,
+            fileName: videoSaved?.name ?? res.fileName,
+            savedTo: videoSaved?.folder ?? null,
+            bytes: res.bytes,
+            streamed: res.streamed,
+            at: Date.now(),
+            project,
+          });
+          useEditor.getState().setTool("instagram");
+        }
+      } catch (e) {
+        console.error("[export] export failed", e);
+        // No half-written file stays behind.
+        if (folderSink) await folderSink.abort();
+        setError(friendlyExportError(e));
+      } finally {
+        releaseLock();
+        abortRef.current = null;
+        setProgress(null);
+        usePhone.getState().setRendering(false);
+      }
     } finally {
-      releaseLock();
-      abortRef.current = null;
-      setProgress(null);
-      usePhone.getState().setRendering(false);
+      runGuard.current = false;
     }
   };
 
@@ -261,13 +308,15 @@ export function ExportPanel() {
         <Toggle checked={opts.enhance} onChange={(v) => set({ enhance: v })} label="Enhance picture" description="Light denoise, sharper scaling and a touch of sharpening. Shows in the exported file only, not the preview. Slower." disabled={running} />
       </PanelSection>
       <PanelSection title="Delivery">
-        <Toggle
-          checked={toDisk}
-          onChange={setToDisk}
-          label="Stream to a file on disk"
-          description={disk ? "Uses the File System Access API; needed for long 4K renders" : "Not supported by this browser; the file downloads when done"}
-          disabled={running || !disk}
-        />
+        {!folder && (
+          <Toggle
+            checked={toDisk}
+            onChange={setToDisk}
+            label="Stream to a file on disk"
+            description={disk ? "Uses the File System Access API; needed for long 4K renders" : "Not supported by this browser; the file downloads when done"}
+            disabled={running || !disk}
+          />
+        )}
         <Field
           label="Segment length"
           right={segmentSummary}
@@ -329,6 +378,7 @@ export function ExportPanel() {
             <HardDrive size={12} /> {formatTime(duration)} of video · {frame.width}×{frame.height} @ {opts.fps} fps · {segmentSummary}
           </p>
         </div>
+        <ExportFolderRow disabled={running} />
         {!running ? (
           <Button variant="primary" className="rf-export-go w-full" onClick={run} disabled={!project.clips.length || moreBusy}>
             <Download size={14} /> Export MP4
@@ -351,24 +401,34 @@ export function ExportPanel() {
               <CheckCircle2 size={15} className="shrink-0" /> Rendered in {result.seconds.toFixed(0)} s · {formatBytes(result.bytes)} · {result.segments} segment{result.segments === 1 ? "" : "s"}
               {result.streamed ? " · saved to disk" : ""}
             </p>
+            {folderSaved && (
+              <p className="rf-read-note" data-export-saved>
+                Saved in <b>{folderSaved.folder}</b> as <b>{folderSaved.name}</b>
+              </p>
+            )}
             <div className="flex flex-wrap gap-1.5">
+              {folderSaved && (
+                <Button variant="secondary" size="xs" onClick={() => void exportFolderBridge()?.reveal(folderSaved.id)} data-export-reveal>
+                  <FolderOpen size={11} /> Show in Finder
+                </Button>
+              )}
               {result.video && (
-                <Button variant="secondary" size="xs" onClick={() => downloadBlob(result.video!, result.fileName)}>
+                <Button variant="secondary" size="xs" onClick={() => void saveExportFile(result.video!, result.fileName)}>
                   <Download size={11} /> MP4
                 </Button>
               )}
               {result.srt && (
-                <Button variant="secondary" size="xs" onClick={() => downloadBlob(result.srt!, `${base}.srt`)}>
+                <Button variant="secondary" size="xs" onClick={() => void saveExportFile(result.srt!, `${base}.srt`)}>
                   <FileText size={11} /> SRT
                 </Button>
               )}
               {result.vtt && (
-                <Button variant="secondary" size="xs" onClick={() => downloadBlob(result.vtt!, `${base}.vtt`)}>
+                <Button variant="secondary" size="xs" onClick={() => void saveExportFile(result.vtt!, `${base}.vtt`)}>
                   <FileText size={11} /> VTT
                 </Button>
               )}
               {result.txt && (
-                <Button variant="secondary" size="xs" onClick={() => downloadBlob(result.txt!, `${base}.txt`)}>
+                <Button variant="secondary" size="xs" onClick={() => void saveExportFile(result.txt!, `${base}.txt`)}>
                   <FileText size={11} /> TXT
                 </Button>
               )}

@@ -9,7 +9,8 @@ import { NLE_FPS } from "@/lib/export/nle";
 import type { ExportOptions, ExportProgress } from "@/lib/ffmpeg/exporter";
 import { createBlobSink, requestDiskSink, supportsDiskStreaming, type OutputSink } from "@/lib/ffmpeg/sinks";
 import type { VideoProject } from "@/lib/models/project";
-import { downloadBlob, safeFilename } from "@/lib/utils/download";
+import { safeFilename } from "@/lib/utils/download";
+import { exportFolderBridge, saveExportFile } from "@/lib/utils/exportFolder";
 import { formatBytes } from "@/lib/utils/time";
 import { cx } from "@/lib/utils/cx";
 import { PanelSection } from "@/components/ui/Panel";
@@ -57,16 +58,28 @@ export function ExportMore({ project, assetUrls, opts, busy, setBusy, blocked }:
       setError(blocked);
       return;
     }
-    // The save dialog of the timeline package opens inside the click, before any await.
+    // With a folder chosen, the timeline package stays in memory and is saved into it afterwards.
     let sink: OutputSink | null = null;
     if (which === "timeline" && disk) {
-      try {
-        sink = await requestDiskSink(`${base} timeline.zip`, { description: "Timeline package", accept: { "application/zip": [".zip"] } });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-        return;
+      const bridge = exportFolderBridge();
+      let hasFolder = false;
+      if (bridge) {
+        try {
+          hasFolder = !!(await bridge.info());
+        } catch {
+          hasFolder = false;
+        }
       }
-      if (!sink) return;
+      if (!hasFolder) {
+        // The save dialog of the timeline package opens inside the click, before any await.
+        try {
+          sink = await requestDiskSink(`${base} timeline.zip`, { description: "Timeline package", accept: { "application/zip": [".zip"] } });
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+          return;
+        }
+        if (!sink) return;
+      }
     }
     const controller = new AbortController();
     abortRef.current = controller;
@@ -78,12 +91,12 @@ export function ExportMore({ project, assetUrls, opts, busy, setBusy, blocked }:
       if (which === "gif") {
         const images = await loadImages(imageIds);
         const res = await exportGif(project, { getBlob: async (id) => (await getAsset(id))?.blob, getImage: (id) => images.get(id), urls: assetUrls }, { ...gif, includeCaptions: opts.includeCaptions, includeOverlays: opts.includeOverlays }, setProgress, controller.signal);
-        downloadBlob(res.blob, res.fileName);
+        await saveExportFile(res.blob, res.fileName);
         setDone({ job: which, fileName: res.fileName, bytes: res.bytes, seconds: res.seconds, blob: res.blob });
       } else if (which === "transparent") {
         const images = await loadImages(imageIds);
         const res = await exportTransparent(project, (id) => images.get(id), { format, fps: opts.fps, resolution: opts.resolution, includeCaptions: opts.includeCaptions, includeOverlays: opts.includeOverlays }, setProgress, controller.signal);
-        downloadBlob(res.blob, res.fileName);
+        await saveExportFile(res.blob, res.fileName);
         setDone({ job: which, fileName: res.fileName, bytes: res.bytes, seconds: res.seconds, blob: res.blob });
       } else {
         const started = performance.now();
@@ -100,7 +113,7 @@ export function ExportMore({ project, assetUrls, opts, busy, setBusy, blocked }:
           throw e;
         }
         const blob = await out.close();
-        if (blob) downloadBlob(blob, `${base} timeline.zip`);
+        if (blob) await saveExportFile(blob, `${base} timeline.zip`);
         setDone({ job: which, fileName: `${base} timeline.zip`, bytes: result.bytes, seconds: (performance.now() - started) / 1000, blob, notes: result.plan.notes });
       }
     } catch (e) {
@@ -225,7 +238,7 @@ export function ExportMore({ project, assetUrls, opts, busy, setBusy, blocked }:
             </div>
           )}
           {done.blob && (
-            <Button variant="secondary" size="xs" onClick={() => downloadBlob(done.blob!, done.fileName)}>
+            <Button variant="secondary" size="xs" onClick={() => void saveExportFile(done.blob!, done.fileName)}>
               <Download size={11} /> Save again
             </Button>
           )}

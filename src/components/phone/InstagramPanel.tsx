@@ -230,6 +230,11 @@ function Body({ done }: { done: FinishedExport | null }) {
             <span className="min-w-0">
               <span className="rf-read-face block truncate text-[13.5px] font-semibold text-white" title={current.fileName}>{current.fileName}</span>
               <span className="rf-read-face block text-[12px] text-sys-green">Exported · {formatBytes(current.bytes)} · {current.inApp ? "kept in the app" : current.streamed ? "saved where you chose" : "saved to Downloads"}</span>
+              {current.savedTo && (
+                <span className="rf-read-face block text-[12px] text-white/60" data-instagram-saved>
+                  Saved in {current.savedTo} as {current.fileName}
+                </span>
+              )}
             </span>
           </div>
         ) : (

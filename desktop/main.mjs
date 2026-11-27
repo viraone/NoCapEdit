@@ -10,6 +10,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { registerCaptionAi } from "./captionAi.mjs";
+import { registerExportFolder } from "./exportFolderHost.mjs";
 import { registerFfmpegHost } from "./ffmpegHost.mjs";
 import { registerPhone } from "./phoneHost.mjs";
 import { handleStudioRequest, isStudioRequest, registerStudio } from "./studioProxy.mjs";
@@ -161,6 +162,7 @@ if (!app.requestSingleInstanceLock()) {
     registerStudio();
     registerPhone();
     registerCaptionAi();
+    registerExportFolder();
     buildMenu();
     createWindow();
     app.on("activate", () => {

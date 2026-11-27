@@ -61,6 +61,20 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
     cover: (frames) => ipcRenderer.invoke("caption:cover", frames),
     style: (look) => ipcRenderer.invoke("caption:style", look),
   },
+  // Exports saved straight into a folder the user picked (desktop/exportFolderHost.mjs). The page
+  // gives a file name, never a path; the folder comes from the Mac's own folder window.
+  exportFolder: {
+    info: () => ipcRenderer.invoke("exportFolder:info"),
+    choose: () => ipcRenderer.invoke("exportFolder:choose"),
+    clear: () => ipcRenderer.invoke("exportFolder:clear"),
+    open: (name) => ipcRenderer.invoke("exportFolder:open", name),
+    write: (id, data) => ipcRenderer.invoke("exportFolder:write", id, data),
+    reset: (id) => ipcRenderer.invoke("exportFolder:reset", id),
+    close: (id) => ipcRenderer.invoke("exportFolder:close", id),
+    read: (id) => ipcRenderer.invoke("exportFolder:read", id),
+    abort: (id) => ipcRenderer.invoke("exportFolder:abort", id),
+    reveal: (id) => ipcRenderer.invoke("exportFolder:reveal", id),
+  },
   ffmpeg: {
     info: () => ipcRenderer.invoke("ffmpeg:info"),
     open: () => ipcRenderer.invoke("ffmpeg:open"),
