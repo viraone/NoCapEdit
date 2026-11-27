@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { Plus, Trash2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic } from "lucide-react";
+import { Plus, Trash2, Type, ArrowLeft, AlignLeft, AlignCenter, AlignRight, Bold, Italic } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useProject, useSliderTx } from "./shared";
 import { TEXT_FONT_SIZE_RANGE, createTextOverlay, type FontKey, type TextOverlay, type TextAnimation } from "@/lib/models/project";
@@ -18,6 +18,7 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { Toggle } from "@/components/ui/Toggle";
 import { TrackControls } from "./TrackControls";
 import { AiStyleCard } from "@/components/phone/AiStyleCard";
+import { useStoryReturn } from "@/lib/phone/storyReturn";
 
 export function TextPanel() {
   const project = useProject();
@@ -28,6 +29,7 @@ export function TextPanel() {
   const texts = project.overlays.filter((o): o is TextOverlay => o.kind === "text");
   const selected = selection?.kind === "overlay" ? texts.find((t) => t.id === selection.id) ?? null : null;
   const editRequest = useEditor((s) => s.editRequest);
+  const fromStory = useStoryReturn((s) => s.projectId) === project.id;
   const textRef = useRef<HTMLTextAreaElement>(null);
   const selectedId = selected?.id ?? null;
   const textTx = useRef(false);
@@ -73,6 +75,11 @@ export function TextPanel() {
         title="Text"
         body={
           <>
+            {fromStory && (
+              <Button variant="secondary" className="mb-2.5 w-full" data-text-back onClick={() => useEditor.getState().setTool("instagram")}>
+                <ArrowLeft size={14} /> Back to Instagram
+              </Button>
+            )}
             <ol className="rf-read rf-steps" data-text-steps>
               <li>
                 <span>

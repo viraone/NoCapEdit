@@ -6,7 +6,7 @@
 import { create } from "zustand";
 import { openVideo } from "@/lib/phone/highlightCover";
 import { useEditor } from "@/store/editorStore";
-import { lookFrom, lookOf, triedList, type Look } from "./aiStyleLook";
+import { askWords, lookFrom, lookOf, triedList, type Look } from "./aiStyleLook";
 import type { StorySlot } from "./phoneBridge";
 import type { TextOverlay } from "@/lib/models/project";
 
@@ -125,7 +125,11 @@ export const useAiStyle = create<AiStyleState>((set, get) => {
       const session = get().session;
       if (!session || session.state === "busy" || !session.frame) return;
       const mine = ++turn;
-      set({ session: { ...session, state: "busy", error: "" } });
+      // Ask about the words as they are now, if the title is still on the same project.
+      const project = useEditor.getState().project;
+      const overlay = project?.id === session.projectId ? project.overlays.find((o) => o.id === session.overlayId) : undefined;
+      const words = askWords(overlay?.kind === "text" ? overlay.text : null, session.words);
+      set({ session: { ...session, state: "busy", error: "", words } });
       try {
         await request(mine);
       } catch (e) {

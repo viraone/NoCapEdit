@@ -43,6 +43,12 @@ export function lookFrom(reply: AiStyleReply): Look {
   };
 }
 
+/** The words to ask about: what the title says now, or the words it was made from. */
+export function askWords(current: string | null | undefined, fallback: string): string {
+  const words = current?.trim().slice(0, 200) ?? "";
+  return words || fallback;
+}
+
 /** The looks already tried plus this one, one line each, so the next ask is clearly different. */
 export function triedList(tried: string[], reply: AiStyleReply): string[] {
   const line = `${reply.name}: ${reply.font} ${reply.color} on ${reply.background ?? "nothing"}`.slice(0, 80);

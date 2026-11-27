@@ -8,6 +8,7 @@ import { PanelHeader, PanelSection } from "@/components/ui/Panel";
 import { emulatorIsOff } from "@/lib/phone/emulatorStart";
 import { phoneBridge, sendToPhone, type PhoneInfo, type StorySlot } from "@/lib/phone/phoneBridge";
 import { findStoryTitle, storyTitle } from "@/lib/phone/storyTitle";
+import { useStoryReturn } from "@/lib/phone/storyReturn";
 import { projectDuration } from "@/lib/models/timeline";
 import { usePhone, type FinishedExport } from "@/lib/phone/phoneStore";
 import { formatBytes } from "@/lib/utils/time";
@@ -94,6 +95,11 @@ function Body({ done }: { done: FinishedExport | null }) {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // Opened again, so the Text tool's "Back to Instagram" button has done its job.
+  useEffect(() => {
+    useStoryReturn.getState().leave();
+  }, []);
+
   if (!phoneBridge()) {
     return (
       <>
@@ -131,6 +137,7 @@ function Body({ done }: { done: FinishedExport | null }) {
       title = made;
     }
     editor.select({ kind: "overlay", id: title.id });
+    useStoryReturn.getState().arrive(editor.project.id);
     editor.setTool("text");
     if (ai && posting) void useAiStyle.getState().start({ overlayId: title.id, words: text, slot, video: posting.video });
   };
