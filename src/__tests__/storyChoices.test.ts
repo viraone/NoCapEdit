@@ -27,6 +27,8 @@ describe("parseStoryChoices", () => {
       highlight: "Shows",
       cover: true,
       addToHighlight: true,
+      musicTitle: "",
+      musicArtist: "",
     });
   });
 
@@ -65,5 +67,18 @@ describe("parseStoryChoices", () => {
   it("addToHighlight defaults to false when highlight is empty or spaces-only and flag is missing", () => {
     expect(parseStoryChoices('{"highlight":""}').addToHighlight).toBe(false);
     expect(parseStoryChoices('{"highlight":"   "}').addToHighlight).toBe(false);
+  });
+
+  it("remembers the song and artist", () => {
+    const parsed = parseStoryChoices('{"musicTitle":"Timber","musicArtist":"Pitbull"}');
+    expect(parsed.musicTitle).toBe("Timber");
+    expect(parsed.musicArtist).toBe("Pitbull");
+    expect(parseStoryChoices("{}").musicTitle).toBe("");
+    expect(parseStoryChoices("{}").musicArtist).toBe("");
+    const wrong = parseStoryChoices('{"musicTitle":5,"musicArtist":null}');
+    expect(wrong.musicTitle).toBe("");
+    expect(wrong.musicArtist).toBe("");
+    const long = parseStoryChoices(JSON.stringify({ musicTitle: "a".repeat(100) }));
+    expect(long.musicTitle.length).toBe(80);
   });
 });

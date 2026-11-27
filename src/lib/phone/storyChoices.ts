@@ -14,9 +14,13 @@ export interface StoryChoices {
   cover: boolean;
   /** Add the posted Story to the Highlight named in `highlight`. */
   addToHighlight: boolean;
+  /** The song to add with Instagram's own Music button, or "" for none. */
+  musicTitle: string;
+  /** That song's artist. */
+  musicArtist: string;
 }
 
-export const STORY_DEFAULTS: StoryChoices = { mute: false, share: true, audience: "story", linkUrl: "", linkLabel: "", linkAt: "bottom", overlayAt: "top", highlight: "", cover: false, addToHighlight: false };
+export const STORY_DEFAULTS: StoryChoices = { mute: false, share: true, audience: "story", linkUrl: "", linkLabel: "", linkAt: "bottom", overlayAt: "top", highlight: "", cover: false, addToHighlight: false, musicTitle: "", musicArtist: "" };
 
 const KEY = "reelflow.storyChoices";
 
@@ -42,6 +46,8 @@ export function parseStoryChoices(text: string | null): StoryChoices {
       addToHighlight: typeof raw.addToHighlight === "boolean"
         ? raw.addToHighlight
         : typeof raw.highlight === "string" && raw.highlight.trim() !== "",
+      musicTitle: typeof raw.musicTitle === "string" ? raw.musicTitle.slice(0, 80) : "",
+      musicArtist: typeof raw.musicArtist === "string" ? raw.musicArtist.slice(0, 80) : "",
     };
   } catch {
     return { ...STORY_DEFAULTS };

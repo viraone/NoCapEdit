@@ -251,6 +251,93 @@ export function findHighlight(nodes, name) {
   return { label: hits[0] ?? null, count: hits.length, seen: labels.map((n) => `${n.text.trim()}@${n.x}`) };
 }
 
+/**
+ * Normalize a string for comparison: NFKD, remove combining marks, replace curly quotes with straight ones,
+ * lowercase, collapse whitespace, trim.
+ * @param {string} s
+ * @returns {string}
+ */
+function norm(s) {
+  return s
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Whether an Instagram music description ("Select track <title> by <artists>[,explicit],<m:ss>") is the
+ * song with exactly this title by this artist. The artist may be the whole artist text or one of the
+ * artists in it (they are separated by ", "). Letter case, accents, curly quotes and extra spaces do not count.
+ * @param {string} desc
+ * @param {string} title
+ * @param {string} artist
+ * @returns {{ title: string, artist: string } | null} the title and artist text as Instagram wrote them, or null when it is another song
+ */
+export function sameTrack(desc, title, artist) {
+  const nTitle = norm(title);
+  const nArtist = norm(artist);
+  if (!nTitle || !nArtist) return null;
+
+  const prefixLower = "select track ";
+  if (!desc.toLowerCase().startsWith(prefixLower)) return null;
+
+  const rest = desc.slice(prefixLower.length).trim();
+
+  // The length and the explicit marker at the end are not part of the name.
+  const stripped = rest.replace(/(?:,\s*explicit)?(?:,\s*\d+:\d{2})?\s*$/i, "");
+
+  const normRemaining = norm(stripped);
+  const prefix = nTitle + " by ";
+  if (!normRemaining.startsWith(prefix)) return null;
+
+  const normArtists = normRemaining.slice(prefix.length);
+  if (!normArtists) return null;
+
+  // The title and artist as Instagram wrote them, when the artist is the text after the last " by ".
+  const lastBy = stripped.toLowerCase().lastIndexOf(" by ");
+  const originalArtists = lastBy === -1 ? "" : stripped.slice(lastBy + 4);
+  const asWritten = originalArtists !== "" && norm(originalArtists) === normArtists;
+  const returnTitle = asWritten ? stripped.slice(0, lastBy) : title.trim();
+  const returnArtist = asWritten ? originalArtists : normArtists;
+
+  // The artist asked for is the whole artist text, or one of the artists in it.
+  const artistsList = normArtists.split(",").map((s) => s.trim());
+  const match = normArtists === nArtist || artistsList.includes(nArtist);
+
+  if (!match) return null;
+
+  return { title: returnTitle, artist: returnArtist };
+}
+
+/**
+ * The row to tap in Instagram's music list for this song. `count` is how many rows are that song;
+ * anything but exactly one means it cannot be picked safely. `seen` lists every song on screen.
+ * @param {UiNode[]} nodes
+ * @param {string} title
+ * @param {string} artist
+ * @returns {{ row: UiNode | null, count: number, seen: string[] }}
+ */
+export function findTrack(nodes, title, artist) {
+  const prefixLower = "select track ";
+  const rows = nodes.filter((n) => {
+    if (n.id === "audio_bar_select_tap_target") return false;
+    return n.desc.toLowerCase().startsWith(prefixLower);
+  });
+
+  const seen = rows.map((n) => n.desc.slice(prefixLower.length).trim());
+  const hits = rows.filter((n) => sameTrack(n.desc, title, artist) !== null);
+
+  return {
+    row: hits.length === 1 ? hits[0] : null,
+    count: hits.length,
+    seen,
+  };
+}
+
 // ---- Starting the emulator ----
 
 /**

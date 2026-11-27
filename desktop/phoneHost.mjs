@@ -20,6 +20,8 @@ import {
   cleanLinkUrl,
   emulatorStatus,
   findHighlight,
+  findTrack,
+  sameTrack,
   findUi,
   firstDevice,
   inputTextPieces,
@@ -794,6 +796,97 @@ async function dragSticker(serial, which, targetY) {
 const isLinkSticker = (/** @type {import("./lib/phone.mjs").UiNode} */ n) => n.desc.startsWith("Sticker. Touch and hold");
 const isTextSticker = (/** @type {import("./lib/phone.mjs").UiNode} */ n) => n.desc.includes(", Sticker. Touch and hold");
 
+// ---- A song from Instagram's own music list ---------------------------------------------------
+// Instagram silences well-known songs that are part of an uploaded video, so the song is added with
+// Instagram's Music button instead. Nothing here is guessed: the song is picked only when exactly one
+// row in the search results is that title by that artist, and the player bar then names the same song.
+
+/**
+ * The song asked for: null for none, "half" when only the title or only the artist was given.
+ * @param {unknown} raw
+ * @returns {{ title: string, artist: string } | "half" | null}
+ */
+function wantedSong(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const text = (/** @type {unknown} */ v) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 80) : "");
+  const { title, artist } = /** @type {Record<string, unknown>} */ (raw);
+  const song = { title: text(title), artist: text(artist) };
+  if (!song.title && !song.artist) return null;
+  return song.title && song.artist ? song : "half";
+}
+
+/**
+ * With Instagram's music list open: searches for the song and puts it on the Story.
+ * @param {string} serial
+ * @param {{ title: string, artist: string }} want
+ * @param {{ cancelled: boolean }} mine this run's own Stop flag
+ * @returns {Promise<{ ok: true, title: string, artist: string } | { ok: false, why: string }>}
+ */
+async function pickSong(serial, want, mine) {
+  const label = `"${want.title}" by ${want.artist}`;
+  const no = (/** @type {string} */ why) => /** @type {const} */ ({ ok: false, why });
+  const query = typeable(`${want.title} ${want.artist}`).lines.join(" ").trim();
+  if (!query) return no(`The phone cannot type ${label}, so no song was added.`);
+  if (!(await waitFor(serial, { id: "row_search_edit_text" }, 15_000))) return no(`Instagram's music list did not open, so ${label} was not added.`);
+  if (!(await typeChecked(serial, "row_search_edit_text", query))) return no(`The song's name did not type correctly into Instagram's music search, so ${label} was not added.`);
+
+  // The results replace Instagram's own suggestions a moment after the typing.
+  /** @type {ReturnType<typeof findTrack>} */
+  let found = { row: null, count: 0, seen: [] };
+  let results = false;
+  for (const until = Date.now() + 15_000; Date.now() < until && found.count === 0; ) {
+    await wait(1500);
+    const nodes = await look(serial);
+    if (!findUi(nodes, { id: "music_search_results_container" })) continue;
+    results = true;
+    found = findTrack(nodes, want.title, want.artist);
+  }
+  if (!results) return no(`Instagram's music search showed no results, so ${label} was not added.`);
+  if (found.count === 0) return no(`Instagram's music search has no song that is exactly ${label}, so no song was added.`);
+  if (found.count > 1 || !found.row) return no(`Instagram's music search shows ${found.count} songs that are ${label}, so none was picked.`);
+
+  if (mine.cancelled) throw new Stopped("Stopped.");
+  await tap(serial, found.row);
+  // The list can change under a tap, so the player bar has to name the same song before it is used.
+  const bar = await waitFor(serial, { id: "audio_bar_select_tap_target" }, 12_000);
+  const named = bar ? sameTrack(bar.hit.desc, want.title, want.artist) : null;
+  if (!bar || !named) return no(`Instagram did not show ${label} as the chosen song, so no song was added.`);
+  if (mine.cancelled) throw new Stopped("Stopped.");
+  await tap(serial, bar.hit);
+  const done = await waitFor(serial, { id: "music_editor_done_button" }, 20_000);
+  if (!done) return no(`Instagram did not show the song's Done button, so ${label} was not added.`);
+  await tap(serial, done.hit);
+  // With a song on the Story, Instagram takes its volume button away: that is the sign the song is there.
+  const back = await waitFor(serial, { id: "your_story_share_shortcut_button" }, 20_000);
+  if (!back || findUi(back.nodes, { desc: "Unmute volume" }) || findUi(back.nodes, { desc: "Mute volume" })) {
+    return no(`Instagram did not confirm that ${label} is on the Story.`);
+  }
+  return { ok: true, title: named.title, artist: named.artist };
+}
+
+/**
+ * From Instagram's music list or its clip screen back to the Story screen. Never discards the Story:
+ * if a Back too many brings up "Discard edits?", "Keep editing" is tapped.
+ * @param {string} serial
+ */
+async function backToStory(serial) {
+  for (let i = 0; i < 6; i++) {
+    const nodes = await look(serial);
+    if (nodes.length > 0) {
+      const keep = findUi(nodes, { id: "igds_alert_dialog_cancel_button" });
+      if (keep) await tap(serial, keep);
+      else if (findUi(nodes, { id: "your_story_share_shortcut_button" })) return true;
+      else {
+        const cancel = findUi(nodes, { id: "music_editor_cancel_button" });
+        if (cancel) await tap(serial, cancel);
+        else await sh(serial, ["input", "keyevent", "4"]);
+      }
+    }
+    await wait(1100);
+  }
+  return false;
+}
+
 /**
  * Walks Instagram's Story screen through what the user ticked, up to but not including sharing.
  * @param {import("electron").WebContents} sender
@@ -811,11 +904,17 @@ async function runStory(sender, uri, raw, mine) {
     linkUrl: cleanLinkUrl(raw.linkUrl),
     linkLabel: typeof raw.linkLabel === "string" ? typeable(raw.linkLabel.trim().slice(0, 60)).lines.join(" ").trim() : "",
     linkAt: slot(raw.linkAt),
+    music: wantedSong(raw.music),
   };
   /** @type {string[]} */
   const notes = [];
   /** Things asked for that did not happen: nothing is shared by itself while there are any. @type {string[]} */
   const problems = [];
+  if (o.music === "half") problems.push("A song needs both its title and its artist, so no song was added.");
+  const song = typeof o.music === "object" ? o.music : null;
+  // Instagram's song plays in place of the video's own sound, so that sound is always turned off first.
+  if (song) o.mute = true;
+  let muted = false;
   if (typeof raw.linkUrl === "string" && raw.linkUrl.trim() && !o.linkUrl) problems.push("The link is not a web address the phone can type, so no link sticker was added.");
   const step = async (/** @type {string} */ label, /** @type {() => Promise<void>} */ fn) => {
     if (mine.cancelled) throw new Stopped("Stopped.");
@@ -841,8 +940,13 @@ async function runStory(sender, uri, raw, mine) {
       await step("Muting the video's sound", async () => {
         const { nodes } = await editor();
         const off = findUi(nodes, { desc: "Mute volume" });
-        if (off) await tap(serial, off);
-        else if (!findUi(nodes, { desc: "Unmute volume" })) problems.push("The mute button was not found; the sound was left as it is.");
+        if (off) {
+          await tap(serial, off);
+          await wait(700);
+          const now = await look(serial);
+          muted = now.length === 0 || !findUi(now, { desc: "Mute volume" });
+        } else if (findUi(nodes, { desc: "Unmute volume" })) muted = true;
+        else problems.push("The mute button was not found; the sound was left as it is.");
       });
     }
 
@@ -890,6 +994,32 @@ async function runStory(sender, uri, raw, mine) {
         await tap(serial, done.hit);
         await editor();
         await dragSticker(serial, isTextSticker, storySlotY(o.overlayAt, height));
+      });
+    }
+
+    // The song goes on last: if it cannot be picked, everything else is already in place and only the song is left to do by hand.
+    if (song) {
+      await step("Adding the song", async () => {
+        const label = `"${song.title}" by ${song.artist}`;
+        const byHand = "The video's own sound is off, so without a song the Story posts silent: add one with the Music button in the phone panel.";
+        if (!muted) {
+          problems.push(`The video's own sound could not be turned off, so ${label} was not added.`);
+          return;
+        }
+        const { nodes } = await editor();
+        const button = findUi(nodes, { id: "music_button" });
+        if (!button) {
+          problems.push(`Instagram did not show its Music button, so ${label} was not added. ${byHand}`);
+          return;
+        }
+        await tap(serial, button);
+        const picked = await pickSong(serial, song, mine);
+        if (picked.ok) {
+          notes.push(`Song: ${picked.title} by ${picked.artist}`);
+          return;
+        }
+        await backToStory(serial);
+        problems.push(`${picked.why} ${byHand}`);
       });
     }
 

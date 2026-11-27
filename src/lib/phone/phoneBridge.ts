@@ -67,6 +67,8 @@ export interface StoryOptions {
   /** The words on the Link sticker in place of the address, or "". */
   linkLabel: string;
   linkAt: StorySlot;
+  /** A song from Instagram's own music list to put on the Story, or null for none. The video's own sound is turned off when there is one. */
+  music: { title: string; artist: string } | null;
 }
 
 /** What desktop/preload.cjs exposes as `window.nocapDesktop.phone`. */

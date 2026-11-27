@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link2, PlusCircle, Send, Sparkles, Star, Type } from "lucide-react";
+import { Link2, Music, PlusCircle, Send, Sparkles, Star, Type } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { giveHighlightCover } from "@/lib/phone/highlightCover";
@@ -73,7 +73,11 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
   const [highlight, setHighlight] = useState(saved.current.highlight);
   const [cover, setCover] = useState(saved.current.cover);
   const [addToHighlight, setAddToHighlight] = useState(saved.current.addToHighlight);
+  const [musicTitle, setMusicTitle] = useState(saved.current.musicTitle);
+  const [musicArtist, setMusicArtist] = useState(saved.current.musicArtist);
   /* eslint-enable react-hooks/refs */
+  const wantsSong = musicTitle.trim() !== "" && musicArtist.trim() !== "";
+  const halfSong = (musicTitle.trim() !== "") !== (musicArtist.trim() !== "");
   const [overlay, setOverlay] = useState("");
   /** Gemini has a key on this Mac, so it can be asked to pick a cover. */
   const [gemini, setGemini] = useState(false);
@@ -193,8 +197,8 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
     const show = (p: Phase) => {
       if (runRef.current === run) setPhase(p);
     };
-    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover, addToHighlight });
-    const options: StoryOptions = { mute, overlay: overlay.trim(), overlayAt, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt };
+    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover, addToHighlight, musicTitle: musicTitle.trim(), musicArtist: musicArtist.trim() });
+    const options: StoryOptions = { mute: mute || wantsSong, overlay: overlay.trim(), overlayAt, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, music: wantsSong ? { title: musicTitle.trim(), artist: musicArtist.trim() } : null };
     show({ kind: "running", label: "Sending the video to the phone" });
     api.onStep((label) => {
       if (runRef.current === run) setPhase((p) => (p.kind === "running" ? { kind: "running", label } : p));
@@ -230,7 +234,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
   const styleIt = () => {
     const text = overlay.trim();
     if (!onStyle || !text) return;
-    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover, addToHighlight });
+    saveStoryChoices({ mute, share, audience, linkUrl: linkUrl.trim(), linkLabel: linkLabel.trim(), linkAt, overlayAt, highlight: highlight.trim(), cover, addToHighlight, musicTitle: musicTitle.trim(), musicArtist: musicArtist.trim() });
     setOverlay("");   // otherwise Instagram would type the same words a second time
     setPhase({ kind: "form" });
     onClose();
@@ -278,8 +282,16 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
               </div>
             )}
           </Card>
+          <Card icon={<Music size={16} />} tone="bg-sys-pink/15 text-sys-pink">
+            <Field label="Music from Instagram" hint="Optional. Instagram often silences a well-known song that is part of the video, so name it here and it is added with Instagram's own Music button.">
+              <Input value={musicTitle} onChange={(e) => setMusicTitle(e.target.value)} placeholder="Song, e.g. Timber" maxLength={80} data-story-music="title" />
+            </Field>
+            <Field label="Artist" hint={halfSong ? "Type both the song and the artist." : wantsSong ? "Picked only if Instagram has exactly this song by this artist. If not, nothing is shared and you pick it in the phone panel." : "One artist is enough, e.g. Pitbull."}>
+              <Input value={musicArtist} onChange={(e) => setMusicArtist(e.target.value)} placeholder="Artist, e.g. Pitbull" maxLength={80} data-story-music="artist" />
+            </Field>
+          </Card>
           <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
-            <SwitchRow data={{ "data-story-check": "mute" }} checked={mute} onChange={setMute} label="Mute the video's sound" hint="For a flyer or clip whose own sound you do not want." />
+            <SwitchRow data={{ "data-story-check": "mute" }} checked={mute || wantsSong} onChange={setMute} disabled={wantsSong} label="Mute the video's sound" hint={wantsSong ? "On, because Instagram's song plays in place of the video's own sound." : "For a flyer or clip whose own sound you do not want."} />
             <div className="flex items-center justify-between gap-2">
               <span className="text-[13px] font-semibold text-white">Share to</span>
               <span className={segmentRow}>
@@ -395,7 +407,7 @@ export function StoryDialog({ open, onClose, prepare, video, onStyle }: { open: 
           <button
             type="button"
             onClick={() => void go()}
-            disabled={busy}
+            disabled={busy || halfSong}
             data-story-go
             className={goButtonClass}
           >
