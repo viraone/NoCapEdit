@@ -5,6 +5,7 @@
 // the Mac's own folder window (or the settings file in the app's data folder). Nothing is ever
 // overwritten, and a file is hidden under a .part name until it is complete.
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -43,6 +44,22 @@ function folderInfo() {
  */
 /** @type {Map<string, Save>} */
 const saves = new Map();
+
+/**
+ * Takes the Mac's "hidden" mark off a finished file. In a folder kept in iCloud (Desktop, Documents)
+ * macOS marks a file hidden when it has sat there under a dot name for a few seconds, and the mark
+ * stays after the rename, so the finished export was in the folder but Finder did not show it.
+ * @param {string} file @returns {Promise<boolean>} whether the command ran cleanly
+ */
+function unhide(file) {
+  if (process.platform !== "darwin") return Promise.resolve(true);
+  return new Promise((resolve) => {
+    execFile("/usr/bin/chflags", ["nohidden", file], (error) => {
+      if (error) console.error("[exportFolder] could not unhide the saved file:", error.message);
+      resolve(!error);
+    });
+  });
+}
 
 /** @param {Electron.IpcMainInvokeEvent} event */
 function trusted(event) {
@@ -143,6 +160,7 @@ export function registerExportFolder() {
       if (fs.existsSync(target)) continue;
       await fsp.rename(save.part, target);
       save.final = target;
+      await unhide(target);
       return { name, folder: path.basename(save.folder) };
     }
     throw new Error("There are too many files with that name.");
