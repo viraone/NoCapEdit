@@ -10,10 +10,12 @@ import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useRecap, recapKey } from "@/lib/recap/recapStore";
 import { playRange } from "@/lib/recap/laughMoments";
-import { trailerRanges, totalLength } from "@/lib/recap/trailerRanges";
+import { totalLength } from "@/lib/recap/trailerRanges";
 import { layoutClips } from "@/lib/models/timeline";
 import { findSets, setAt, oneEach } from "@/lib/recap/performers";
+import { keptRanges } from "@/lib/recap/momentEdits";
 import type { Laugh } from "@/lib/recap/findLaughs";
+import { MomentEditor } from "./MomentEditor";
 
 function formatTime(seconds: number): string {
   const s = Math.floor(seconds);
@@ -29,11 +31,12 @@ function formatTime(seconds: number): string {
 export function RecapPanel() {
   const project = useProject();
   const router = useRouter();
-  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly, opener, openerJob, openerError, loadOpener, addOpener, removeOpener } = useRecap();
+  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly, opener, openerJob, openerError, loadOpener, addOpener, removeOpener, edits } = useRecap();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [playingRange, setPlayingRange] = useState<{ start: number; end: number } | null>(null);
   const [openerStart, setOpenerStart] = useState("0:00");
   const [openerSeconds, setOpenerSeconds] = useState(3.5);
+  const [openMomentId, setOpenMomentId] = useState<string | null>(null);
 
   // The opening shot is shared by every project, so it is read once when the panel opens.
   useEffect(() => {
@@ -55,7 +58,7 @@ export function RecapPanel() {
   const cues = useMemo(() => project?.cues ?? [], [project?.cues]);
   const hasCues = cues.length > 0;
   const keptSeconds = keptLaughs.length
-    ? Math.round(totalLength(trailerRanges(keptLaughs, cues, duration)))
+    ? Math.round(totalLength(keptRanges(keptLaughs, edits, cues, duration)))
     : 0;
   const sets = useMemo(() => findSets(cues, duration), [cues, duration]);
 
@@ -291,27 +294,50 @@ export function RecapPanel() {
                       const setIdx = setAt(sets, laugh.start);
                       const performerName = setIdx >= 0 ? (names[setIdx] ?? sets[setIdx].name) : "";
                       const label = performerName ? `${performerName} · ${seconds} s` : `${seconds} s laugh`;
+                      const hasEdit = edits[laugh.id] !== undefined;
+                      const isOpen = openMomentId === laugh.id;
                       return (
-                        <li key={laugh.id} className="rounded-lg border border-sys-gray4 bg-sys-gray5/60 px-2.5 py-2 flex items-center gap-2" data-recap-laugh>
-                          <input
-                            type="checkbox"
-                            checked={isKept}
-                            onChange={() => toggleKeep(laugh.id)}
-                            data-recap-keep
-                            aria-label={`Keep moment ${rank}`}
-                          />
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-sys-gray4 text-[11px] font-semibold text-white/80">{rank}</span>
-                          <span className="shrink-0 text-[13px] text-white tabular-nums">{formatTime(laugh.start)}</span>
-                          <span className="min-w-0 flex-1 truncate text-[11px] text-label-2">{label}</span>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => handlePlay(laugh)}
-                            data-recap-play
-                            aria-label={`Play moment ${rank}`}
-                          >
-                            {isPlaying ? <Square size={11} /> : <Play size={11} />} {isPlaying ? "Stop" : "Play"}
-                          </Button>
+                        <li key={laugh.id} className="rounded-lg border border-sys-gray4 bg-sys-gray5/60 px-2.5 py-2" data-recap-laugh>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isKept}
+                              onChange={() => toggleKeep(laugh.id)}
+                              data-recap-keep
+                              aria-label={`Keep moment ${rank}`}
+                            />
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-sys-gray4 text-[11px] font-semibold text-white/80">{rank}</span>
+                            <button
+                              type="button"
+                              className="shrink-0 text-[13px] text-white tabular-nums hover:underline"
+                              onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
+                              data-recap-open-moment
+                              aria-expanded={isOpen}
+                            >
+                              {formatTime(laugh.start)}
+                            </button>
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 truncate text-left text-[11px] text-label-2 hover:underline"
+                              onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
+                              data-recap-open-moment
+                              aria-expanded={isOpen}
+                            >
+                              {label}{hasEdit ? " · edited" : ""}
+                            </button>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              onClick={() => handlePlay(laugh)}
+                              data-recap-play
+                              aria-label={`Play moment ${rank}`}
+                            >
+                              {isPlaying ? <Square size={11} /> : <Play size={11} />} {isPlaying ? "Stop" : "Play"}
+                            </Button>
+                          </div>
+                          {isOpen && (
+                            <MomentEditor laugh={laugh} cues={cues} duration={duration} />
+                          )}
                         </li>
                       );
                     })}

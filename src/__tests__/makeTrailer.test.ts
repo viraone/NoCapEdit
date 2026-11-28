@@ -3,7 +3,9 @@ import { makeTrailer } from "@/lib/recap/makeTrailer";
 import { createProject, createClip, type VideoProject, type Clip } from "@/lib/models/project";
 
 vi.mock("@/lib/recap/cutPieces", () => ({
-  cutPieces: vi.fn(async () => new Blob(["mock"], { type: "video/mp4" })),
+  cutEach: vi.fn(async (_blob: Blob, pieces: { start: number; seconds: number }[]) =>
+    pieces.map(() => new Blob(["mock"], { type: "video/mp4" })),
+  ),
 }));
 
 vi.mock("@/lib/storage/db", () => ({
@@ -12,13 +14,15 @@ vi.mock("@/lib/storage/db", () => ({
   deleteProject: vi.fn(async () => undefined),
 }));
 
+let clipCounter = 0;
 vi.mock("@/lib/media/import", () => ({
   importVideo: vi.fn(async (file: File) => {
     const opening = file.name === "opener.mp4";
+    clipCounter++;
     return {
       clip: {
-        id: opening ? "opener-clip" : "clip-1",
-        assetId: opening ? "opener-asset" : "asset-1",
+        id: opening ? "opener-clip" : `clip-${clipCounter}`,
+        assetId: opening ? "opener-asset" : `asset-${clipCounter}`,
         inPoint: 0,
         outPoint: opening ? 3.5 : 100,
         duration: opening ? 3.5 : 100,
@@ -42,7 +46,7 @@ vi.mock("@/lib/ffmpegEngine", () => ({
   FFmpegHungError: class extends Error {},
 }));
 
-import { cutPieces } from "@/lib/recap/cutPieces";
+import { cutEach } from "@/lib/recap/cutPieces";
 import { importVideo } from "@/lib/media/import";
 import { deleteProject } from "@/lib/storage/db";
 
@@ -69,19 +73,32 @@ describe("makeTrailer", () => {
 
   it("cuts two pieces and builds two clips", async () => {
     const source = makeSource();
-    const laughs = [
-      { start: 100, end: 102 },
-      { start: 200, end: 202 },
-    ];
-    const result = await makeTrailer({ source, laughs });
+    const result = await makeTrailer({
+      source,
+      laughs: [],
+      ranges: [
+        { start: 100, end: 102 },
+        { start: 200, end: 202 },
+      ],
+    });
 
-    expect(cutPieces).toHaveBeenCalledTimes(1);
-    const pieces = (cutPieces as ReturnType<typeof vi.fn>).mock.calls[0][1] as { start: number; seconds: number }[];
+    expect(cutEach).toHaveBeenCalledTimes(1);
+    const pieces = (cutEach as ReturnType<typeof vi.fn>).mock.calls[0][1] as { start: number; seconds: number }[];
     expect(pieces.length).toBe(2);
+
+    // Each piece starts 8s before the range's source start and is 16s longer
+    // Range 1: source start 100, so mediaStart = 92, seconds = 2 + 16 = 18
+    // Range 2: source start 200, so mediaStart = 192, seconds = 2 + 16 = 18
+    expect(pieces[0].start).toBeCloseTo(92, 1);
+    expect(pieces[0].seconds).toBeCloseTo(18, 1);
+    expect(pieces[1].start).toBeCloseTo(192, 1);
+    expect(pieces[1].seconds).toBeCloseTo(18, 1);
 
     expect(result.clips.length).toBe(2);
     const [c1, c2] = result.clips;
-    expect(c2.inPoint).toBeCloseTo(c1.outPoint, 1);
+    // Each clip's inPoint should be 8 (shownIn = sourceStart - mediaStart = 8)
+    expect(c1.inPoint).toBeCloseTo(8, 1);
+    expect(c2.inPoint).toBeCloseTo(8, 1);
   });
 
   it("shifts cues into the correct clip", async () => {
@@ -93,10 +110,14 @@ describe("makeTrailer", () => {
     const result = await makeTrailer({ source, laughs });
 
     // The cue at 195 should be in the second clip's range
-    const secondClip = result.clips[1];
-    const cueInSecond = result.cues.find((c) => c.start >= secondClip.inPoint && c.end <= secondClip.outPoint);
+    // Second clip's place = first clip's shown length (outPoint - inPoint)
+    const firstClip = result.clips[0];
+    const firstShownLen = firstClip.outPoint - firstClip.inPoint;
+
+    const cueInSecond = result.cues.find((c) => c.text === "second");
     expect(cueInSecond).toBeDefined();
-    expect(cueInSecond!.text).toBe("second");
+    // The second clip's cues start at the first clip's shown length
+    expect(cueInSecond!.start).toBeCloseTo(firstShownLen, 1);
   });
 
   it("deletes the project if importVideo rejects", async () => {
@@ -156,20 +177,39 @@ describe("makeTrailer", () => {
     expect(shift).toBeCloseTo(3.5, 2);
 
     const firstCut = result.clips[1];
-    const secondCut = result.clips[2];
 
     const before = result.cues.find((c) => c.text === "before");
     const second = result.cues.find((c) => c.text === "second");
     expect(before).toBeDefined();
     expect(second).toBeDefined();
-    expect(before!.start).toBeCloseTo(firstCut.inPoint + shift, 1);
-    expect(second!.start).toBeCloseTo(secondCut.inPoint + shift, 1);
+    // Cues are shifted by place, which starts at openerLength for first clip
+    expect(before!.start).toBeCloseTo(shift, 1);
+    // Second clip's cues start at openerLength + first clip's shown length
+    const firstShownLen = firstCut.outPoint - firstCut.inPoint;
+    expect(second!.start).toBeCloseTo(shift + firstShownLen, 1);
 
     const nameA = result.overlays.find((o) => o.kind === "text" && o.text === "A");
     const closing = result.overlays.find((o) => o.kind === "text" && o.text === "x");
     expect(nameA).toBeDefined();
     expect(closing).toBeDefined();
-    expect(nameA!.start).toBeCloseTo(firstCut.inPoint + shift, 1);
-    expect(closing!.start).toBeCloseTo(secondCut.inPoint + shift, 1);
+    expect(nameA!.start).toBeCloseTo(shift, 1);
+    expect(closing!.start).toBeCloseTo(shift + firstShownLen, 1);
+  });
+
+  it("uses provided ranges when given", async () => {
+    const source = makeSource();
+    const result = await makeTrailer({
+      source,
+      laughs: [],
+      ranges: [{ start: 50, end: 52 }],
+    });
+
+    expect(cutEach).toHaveBeenCalledTimes(1);
+    const pieces = (cutEach as ReturnType<typeof vi.fn>).mock.calls[0][1] as { start: number; seconds: number }[];
+    expect(pieces.length).toBe(1);
+    // mediaStart = max(0, 50 - 8) = 42, seconds = 2 + 16 = 18
+    expect(pieces[0].start).toBeCloseTo(42, 1);
+    expect(pieces[0].seconds).toBeCloseTo(18, 1);
+    expect(result.clips.length).toBe(1);
   });
 });

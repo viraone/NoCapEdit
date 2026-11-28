@@ -8,6 +8,7 @@ import { loadRecap, saveRecap } from "@/lib/recap/recapNames";
 import { cutPieces } from "@/lib/recap/cutPieces";
 import { clearOpener, loadOpener as loadSavedOpener, parseClock, saveOpener, type Opener } from "@/lib/recap/opener";
 import { whileBusy } from "@/lib/utils/busy";
+import { keptRanges, type MomentEdit } from "@/lib/recap/momentEdits";
 
 export function recapKey(projectId: string, clips: { id: string; inPoint: number; outPoint: number; speed?: number }[]): string {
   const parts = [projectId];
@@ -42,6 +43,8 @@ interface RecapState {
   cancelMake(): void;
   run(): Promise<void>;
   cancel(): void;
+  edits: Record<string, MomentEdit>;
+  setEdit(id: string, edit: MomentEdit | null): void;
 }
 
 let currentController: AbortController | null = null;
@@ -136,6 +139,9 @@ export const useRecap = create<RecapState>((set, get) => ({
     const names = get().names;
     const closing = get().closing;
     const opener = get().opener;
+    const edits = get().edits;
+
+    const ranges = keptRanges(keptLaughs, edits, project.cues ?? [], duration);
 
     const controller = new AbortController();
     makeController = controller;
@@ -147,6 +153,7 @@ export const useRecap = create<RecapState>((set, get) => ({
       const result = await makeTrailer({
         source: project,
         laughs: keptLaughs.map((l) => ({ start: l.start, end: l.end })),
+        ranges,
         signal: controller.signal,
         onProgress: (message, progress) => {
           if (myRunId !== makeRunId) return;
@@ -190,7 +197,7 @@ export const useRecap = create<RecapState>((set, get) => ({
     const myRunId = ++runId;
 
     const saved = loadRecap(project.id);
-    set({ key, job: { message: "Starting", progress: null }, error: null, laughs: null, kept: [], names: saved.names, closing: saved.closing ?? "Like and follow for the next show", trailerId: null });
+    set({ key, job: { message: "Starting", progress: null }, error: null, laughs: null, kept: [], names: saved.names, closing: saved.closing ?? "Like and follow for the next show", trailerId: null, edits: {} });
 
     try {
       const laughs = await findLaughs({
@@ -221,5 +228,17 @@ export const useRecap = create<RecapState>((set, get) => ({
     // The cancelled run may still report progress (its sound is still being read): ignore it from here.
     runId++;
     set({ job: null });
+  },
+  edits: {},
+  setEdit: (id, edit) => {
+    set((s) => {
+      const edits = { ...s.edits };
+      if (edit === null) {
+        delete edits[id];
+      } else {
+        edits[id] = edit;
+      }
+      return { edits };
+    });
   },
 }));
