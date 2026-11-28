@@ -13,6 +13,7 @@ import { getSpeechAudio } from "./audioCache";
 import { buildCues, cuesEditedSince, sortCues, type CaptionRules } from "./captionBuilder";
 import { sliceSamples, wordsToProjectTime, type DevicePreference } from "./transcriber";
 import { buildSpeakerCues, transcribeWithSpeakers, type SpeakerSegment } from "@/lib/transcriptionEngine";
+import { whileBusy } from "@/lib/utils/busy";
 
 export interface CaptionJobProgress {
   message: string;
@@ -54,7 +55,11 @@ export function hasSpeechTrack(clips: Clip[]): boolean {
  * Transcribes every clip and builds captions in project time. Resolves to
  * null when no speech was found. Rejects with an AbortError when cancelled.
  */
-export async function generateCaptions(o: GenerateCaptionsOptions): Promise<GeneratedCaptions | null> {
+export function generateCaptions(o: GenerateCaptionsOptions): Promise<GeneratedCaptions | null> {
+  return whileBusy(() => generateCaptionsInner(o));
+}
+
+async function generateCaptionsInner(o: GenerateCaptionsOptions): Promise<GeneratedCaptions | null> {
   const layouts = layoutClips(o.clips);
   const words: WordTiming[] = [];
   const segments: SpeakerSegment[] = [];

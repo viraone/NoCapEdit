@@ -6,6 +6,7 @@ import { deleteProject, getAsset, saveProject } from "@/lib/storage/db";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { autoReframe } from "@/lib/tracking/autoReframe";
 import { uid } from "@/lib/utils/id";
+import { whileBusy } from "@/lib/utils/busy";
 import { cuesForRange } from "@/lib/edit/reelMaker";
 import { trailerRanges, type Range } from "./trailerRanges";
 import { cutPieces, type Piece } from "./cutPieces";
@@ -22,7 +23,11 @@ export interface TrailerOptions {
 
 const abortError = () => new DOMException("Cancelled", "AbortError");
 
-export async function makeTrailer(o: TrailerOptions): Promise<VideoProject> {
+export function makeTrailer(o: TrailerOptions): Promise<VideoProject> {
+  return whileBusy(() => makeTrailerInner(o));
+}
+
+async function makeTrailerInner(o: TrailerOptions): Promise<VideoProject> {
   const { source, laughs, signal, onProgress } = o;
   if (!laughs.length) throw new Error("Keep at least one moment first.");
 

@@ -16,6 +16,7 @@ import { ffmpegEngine, RESOLUTION_PRESETS, type X264Preset } from "@/lib/ffmpegE
 import { GlTransitionRenderer } from "@/lib/gl/transitions";
 import { needsCompositor } from "@/lib/playback/compositor";
 import { safeFilename } from "@/lib/utils/download";
+import { whileBusy } from "@/lib/utils/busy";
 import { createFolderSink, exportFolderBridge, folderError, saveExportFile, useExportFolder, type ExportFolderInfo, type FolderSink, type SavedExport } from "@/lib/utils/exportFolder";
 import { formatBytes, formatTime } from "@/lib/utils/time";
 import { PanelHeader, PanelSection } from "@/components/ui/Panel";
@@ -98,106 +99,108 @@ export function ExportPanel() {
     if (runGuard.current) return;
     runGuard.current = true;
     try {
-      setError(null);
-      setResult(null);
-      setFolderSaved(null);
-      // The check above already read the media; an export that cannot finish is not started.
-      if (blocked) {
-        setError(blocked);
-        return;
-      }
-      if (phoneBridge() && usePhone.getState().rendering) {
-        setError("A video is already being made. Wait for it to finish.");
-        return;
-      }
-      // With a folder chosen, the file goes straight there and no save window opens.
-      const bridge = exportFolderBridge();
-      let folderSink: FolderSink | null = null;
-      if (bridge) {
-        let chosen: ExportFolderInfo | null = null;
-        try {
-          chosen = await bridge.info();
-        } catch {
-          chosen = null;
-        }
-        if (chosen) {
-          try {
-            folderSink = await createFolderSink(bridge, `${base}.mp4`);
-          } catch (e) {
-            setError(folderError(e));
-            return;
-          }
-        }
-      }
-      // No folder chosen: ask where to save, before the export starts.
-      let sink: OutputSink | null = folderSink;
-      if (!sink && toDisk) {
-        try {
-          sink = await requestDiskSink(`${base}.mp4`);
-        } catch (e) {
-          console.error("[export] save location failed", e);
-          setError(friendlyExportError(e));
+      await whileBusy(async () => {
+        setError(null);
+        setResult(null);
+        setFolderSaved(null);
+        // The check above already read the media; an export that cannot finish is not started.
+        if (blocked) {
+          setError(blocked);
           return;
         }
-        if (!sink) return;
-      }
-      /** Reads back an export saved straight to disk, for the Instagram panel. */
-      const readBack = sink?.file?.bind(sink) ?? null;
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setProgress({ stage: "preparing", progress: 0, message: "Starting" });
-      usePhone.getState().setRendering(true);
-      setEngine(null);
-      // A long export should not be interrupted by the screen going to sleep.
-      const releaseLock = await acquireWakeLock();
-      try {
-        const imageIds = project.overlays.filter((o) => o.kind === "image").map((o) => (o as { assetId: string }).assetId);
-        const images = await loadImages([...new Set(imageIds)]);
-        const res = await exportProject(
-          project,
-          { getBlob: async (id) => (await getAsset(id))?.blob, getImage: (id) => images.get(id), urls: assetUrls },
-          opts,
-          (p) => {
-            setProgress(p);
-            if (p.engine) setEngine(p.engine);
-          },
-          controller.signal,
-          sink ?? undefined,
-        );
-        setEngine(res.info);
-        setResult(res);
-        // The exporter closes a folder file itself; the sidecars are saved one after another.
-        let videoSaved: SavedExport | null = folderSink?.saved() ?? null;
-        if (res.video) videoSaved = await saveExportFile(res.video, res.fileName);
-        if (res.srt) await saveExportFile(res.srt, `${base}.srt`);
-        if (res.txt) await saveExportFile(res.txt, `${base}.txt`);
-        if (res.vtt) await saveExportFile(res.vtt, `${base}.vtt`);
-        if (videoSaved) setFolderSaved(videoSaved);
-        // Desktop app: the finished video goes to the Instagram panel, which takes this panel's place.
-        if (phoneBridge() && (res.video || readBack)) {
-          usePhone.getState().setLastExport({
-            video: res.video ?? null,
-            loadVideo: res.video ? null : readBack,
-            fileName: videoSaved?.name ?? res.fileName,
-            savedTo: videoSaved?.folder ?? null,
-            bytes: res.bytes,
-            streamed: res.streamed,
-            at: Date.now(),
-            project,
-          });
-          useEditor.getState().setTool("instagram");
+        if (phoneBridge() && usePhone.getState().rendering) {
+          setError("A video is already being made. Wait for it to finish.");
+          return;
         }
-      } catch (e) {
-        console.error("[export] export failed", e);
-        // No half-written file stays behind.
-        if (folderSink) await folderSink.abort();
-        setError(friendlyExportError(e));
-      } finally {
-        releaseLock();
-        abortRef.current = null;
-        setProgress(null);
-        usePhone.getState().setRendering(false);
-      }
+        // With a folder chosen, the file goes straight there and no save window opens.
+        const bridge = exportFolderBridge();
+        let folderSink: FolderSink | null = null;
+        if (bridge) {
+          let chosen: ExportFolderInfo | null = null;
+          try {
+            chosen = await bridge.info();
+          } catch {
+            chosen = null;
+          }
+          if (chosen) {
+            try {
+              folderSink = await createFolderSink(bridge, `${base}.mp4`);
+            } catch (e) {
+              setError(folderError(e));
+              return;
+            }
+          }
+        }
+        // No folder chosen: ask where to save, before the export starts.
+        let sink: OutputSink | null = folderSink;
+        if (!sink && toDisk) {
+          try {
+            sink = await requestDiskSink(`${base}.mp4`);
+          } catch (e) {
+            console.error("[export] save location failed", e);
+            setError(friendlyExportError(e));
+            return;
+          }
+          if (!sink) return;
+        }
+        /** Reads back an export saved straight to disk, for the Instagram panel. */
+        const readBack = sink?.file?.bind(sink) ?? null;
+        const controller = new AbortController();
+        abortRef.current = controller;
+        setProgress({ stage: "preparing", progress: 0, message: "Starting" });
+        usePhone.getState().setRendering(true);
+        setEngine(null);
+        // A long export should not be interrupted by the screen going to sleep.
+        const releaseLock = await acquireWakeLock();
+        try {
+          const imageIds = project.overlays.filter((o) => o.kind === "image").map((o) => (o as { assetId: string }).assetId);
+          const images = await loadImages([...new Set(imageIds)]);
+          const res = await exportProject(
+            project,
+            { getBlob: async (id) => (await getAsset(id))?.blob, getImage: (id) => images.get(id), urls: assetUrls },
+            opts,
+            (p) => {
+              setProgress(p);
+              if (p.engine) setEngine(p.engine);
+            },
+            controller.signal,
+            sink ?? undefined,
+          );
+          setEngine(res.info);
+          setResult(res);
+          // The exporter closes a folder file itself; the sidecars are saved one after another.
+          let videoSaved: SavedExport | null = folderSink?.saved() ?? null;
+          if (res.video) videoSaved = await saveExportFile(res.video, res.fileName);
+          if (res.srt) await saveExportFile(res.srt, `${base}.srt`);
+          if (res.txt) await saveExportFile(res.txt, `${base}.txt`);
+          if (res.vtt) await saveExportFile(res.vtt, `${base}.vtt`);
+          if (videoSaved) setFolderSaved(videoSaved);
+          // Desktop app: the finished video goes to the Instagram panel, which takes this panel's place.
+          if (phoneBridge() && (res.video || readBack)) {
+            usePhone.getState().setLastExport({
+              video: res.video ?? null,
+              loadVideo: res.video ? null : readBack,
+              fileName: videoSaved?.name ?? res.fileName,
+              savedTo: videoSaved?.folder ?? null,
+              bytes: res.bytes,
+              streamed: res.streamed,
+              at: Date.now(),
+              project,
+            });
+            useEditor.getState().setTool("instagram");
+          }
+        } catch (e) {
+          console.error("[export] export failed", e);
+          // No half-written file stays behind.
+          if (folderSink) await folderSink.abort();
+          setError(friendlyExportError(e));
+        } finally {
+          releaseLock();
+          abortRef.current = null;
+          setProgress(null);
+          usePhone.getState().setRendering(false);
+        }
+      });
     } finally {
       runGuard.current = false;
     }

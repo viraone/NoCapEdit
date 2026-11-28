@@ -3,6 +3,7 @@ import { getSpeechAudio } from "@/lib/speech/audioCache";
 import { getAsset } from "@/lib/storage/db";
 import { layoutClips, toProjectTime } from "@/lib/models/timeline";
 import { withBase } from "@/lib/basePath";
+import { whileBusy } from "@/lib/utils/busy";
 import type { Clip } from "@/lib/models/project";
 
 export const YAMNET_URL = "https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite";
@@ -25,7 +26,11 @@ export interface FindLaughsOptions {
 const CHUNK = 15600 * 60;
 const SAMPLE_RATE = 16000;
 
-export async function findLaughs(options: FindLaughsOptions): Promise<Laugh[]> {
+export function findLaughs(options: FindLaughsOptions): Promise<Laugh[]> {
+  return whileBusy(() => findLaughsInner(options));
+}
+
+async function findLaughsInner(options: FindLaughsOptions): Promise<Laugh[]> {
   const { clips, signal, onProgress } = options;
 
   if (!clips.some((c) => c.hasAudio)) {

@@ -53,6 +53,11 @@ let step = "";
 /** @type {number | null} */
 let blocker = null;
 let quitAnyway = false;
+
+/** A quit was stopped further on (a job is running): ask about waiting Stories again next time. */
+export function scheduleQuitStopped() {
+  quitAnyway = false;
+}
 /** @type {() => void} */
 let showSchedule = () => {};
 

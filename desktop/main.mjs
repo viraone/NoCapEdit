@@ -5,7 +5,7 @@
 // NEVER change APP_ORIGIN (desktop/lib/appUrl.mjs) or APP_NAME below: projects live in
 // IndexedDB, which is tied to the origin and to the userData folder named after the app.
 // Changing either makes every saved project disappear.
-import { app, BrowserWindow, Menu, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, Menu, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -13,7 +13,7 @@ import { registerCaptionAi } from "./captionAi.mjs";
 import { registerExportFolder } from "./exportFolderHost.mjs";
 import { registerFfmpegHost } from "./ffmpegHost.mjs";
 import { registerPhone } from "./phoneHost.mjs";
-import { registerSchedule, scheduleKeepsRunning } from "./scheduleHost.mjs";
+import { registerSchedule, scheduleKeepsRunning, scheduleQuitStopped } from "./scheduleHost.mjs";
 import { handleStudioRequest, isStudioRequest, registerStudio } from "./studioProxy.mjs";
 import { APP_ORIGIN, APP_SCHEME, contentType, fileCandidates, isAppUrl, isExternalUrl, isolationHeaders } from "./lib/appUrl.mjs";
 
@@ -97,6 +97,21 @@ function createWindow() {
   });
   mainWindow = win;
   win.on("close", () => saveWindowState(win));
+  // The page refuses to unload while captions, a trailer or an export are running. Without this
+  // the window would silently stay open; here the user is asked.
+  win.webContents.on("will-prevent-unload", (event) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: "warning",
+      buttons: ["Keep Working", "Close Anyway"],
+      defaultId: 0,
+      cancelId: 0,
+      message: "NoCap Edit is still working",
+      detail: "Quitting, closing or reloading now loses the job that is running, such as captions, a trailer or an export.",
+    });
+    // Preventing this event is what lets the page go.
+    if (choice === 1) event.preventDefault();
+    else scheduleQuitStopped();
+  });
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
   });

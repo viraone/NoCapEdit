@@ -4,13 +4,21 @@ import { loadImages } from "@/lib/export/images";
 import { browserPreflightEnv, runPreflight, type PreflightIssue } from "@/lib/export/preflight";
 import { exportProject, DEFAULT_EXPORT_OPTIONS, type ExportProgress } from "@/lib/ffmpeg/exporter";
 import { acquireWakeLock } from "@/lib/mobile/share";
+import { whileBusy } from "@/lib/utils/busy";
 import type { FinishedExport } from "./phoneStore";
 
 /**
  * Makes an MP4 of the currently open project with default settings, keeping it in memory
  * for the Instagram panel without saving to disk or triggering a download.
  */
-export async function exportForPhone(
+export function exportForPhone(
+  onProgress: (p: ExportProgress) => void,
+  signal: AbortSignal,
+): Promise<FinishedExport> {
+  return whileBusy(() => exportForPhoneInner(onProgress, signal));
+}
+
+async function exportForPhoneInner(
   onProgress: (p: ExportProgress) => void,
   signal: AbortSignal,
 ): Promise<FinishedExport> {
