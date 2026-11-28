@@ -1,5 +1,5 @@
 "use client";
-import { Play, Pause, SkipBack, ArrowRightToLine, ArrowLeftToLine, ArrowLeft, ArrowRight, Trash2, Film, Music, Undo2 } from "lucide-react";
+import { Play, Pause, SkipBack, ArrowRightToLine, ArrowLeftToLine, ArrowLeft, ArrowRight, Trash2, Film, Music, Undo2, Scissors, Check } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
 import { useTargetClip } from "@/components/panels/shared";
 import { engine } from "@/lib/playback/engine";
@@ -7,6 +7,9 @@ import { projectDuration } from "@/lib/models/timeline";
 import { captionsClearedNotice, cutAfter, cutBefore, moveClip, removeClip } from "@/lib/models/clipOps";
 import { musicIsCut, removeMusicSelection, removedMusicNotice } from "@/lib/models/musicTrim";
 import { formatTime, formatTimecode } from "@/lib/utils/time";
+import { useRecap } from "@/lib/recap/recapStore";
+import { useActiveMoment } from "@/components/timeline/useActiveMoment";
+import { deleteActiveMomentPiece, splitActiveMoment } from "@/components/timeline/momentActions";
 import { Button } from "@/components/ui/Button";
 
 /** Transport (centre) and clip actions (right), the top row of the timeline card. */
@@ -16,11 +19,55 @@ export function TransportBar() {
   const duration = useEditor((s) => (s.project ? projectDuration(s.project.clips) : 0));
   const clipCount = useEditor((s) => s.project?.clips.length ?? 0);
   const canUndo = useEditor((s) => s.past.length > 0);
+  // A Recap moment open on the timeline: every project control steps aside for the moment's own.
+  const moment = useActiveMoment();
+  const undoMoment = useRecap((s) => s.undoMoment);
+  const closeMoment = useRecap((s) => s.closeMoment);
+  const canUndoMoment = useRecap((s) => s.history.length > 0);
   const { seek, update, select, setNotice, undo } = useEditor.getState();
   const clip = useTargetClip();
   const music = useEditor((s) => (s.selection?.kind === "music" ? s.project?.music ?? null : null));
   const musicPiece = useEditor((s) => (s.selection?.kind === "music" ? Number(s.selection.id) : 0));
   const index = useEditor((s) => (clip ? s.project!.clips.findIndex((c) => c.id === clip.id) : -1));
+
+  if (moment) {
+    const start = moment.edit.pieces[0]?.start ?? moment.laugh.start;
+    return (
+      <div className="grid h-11 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3" data-moment-transport>
+        <span className="truncate text-[13px] font-semibold text-sys-orange">Editing a moment</span>
+        <div className="flex items-center gap-1.5">
+          <Button variant="secondary" size="md" onClick={() => splitActiveMoment()} title="Split the moment at the playhead (S)" data-moment-split>
+            <Scissors size={15} /> Split
+          </Button>
+          <Button variant="danger" size="md" onClick={() => deleteActiveMomentPiece()} title="Delete the selected piece (Delete)" data-moment-delete>
+            <Trash2 size={15} /> Delete
+          </Button>
+          <Button variant="secondary" size="md" onClick={undoMoment} disabled={!canUndoMoment} title="Undo the last change to this moment" data-moment-undo>
+            <Undo2 size={15} /> Undo
+          </Button>
+          <Button variant="ghost" size="iconSm" onClick={() => seek(Math.max(0, start))} title="Go to the moment's start">
+            <SkipBack size={15} />
+          </Button>
+          <button
+            type="button"
+            onClick={() => engine.toggle()}
+            disabled={duration === 0}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-sys-blue text-white shadow-md shadow-sys-blue/30 transition-colors hover:bg-brand-400 disabled:opacity-40"
+            title="Play / pause (Space)"
+          >
+            {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+          </button>
+          <span className="ml-2 font-mono text-[15px] tabular-nums">
+            <span className="font-bold text-sys-blue">{formatTimecode(currentTime)}</span> <span className="text-label-3">/</span> <span className="text-label-2">{formatTime(duration)}</span>
+          </span>
+          <Button variant="primary" size="md" onClick={closeMoment} title="Finish editing this moment" data-moment-done>
+            <Check size={15} /> Done
+          </Button>
+        </div>
+        <div />
+      </div>
+    );
+  }
 
   return (
     <div className="grid h-11 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3">

@@ -16,6 +16,8 @@ import { RULER_H, CUE_H, DOCK_CHROME_H, STRIP_OVERSCAN, drawRange, videoLaneHeig
 import { ClipBlock } from "./ClipBlock";
 import { CueLane, AudioLane, MusicRow, Ruler, Playhead, HoverPreview } from "./lanes";
 import { CLIP_PAD, EDGE } from "./laneConstants";
+import { MomentTrack } from "./MomentTrack";
+import { useMomentActive } from "./useActiveMoment";
 
 /** Whether a click at project time `t` (x px into the lane) would cut a clip: on a clip, clear of its trim handles. */
 function cuttableAt(layouts: ClipLayout[], t: number, pxPerSec: number): ClipLayout | null {
@@ -54,6 +56,8 @@ export function TimelineDock() {
   const stretch = useReelStretch();
   // The Reels panel's "+10 s before / after" buttons: the same as dragging the clip's edge out, done here, where the stretch lives.
   const stretchRequest = useEditor((s) => s.stretchRequest);
+  // A Recap moment is open on the lanes: its pieces own the clips there (see MomentTrack).
+  const momentActive = useMomentActive();
   const stretchHandled = useRef(0);
   useEffect(() => {
     if (!stretchRequest || stretchRequest.nonce === stretchHandled.current) return;
@@ -232,6 +236,11 @@ export function TimelineDock() {
           onPointerDown={onBackgroundDown}
           onPointerMove={(e) => {
             if (scrubbing.current) seek(timeAt(e.clientX));
+            // The moment's pieces sit over the clip lanes: no hover preview and no cut here.
+            if (momentActive) {
+              if (hover) setHover(null);
+              return;
+            }
             const el = e.currentTarget;
             const r = el.getBoundingClientRect();
             const y = e.clientY - r.top;
@@ -273,7 +282,7 @@ export function TimelineDock() {
               onOpenSubtitles={() => setTool("subtitles")}
             />
             <div className="relative border-b border-sys-gray5/70" style={{ height: videoH }}>
-              {hover && dropX === null && <HoverPreview x={hover.x} time={hover.time} layout={hover.layout} />}
+              {hover && dropX === null && !momentActive && <HoverPreview x={hover.x} time={hover.time} layout={hover.layout} />}
               {layouts.map((layout) => (
                 <ClipBlock
                   key={layout.clip.id}
@@ -323,7 +332,7 @@ export function TimelineDock() {
               }}
             />
             {/* Where a click would cut: a thin line through the video and audio lanes, notched at both ends. */}
-            {hover?.cut && (
+            {hover?.cut && !momentActive && (
               <div className="pointer-events-none absolute z-20 w-0" style={{ left: hover.x, top: RULER_H + CUE_H + CLIP_PAD, height: videoH + audioH - CLIP_PAD * 2 }} data-cut-indicator>
                 <div className="absolute inset-y-0 -left-px w-px bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
                 <div className="absolute -left-[4px] top-0 h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-white" />
@@ -339,6 +348,7 @@ export function TimelineDock() {
                 </div>
               </div>
             )}
+            <MomentTrack pxPerSec={pxPerSec} duration={duration} width={contentW} height={videoH + audioH} scrollRef={scrollRef} />
             <Playhead pxPerSec={pxPerSec} scrollRef={scrollRef} height={lanesH} />
           </div>
         </div>

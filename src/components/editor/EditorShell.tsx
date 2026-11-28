@@ -2,6 +2,9 @@
 import { useEffect } from "react";
 import { AlertTriangle, Lightbulb, X } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
+import { useRecap } from "@/lib/recap/recapStore";
+import { activeMoment } from "@/components/timeline/useActiveMoment";
+import { deleteActiveMomentPiece, splitActiveMoment } from "@/components/timeline/momentActions";
 import { engine } from "@/lib/playback/engine";
 import { ensureFontsLoaded } from "@/lib/captions/fonts";
 import { splitClipAt, captionsClearedNotice, removeClip } from "@/lib/models/clipOps";
@@ -138,6 +141,29 @@ export function EditorShell() {
       const action = shortcutFor(e);
       if (!action) return;
       const s = useEditor.getState();
+      // An open Recap moment owns these keys: they change the moment, never the project.
+      if (activeMoment()) {
+        switch (action) {
+          case "split-at-playhead":
+            e.preventDefault();
+            splitActiveMoment();
+            return;
+          case "remove-selection":
+            e.preventDefault();
+            deleteActiveMomentPiece();
+            return;
+          case "undo":
+            e.preventDefault();
+            useRecap.getState().undoMoment();
+            return;
+          case "redo":
+            e.preventDefault();
+            return;
+          case "clear-selection":
+            useRecap.getState().closeMoment();
+            return;
+        }
+      }
       switch (action) {
         case "play-pause":
           // A keyboard-focused control (Tab, or a scripted .focus()) gets its own

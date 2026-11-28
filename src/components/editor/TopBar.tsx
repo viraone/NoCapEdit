@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Undo2, Redo2, Upload, Share, Pencil, RefreshCw, Clapperboard, ArrowLeft, Check, Loader2, History, AlertTriangle, Mic } from "lucide-react";
 import { useEditor } from "@/store/editorStore";
+import { useMomentActive } from "@/components/timeline/useActiveMoment";
 import { useImportClips } from "@/components/panels/useImportClips";
 import { importVideo, updateProjectThumbnail } from "@/lib/media/import";
 import { Button } from "@/components/ui/Button";
@@ -23,6 +24,8 @@ export function TopBar() {
   const project = useEditor((s) => s.project)!;
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
+  // Undo and redo of the project would change the clips under an open Recap moment: they wait until it is done.
+  const momentActive = useMomentActive();
   const saveState = useEditor((s) => s.saveState);
   const journalFailed = useEditor((s) => s.journalFailed);
   const { undo, redo, update, setTool, saveNow } = useEditor.getState();
@@ -219,10 +222,10 @@ export function TopBar() {
           </div>
         </Modal>
         <span className="h-[24px] w-px shrink-0 bg-white/10" />
-        <Button variant="ghost" size="iconBar" onClick={undo} disabled={!canUndo} title="Undo (⌘Z)" aria-label="Undo">
+        <Button variant="ghost" size="iconBar" onClick={undo} disabled={!canUndo || momentActive} title={momentActive ? "Finish editing the moment first" : "Undo (⌘Z)"} aria-label="Undo">
           <Undo2 size={18} />
         </Button>
-        <Button variant="ghost" size="iconBar" onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">
+        <Button variant="ghost" size="iconBar" onClick={redo} disabled={!canRedo || momentActive} title={momentActive ? "Finish editing the moment first" : "Redo (⇧⌘Z)"} aria-label="Redo">
           <Redo2 size={18} />
         </Button>
       </div>

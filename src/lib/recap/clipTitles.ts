@@ -35,6 +35,16 @@ export function momentText(
   return cut.slice(spaceIndex + 1);
 }
 
+// Words a name must never show, whatever was said on stage. Encoded so the source does not spell them out.
+const INSIDE_A_WORD = atob("bmlnZyxmdWNrLGZhZ2dvdCxjdW50LHNoaXQscmV0YXJk").split(",");
+const WHOLE_WORDS = new Set(atob("bmlnZ2EsZmFnLGZhZ3MsZHlrZSxkeWtlcyxraWtlLGtpa2VzLHNwaWMsc3BpY3MsY2hpbmssY2hpbmtzLGdvb2ssZ29va3Msd2V0YmFjayx3ZXRiYWNrcyx0cmFubnksdHJhbm5pZXMsY29vbixjb29ucyxkaWNrLGRpY2tzLGNvY2ssY29ja3MscHVzc3ksd2hvcmUsd2hvcmVzLHNsdXQsc2x1dHMsYml0Y2gsYml0Y2hlcyxhc3MsYXNzZXMsYXNzaG9sZSxhc3Nob2xlcyxyYXBlLHJhcGVkLHJhcGVzLHJhcGlzdCxwb3JuLGN1bQ==").split(","));
+
+/** False for a name with a slur or profanity in it: such a name is not shown and not kept. */
+export function isCleanTitle(title: string): boolean {
+  const words = title.normalize("NFKD").toLowerCase().replace(/[^a-z\s-]/g, "").split(/[\s-]+/);
+  return !words.some((w) => WHOLE_WORDS.has(w) || INSIDE_A_WORD.some((bad) => w.includes(bad)));
+}
+
 export function titleKey(laugh: Span): string {
   return String(Math.round(laugh.start));
 }
@@ -64,7 +74,7 @@ export function matchTitles(
 
     if (bestKey !== null) {
       const title = saved[bestKey];
-      if (title && title.trim().length > 0) {
+      if (title && title.trim().length > 0 && isCleanTitle(title)) {
         result[laugh.id] = title;
       }
     }

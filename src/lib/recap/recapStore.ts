@@ -5,7 +5,7 @@ import { useEditor } from "@/store/editorStore";
 import { findSets, setAt } from "@/lib/recap/performers";
 import { layoutClips } from "@/lib/models/timeline";
 import { loadRecap, saveRecap, saveTitles } from "@/lib/recap/recapNames";
-import { batches, matchTitles, momentText, titleKey } from "@/lib/recap/clipTitles";
+import { batches, isCleanTitle, matchTitles, momentText, titleKey } from "@/lib/recap/clipTitles";
 import { cutPieces } from "@/lib/recap/cutPieces";
 import { clearOpener, loadOpener as loadSavedOpener, parseClock, saveOpener, type Opener } from "@/lib/recap/opener";
 import { whileBusy } from "@/lib/utils/busy";
@@ -54,6 +54,20 @@ interface RecapState {
   cancel(): void;
   edits: Record<string, MomentEdit>;
   setEdit(id: string, edit: MomentEdit | null): void;
+  /** The moment opened for editing on the timeline, if any. */
+  editingId: string | null;
+  /** The piece of the open moment selected on the timeline, by index. */
+  selectedPiece: number | null;
+  /** States of the open moment before each change, newest last (one drag is one entry). */
+  history: MomentEdit[];
+  openMoment(id: string): void;
+  closeMoment(): void;
+  selectPiece(index: number | null): void;
+  /** Records a state to undo back to; a drag calls it once, before its first change. */
+  pushHistory(edit: MomentEdit): void;
+  /** Records the saved edit (or `fallback`, the moment's default) and then saves `next`. */
+  changeMoment(next: MomentEdit, fallback?: MomentEdit): void;
+  undoMoment(): void;
   /** A short name for each moment, by laugh id. */
   titles: Record<string, string>;
   naming: { done: number; total: number } | null;
@@ -214,7 +228,7 @@ export const useRecap = create<RecapState>((set, get) => ({
     const myRunId = ++runId;
 
     const saved = loadRecap(project.id);
-    set({ key, job: { message: "Starting", progress: null }, error: null, laughs: null, kept: [], names: saved.names, closing: saved.closing ?? "Like and follow for the next show", trailerId: null, edits: {}, titles: {}, naming: null, namedBy: [], namingError: null });
+    set({ key, job: { message: "Starting", progress: null }, error: null, laughs: null, kept: [], names: saved.names, closing: saved.closing ?? "Like and follow for the next show", trailerId: null, edits: {}, titles: {}, naming: null, namedBy: [], namingError: null, editingId: null, selectedPiece: null, history: [] });
 
     try {
       const laughs = await findLaughs({
@@ -279,7 +293,7 @@ export const useRecap = create<RecapState>((set, get) => ({
         const keep: Record<string, string> = {};
         group.forEach(({ laugh }, i) => {
           const title = reply.titles[i];
-          if (!title) return;
+          if (!title || !isCleanTitle(title)) return;
           fresh[laugh.id] = title;
           keep[titleKey(laugh)] = title;
         });
@@ -308,6 +322,38 @@ export const useRecap = create<RecapState>((set, get) => ({
         edits[id] = edit;
       }
       return { edits };
+    });
+  },
+  editingId: null,
+  selectedPiece: null,
+  history: [],
+  openMoment: (id) => {
+    set({ editingId: id, selectedPiece: null, history: [] });
+  },
+  closeMoment: () => {
+    set({ editingId: null, selectedPiece: null, history: [] });
+  },
+  selectPiece: (index) => {
+    set({ selectedPiece: index });
+  },
+  pushHistory: (edit) => {
+    set((s) => ({ history: [...s.history, edit] }));
+  },
+  changeMoment: (next, fallback) => {
+    set((s) => {
+      const id = s.editingId;
+      if (!id) return {};
+      const before = s.edits[id] ?? fallback;
+      const edits = { ...s.edits, [id]: next };
+      return before ? { edits, history: [...s.history, before] } : { edits };
+    });
+  },
+  undoMoment: () => {
+    set((s) => {
+      const id = s.editingId;
+      if (!id || !s.history.length) return {};
+      const prev = s.history[s.history.length - 1];
+      return { edits: { ...s.edits, [id]: prev }, history: s.history.slice(0, -1) };
     });
   },
 }));

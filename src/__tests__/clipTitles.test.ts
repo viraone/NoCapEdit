@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   batches,
+  isCleanTitle,
   matchTitles,
   momentText,
   titleKey,
@@ -119,5 +120,23 @@ describe("batches", () => {
 
   it("returns single batch when size >= length", () => {
     expect(batches([1, 2], 5)).toEqual([[1, 2]]);
+  });
+});
+
+describe("isCleanTitle", () => {
+  const bad = atob("bmlnZ2EsRnVja2luZyxidWxsLXNoaXQsRmFncyxBIERpY2sgSm9rZQ==").split(",");
+
+  it("refuses slurs and profanity, in any case and inside a longer word", () => {
+    for (const word of bad) expect(isCleanTitle(`Story about ${word} today`)).toBe(false);
+  });
+
+  it("lets ordinary names through, including ones that only look close", () => {
+    for (const title of ["Algebra Teacher Phone Call", "Cockroach In The Class", "Assistant Raccoon Grape", "Dickens Reading Night"]) {
+      expect(isCleanTitle(title)).toBe(true);
+    }
+  });
+
+  it("keeps a saved name with such a word off the card", () => {
+    expect(matchTitles([{ id: "a", start: 10, end: 12 }], { "10": `The ${bad[0]}` })).toEqual({});
   });
 });

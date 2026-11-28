@@ -14,7 +14,7 @@ import { playRange } from "@/lib/recap/laughMoments";
 import { totalLength } from "@/lib/recap/trailerRanges";
 import { layoutClips } from "@/lib/models/timeline";
 import { findSets, setAt, oneEach } from "@/lib/recap/performers";
-import { keptRanges } from "@/lib/recap/momentEdits";
+import { editPieces, keptRanges } from "@/lib/recap/momentEdits";
 import type { Laugh } from "@/lib/recap/findLaughs";
 import { MomentEditor } from "./MomentEditor";
 
@@ -41,12 +41,11 @@ function StepHeading({ n, title }: { n: number; title: string }) {
 export function RecapPanel() {
   const project = useProject();
   const router = useRouter();
-  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly, opener, openerJob, openerError, loadOpener, addOpener, removeOpener, edits, titles, naming, namedBy, namingError, nameClips } = useRecap();
+  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly, opener, openerJob, openerError, loadOpener, addOpener, removeOpener, edits, titles, naming, namedBy, namingError, nameClips, editingId, openMoment, closeMoment } = useRecap();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [playingRange, setPlayingRange] = useState<{ start: number; end: number } | null>(null);
   const [openerStart, setOpenerStart] = useState("0:00");
   const [openerSeconds, setOpenerSeconds] = useState(3.5);
-  const [openMomentId, setOpenMomentId] = useState<string | null>(null);
   const [namesOpen, setNamesOpen] = useState(false);
   const [extrasOpen, setExtrasOpen] = useState(false);
 
@@ -82,6 +81,10 @@ export function RecapPanel() {
       return;
     }
     const range = playRange(laugh, duration, 8, 1);
+    // An edited moment starts where its first piece starts, so the words before the laugh are played too.
+    const edit = edits[laugh.id];
+    const pieces = edit ? editPieces(edit) : [];
+    if (pieces.length) range.start = Math.max(0, pieces[0].start);
     useEditor.getState().seek(range.start);
     // The engine plays; the store's isPlaying only mirrors it.
     engine.play();
@@ -313,7 +316,8 @@ export function RecapPanel() {
                     const performerName = setIdx >= 0 ? (names[setIdx] ?? sets[setIdx].name) : "";
                     const title = titles[laugh.id] ?? "";
                     const hasEdit = edits[laugh.id] !== undefined;
-                    const isOpen = openMomentId === laugh.id;
+                    const isOpen = editingId === laugh.id;
+                    const toggleMoment = () => (isOpen ? closeMoment() : openMoment(laugh.id));
                     return (
                       <li
                         key={laugh.id}
@@ -326,7 +330,7 @@ export function RecapPanel() {
                         <button
                           type="button"
                           className="block w-full text-left"
-                          onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
+                          onClick={toggleMoment}
                           data-recap-open-moment
                           aria-expanded={isOpen}
                         >
@@ -356,12 +360,12 @@ export function RecapPanel() {
                             variant="secondary"
                             size="bar"
                             className="w-full !px-1"
-                            onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
+                            onClick={toggleMoment}
                             data-recap-edit-moment
                             aria-expanded={isOpen}
-                            aria-label={`${isOpen ? "Close" : "Edit"} moment ${rank}`}
+                            aria-label={`${isOpen ? "Done" : "Edit"} moment ${rank}`}
                           >
-                            <Pencil size={14} /> {isOpen ? "Close" : "Edit"}
+                            <Pencil size={14} /> {isOpen ? "Done" : "Edit"}
                           </Button>
                           <Button
                             variant={isKept ? "primary" : "secondary"}
