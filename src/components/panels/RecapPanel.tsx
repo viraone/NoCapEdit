@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Smile, Play, Square } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEditor } from "@/store/editorStore";
@@ -12,6 +12,7 @@ import { useRecap, recapKey } from "@/lib/recap/recapStore";
 import { playRange } from "@/lib/recap/laughMoments";
 import { trailerRanges, totalLength } from "@/lib/recap/trailerRanges";
 import { layoutClips } from "@/lib/models/timeline";
+import { findSets, setAt, oneEach } from "@/lib/recap/performers";
 import type { Laugh } from "@/lib/recap/findLaughs";
 
 function formatTime(seconds: number): string {
@@ -28,7 +29,7 @@ function formatTime(seconds: number): string {
 export function RecapPanel() {
   const project = useProject();
   const router = useRouter();
-  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake } = useRecap();
+  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly } = useRecap();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [playingRange, setPlayingRange] = useState<{ start: number; end: number } | null>(null);
 
@@ -38,11 +39,12 @@ export function RecapPanel() {
 
   const duration = layoutClips(clips).reduce((max, l) => Math.max(max, l.end), 0);
   const keptLaughs = (laughs ?? []).filter((l) => kept.includes(l.id));
-  const cues = project?.cues ?? [];
+  const cues = useMemo(() => project?.cues ?? [], [project?.cues]);
   const hasCues = cues.length > 0;
   const keptSeconds = keptLaughs.length
     ? Math.round(totalLength(trailerRanges(keptLaughs, cues, duration)))
     : 0;
+  const sets = useMemo(() => findSets(cues, duration), [cues, duration]);
 
   const handlePlay = (laugh: Laugh) => {
     if (playingId === laugh.id) {
@@ -125,6 +127,43 @@ export function RecapPanel() {
                 {!hasCues && (
                   <p className="rf-read-note">No captions yet. Make them in Subtitles first and the trailer will have captions and cleaner cuts.</p>
                 )}
+                {sets.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[13px] font-semibold text-white">Performers</p>
+                    {sets.map((set, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="shrink-0 text-[13px] text-white tabular-nums">{formatTime(set.start)}</span>
+                        <input
+                          type="text"
+                          data-recap-name
+                          aria-label={`Name of performer ${i + 1}`}
+                          placeholder="Name"
+                          value={names[i] ?? set.name}
+                          onChange={(e) => setName(i, e.target.value)}
+                          className="min-w-0 flex-1 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white placeholder:text-label-2"
+                        />
+                      </div>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => keepOnly(oneEach(laughs ?? [], sets))}
+                      data-recap-one-each
+                    >
+                      Tick the best of each performer
+                    </Button>
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <label className="text-[13px] font-semibold text-white">Closing line</label>
+                  <input
+                    type="text"
+                    data-recap-closing
+                    value={closing}
+                    onChange={(e) => setClosing(e.target.value)}
+                    className="w-full rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white placeholder:text-label-2"
+                  />
+                </div>
                 {!making && (
                   <Button
                     variant="primary"
@@ -178,6 +217,9 @@ export function RecapPanel() {
                       const seconds = Math.max(1, Math.round(laugh.end - laugh.start));
                       const isPlaying = playingId === laugh.id;
                       const isKept = kept.includes(laugh.id);
+                      const setIdx = setAt(sets, laugh.start);
+                      const performerName = setIdx >= 0 ? (names[setIdx] ?? sets[setIdx].name) : "";
+                      const label = performerName ? `${performerName} · ${seconds} s` : `${seconds} s laugh`;
                       return (
                         <li key={laugh.id} className="rounded-lg border border-sys-gray4 bg-sys-gray5/60 px-2.5 py-2 flex items-center gap-2" data-recap-laugh>
                           <input
@@ -189,7 +231,7 @@ export function RecapPanel() {
                           />
                           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-sys-gray4 text-[11px] font-semibold text-white/80">{rank}</span>
                           <span className="shrink-0 text-[13px] text-white tabular-nums">{formatTime(laugh.start)}</span>
-                          <span className="min-w-0 flex-1 truncate text-[11px] text-label-2">{seconds} s laugh</span>
+                          <span className="min-w-0 flex-1 truncate text-[11px] text-label-2">{label}</span>
                           <Button
                             variant="ghost"
                             size="xs"

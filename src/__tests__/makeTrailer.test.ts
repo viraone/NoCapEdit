@@ -104,4 +104,31 @@ describe("makeTrailer", () => {
     await expect(makeTrailer({ source, laughs })).rejects.toThrow("Import failed");
     expect(deleteProject).toHaveBeenCalled();
   });
+
+  it("adds name tags and closing overlay, and one-word cues", async () => {
+    const source = makeSource();
+    const laughs = [
+      { start: 100, end: 102 },
+      { start: 200, end: 202 },
+    ];
+    const result = await makeTrailer({
+      source,
+      laughs,
+      nameAt: (t) => (t < 150 ? "A" : "B"),
+      closing: "Follow us",
+    });
+
+    expect(result.overlays.length).toBeGreaterThanOrEqual(3);
+    const o0 = result.overlays[0];
+    const o1 = result.overlays[1];
+    const oLast = result.overlays[result.overlays.length - 1];
+    expect("text" in o0 ? o0.text : "").toBe("A");
+    expect("text" in o1 ? o1.text : "").toBe("B");
+    expect("text" in oLast ? oLast.text : "").toBe("Follow us");
+
+    for (const cue of result.cues) {
+      const words = cue.words?.length ? cue.words : cue.text.split(/\s+/).filter(Boolean);
+      expect(words.length).toBeLessThanOrEqual(1);
+    }
+  });
 });

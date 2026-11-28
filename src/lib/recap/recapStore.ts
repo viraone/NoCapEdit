@@ -2,6 +2,9 @@ import { create } from "zustand";
 import { findLaughs, type Laugh } from "@/lib/recap/findLaughs";
 import { makeTrailer } from "@/lib/recap/makeTrailer";
 import { useEditor } from "@/store/editorStore";
+import { findSets, setAt } from "@/lib/recap/performers";
+import { layoutClips } from "@/lib/models/timeline";
+import { loadRecap, saveRecap } from "@/lib/recap/recapNames";
 
 export function recapKey(projectId: string, clips: { id: string; inPoint: number; outPoint: number; speed?: number }[]): string {
   const parts = [projectId];
@@ -18,6 +21,11 @@ interface RecapState {
   error: string | null;
   kept: string[];
   toggleKeep(id: string): void;
+  names: Record<number, string>;
+  setName(index: number, name: string): void;
+  closing: string;
+  setClosing(text: string): void;
+  keepOnly(ids: string[]): void;
   making: { message: string; progress: number | null } | null;
   trailerId: string | null;
   make(): Promise<void>;
@@ -42,6 +50,30 @@ export const useRecap = create<RecapState>((set, get) => ({
       kept: s.kept.includes(id) ? s.kept.filter((k) => k !== id) : [...s.kept, id],
     }));
   },
+  names: {},
+  setName: (index, name) => {
+    set((s) => {
+      const names = { ...s.names, [index]: name };
+      const projectId = useEditor.getState().project?.id;
+      if (projectId) {
+        saveRecap(projectId, { names, closing: s.closing });
+      }
+      return { names };
+    });
+  },
+  closing: "Like and follow for the next show",
+  setClosing: (text) => {
+    set((s) => {
+      const projectId = useEditor.getState().project?.id;
+      if (projectId) {
+        saveRecap(projectId, { names: s.names, closing: text });
+      }
+      return { closing: text };
+    });
+  },
+  keepOnly: (ids) => {
+    set({ kept: ids });
+  },
   making: null,
   trailerId: null,
   make: async () => {
@@ -52,6 +84,11 @@ export const useRecap = create<RecapState>((set, get) => ({
     const kept = get().kept;
     const keptLaughs = laughs.filter((l) => kept.includes(l.id));
     if (keptLaughs.length === 0) return;
+
+    const duration = layoutClips(project.clips).reduce((max, l) => Math.max(max, l.end), 0);
+    const sets = findSets(project.cues ?? [], duration);
+    const names = get().names;
+    const closing = get().closing;
 
     const controller = new AbortController();
     makeController = controller;
@@ -68,6 +105,11 @@ export const useRecap = create<RecapState>((set, get) => ({
           if (myRunId !== makeRunId) return;
           set({ making: { message, progress } });
         },
+        nameAt: (t) => {
+          const i = setAt(sets, t);
+          return i < 0 ? "" : (names[i] ?? sets[i].name);
+        },
+        closing,
       });
       if (myRunId !== makeRunId) return;
       set({ trailerId: result.id, making: null });
@@ -99,7 +141,8 @@ export const useRecap = create<RecapState>((set, get) => ({
     currentController = controller;
     const myRunId = ++runId;
 
-    set({ key, job: { message: "Starting", progress: null }, error: null, laughs: null, kept: [], trailerId: null });
+    const saved = loadRecap(project.id);
+    set({ key, job: { message: "Starting", progress: null }, error: null, laughs: null, kept: [], names: saved.names, closing: saved.closing ?? "Like and follow for the next show", trailerId: null });
 
     try {
       const laughs = await findLaughs({

@@ -9,12 +9,15 @@ import { uid } from "@/lib/utils/id";
 import { cuesForRange } from "@/lib/edit/reelMaker";
 import { trailerRanges, type Range } from "./trailerRanges";
 import { cutPieces, type Piece } from "./cutPieces";
+import { oneWordCues, trailerOverlays } from "./trailerDressing";
 
 export interface TrailerOptions {
   source: VideoProject;
   laughs: { start: number; end: number }[];
   signal?: AbortSignal;
   onProgress?: (message: string, progress: number | null) => void;
+  nameAt?: (sourceProjectTime: number) => string;
+  closing?: string;
 }
 
 const abortError = () => new DOMException("Cancelled", "AbortError");
@@ -70,6 +73,7 @@ export async function makeTrailer(o: TrailerOptions): Promise<VideoProject> {
 
     const clips: Clip[] = [];
     const offsets: number[] = [];
+    const madeRanges: Range[] = [];
     let offset = 0;
     for (let i = 0; i < pieces.length; i++) {
       const seconds = pieces[i].seconds;
@@ -91,6 +95,7 @@ export async function makeTrailer(o: TrailerOptions): Promise<VideoProject> {
       };
       clips.push(c);
       offsets.push(offset);
+      madeRanges.push(rangeLayouts[i].range);
       offset += seconds;
     }
 
@@ -135,7 +140,14 @@ export async function makeTrailer(o: TrailerOptions): Promise<VideoProject> {
         cues.push(copy);
       }
     }
-    trailer.cues = cues;
+    trailer.cues = oneWordCues(cues);
+
+    const trailerPieces = clips.map((c, i) => {
+      const range = madeRanges[i];
+      const middle = (range.start + range.end) / 2;
+      return { start: c.inPoint, end: c.outPoint, name: o.nameAt?.(middle) ?? "" };
+    });
+    trailer.overlays = trailerOverlays(trailerPieces, o.closing ?? "");
 
     await saveProject(trailer);
     await updateProjectThumbnail(trailer.id, blob, 1);
