@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
     postpone: (id) => ipcRenderer.invoke("schedule:postpone", id),
     setPaused: (paused) => ipcRenderer.invoke("schedule:pause", !!paused),
     stop: () => ipcRenderer.invoke("schedule:stop"),
+    hold: (id) => ipcRenderer.invoke("schedule:hold", id),
+    release: (id) => ipcRenderer.invoke("schedule:release", id),
     onChange: (fn) => {
       onScheduleChange = typeof fn === "function" ? fn : null;
     },

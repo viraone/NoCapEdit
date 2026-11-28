@@ -94,6 +94,14 @@ export function ScheduleDialog({ state, onRefresh }: { state: ScheduleState | nu
   /** A clock for Today / Tomorrow, refreshed every 20 seconds; 0 until the first tick. */
   const [now, setNow] = useState(0);
 
+  const heldId = changing?.id ?? (confirm?.kind === "remove" ? confirm.id : null);
+  useEffect(() => {
+    if (!heldId) return;
+    return () => {
+      void scheduleBridge()?.release(heldId).catch(() => undefined);
+    };
+  }, [heldId]);
+
   const [atText, setAtText] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [linkLabel, setLinkLabel] = useState("");
@@ -226,11 +234,37 @@ export function ScheduleDialog({ state, onRefresh }: { state: ScheduleState | nu
 
   const postNow = (item: ScheduledItem) => setConfirm({ kind: "postNow", id: item.id });
 
-  const remove = (item: ScheduledItem) => {
+  const change = async (item: ScheduledItem) => {
+    const api = scheduleBridge();
+    if (!api) return;
+    setError(null);
+    try {
+      const result = await api.hold(item.id);
+      if (!result.ok) {
+        setError(result.why);
+        return;
+      }
+      openForm(null, item);
+    } catch (e) {
+      setError(clean(e, "The app did not answer."));
+    }
+  };
+
+  const remove = async (item: ScheduledItem) => {
     const api = scheduleBridge();
     if (!api) return;
     if (item.status === "scheduled") {
-      setConfirm({ kind: "remove", id: item.id });
+      setError(null);
+      try {
+        const result = await api.hold(item.id);
+        if (!result.ok) {
+          setError(result.why);
+          return;
+        }
+        setConfirm({ kind: "remove", id: item.id });
+      } catch (e) {
+        setError(clean(e, "The app did not answer."));
+      }
       return;
     }
     void run("remove", () => api.remove(item.id));
@@ -393,6 +427,10 @@ export function ScheduleDialog({ state, onRefresh }: { state: ScheduleState | nu
                       <span className={statusPill(item.status)}>{statusLabel(item)}</span>
                     </div>
 
+                    {item.maybePosted && item.status !== "shared" && (
+                      <p className="rf-read-note rf-warn" data-schedule-maybe>May already have been posted. Check Instagram.</p>
+                    )}
+
                     {item.note && <p className="rf-read-note [overflow-wrap:anywhere]">{item.note}</p>}
                     {item.details.map((line, i) => (
                       <p key={`${item.id}-detail-${i}`} className="rf-read-note [overflow-wrap:anywhere]">
@@ -434,7 +472,7 @@ export function ScheduleDialog({ state, onRefresh }: { state: ScheduleState | nu
                             <button type="button" className={smallAction} onClick={() => postNow(item)} disabled={!!busy} data-schedule-action="postNow">
                               Post now
                             </button>
-                            <button type="button" className={smallAction} onClick={() => openForm(null, item)} disabled={!!busy} data-schedule-action="change">
+                            <button type="button" className={smallAction} onClick={() => void change(item)} disabled={!!busy} data-schedule-action="change">
                               Change
                             </button>
                           </>
@@ -454,7 +492,7 @@ export function ScheduleDialog({ state, onRefresh }: { state: ScheduleState | nu
                           </button>
                         )}
                         {(item.status === "scheduled" || item.status === "needsYou" || item.status === "missed" || item.status === "shared") && (
-                          <button type="button" className={smallAction} onClick={() => remove(item)} disabled={!!busy} data-schedule-action="remove">
+                          <button type="button" className={smallAction} onClick={() => void remove(item)} disabled={!!busy} data-schedule-action="remove">
                             Remove
                           </button>
                         )}
@@ -469,6 +507,9 @@ export function ScheduleDialog({ state, onRefresh }: { state: ScheduleState | nu
 
         {screen === "form" && (
           <fieldset disabled={!!busy} className="space-y-2.5 disabled:opacity-60">
+            {changing && changing.status === "scheduled" && (
+              <p className="rf-read-note rounded-2xl border border-sys-blue/40 bg-sys-blue/10 p-3" data-schedule-hold-note>This Story is on hold while you change it. It will not post until you leave this screen.</p>
+            )}
             <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
               <Thumb src={thumb} name={name} size="h-16 w-16" />
               <span className="min-w-0">
@@ -565,6 +606,10 @@ export function ScheduleDialog({ state, onRefresh }: { state: ScheduleState | nu
               ))}
             </div>
 
+            {pending.changing?.maybePosted && (
+              <p className="rf-read-note rounded-2xl border border-sys-red/40 bg-sys-red/10 p-3 font-semibold" data-schedule-maybe>This may already have been posted. Check Instagram first: scheduling it again can post it twice.</p>
+            )}
+
             <p className="rf-read-note rounded-2xl border border-sys-orange/40 bg-sys-orange/10 p-3">
               NoCap Edit will tap Share by itself at that time. If anything is not exactly as above, it will not share and will tell you.
             </p>
@@ -590,7 +635,7 @@ export function ScheduleDialog({ state, onRefresh }: { state: ScheduleState | nu
               </Button>
               {screen === "review" ? (
                 <button type="button" onClick={() => void schedule()} disabled={!!busy} data-schedule-confirm className={goButtonClass}>
-                  <Send size={15} /> {busy === "schedule" ? "Scheduling…" : "Schedule"}
+                  <Send size={15} /> {busy === "schedule" ? "Scheduling…" : pending?.changing?.maybePosted ? "Schedule anyway" : "Schedule"}
                 </button>
               ) : (
                 <button type="button" onClick={review} disabled={!!busy || halfSong} data-schedule-review className={goButtonClass}>

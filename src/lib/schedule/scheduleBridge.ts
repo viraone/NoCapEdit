@@ -78,6 +78,10 @@ export interface ScheduleBridge {
   setPaused(paused: boolean): Promise<void>;
   /** Stops the Story being posted, if Share has not been tapped yet. */
   stop(): Promise<void>;
+  /** Keeps a Story from being posted while the user has it open. Refused once it is being posted. */
+  hold(id: string): Promise<ScheduleResult>;
+  /** Lets it go again. If its time came meanwhile, it needs the user instead of posting by itself. */
+  release(id: string): Promise<void>;
   /** One listener: called with the new state after every change. */
   onChange(fn: ((state: ScheduleState) => void) | null): void;
   /** One listener: the app asks for the Schedule window (its menu, or a notification was clicked). */

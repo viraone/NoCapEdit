@@ -33,6 +33,7 @@ export function createScheduleRunner(deps) {
   /** @type {string | null} */
   let running = null;
   let stopAsked = false;
+  const held = new Set();
 
   /**
    * @param {string} id
@@ -101,10 +102,11 @@ export function createScheduleRunner(deps) {
         note: "",
         details: [],
         warned: false,
-        maybePosted: false,
         finishedAt: null,
       };
-      return commit(replaceItem(queue, updated));
+      const result = commit(replaceItem(queue, updated));
+      if (result.ok) held.delete(id);
+      return result;
     },
 
     /**
@@ -116,7 +118,9 @@ export function createScheduleRunner(deps) {
       if (!item) return { ok: false, why: NOT_FOUND };
       if (item.status === "posting" || item.status === "sharing") return { ok: false, why: BUSY };
       const next = { ...queue, items: queue.items.filter((i) => i.id !== id) };
-      return commit(next);
+      const result = commit(next);
+      if (result.ok) held.delete(id);
+      return result;
     },
 
     /**
@@ -136,10 +140,11 @@ export function createScheduleRunner(deps) {
         warned: true,
         note: "",
         details: [],
-        maybePosted: false,
         finishedAt: null,
       };
-      return commit(replaceItem(queue, updated));
+      const result = commit(replaceItem(queue, updated));
+      if (result.ok) held.delete(id);
+      return result;
     },
 
     /**
@@ -218,7 +223,7 @@ export function createScheduleRunner(deps) {
       // 3. if running, return
       if (running !== null) return;
 
-      const item = dueItem(queue, deps.now());
+      const item = dueItem({ ...queue, items: queue.items.filter((i) => !held.has(i.id)) }, deps.now());
       if (!item) return;
 
       // 4. set running, clear stop flag, set status posting, save
@@ -284,7 +289,7 @@ export function createScheduleRunner(deps) {
             status: "needsYou",
             note: result.why || "A step failed.",
             details: result.details ?? [],
-            maybePosted: wasSharing && result.tapped !== false,
+            maybePosted: current.maybePosted || (wasSharing && result.tapped !== false),
             finishedAt: deps.now(),
           };
           queue = replaceItem(queue, updated);
@@ -299,6 +304,50 @@ export function createScheduleRunner(deps) {
         // keep in memory even if save throws
       }
       deps.changed();
+    },
+
+    /**
+     * @param {string} id
+     * @returns {Result}
+     */
+    hold(id) {
+      const item = find(id);
+      if (!item) return { ok: false, why: NOT_FOUND };
+      if (item.status === "posting" || item.status === "sharing") return { ok: false, why: BUSY };
+      held.add(id);
+      return { ok: true };
+    },
+
+    /**
+     * @param {string} id
+     */
+    release(id) {
+      if (!held.has(id)) return;
+      held.delete(id);
+      const item = find(id);
+      if (!item || item.status !== "scheduled" || deps.now() < item.at) return;
+      const updated = {
+        ...item,
+        status: "needsYou",
+        note: item.maybePosted
+          ? "Its time came while you had it open, so it was not posted again. An earlier try may have posted it: check Instagram."
+          : "Its time came while you had it open. Nothing was posted. Press Post now, or Change the time.",
+        finishedAt: deps.now(),
+      };
+      queue = replaceItem(queue, updated);
+      try {
+        deps.save(queue);
+      } catch {
+        // keep in memory even if save throws
+      }
+      deps.notify("needsYou", updated);
+      deps.changed();
+    },
+
+    releaseAll() {
+      for (const id of [...held]) {
+        this.release(id);
+      }
     },
   };
 }

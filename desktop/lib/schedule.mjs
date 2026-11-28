@@ -151,7 +151,9 @@ export function markMissed(queue, now) {
       const changed = {
         ...item,
         status: "missed",
-        note: "Its time passed while the Mac or the app was off or busy. Nothing was posted.",
+        note: item.maybePosted
+          ? "Its time passed while the Mac or the app was off or busy. An earlier try may have posted it: check Instagram."
+          : "Its time passed while the Mac or the app was off or busy. Nothing was posted.",
       };
       missed.push(changed);
       return changed;
@@ -203,8 +205,10 @@ export function recover(queue) {
       return {
         ...item,
         status: "needsYou",
-        maybePosted: false,
-        note: "The app closed while this was being set up. Nothing was shared.",
+        maybePosted: item.maybePosted,
+        note: item.maybePosted
+          ? "The app closed while this was being set up. An earlier try may have posted it: check Instagram before posting it again."
+          : "The app closed while this was being set up. Nothing was shared.",
       };
     }
     if (item.status === "sharing") {

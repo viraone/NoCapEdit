@@ -320,7 +320,28 @@ export function registerSchedule({ show }) {
       });
   });
 
+  // A Story is held (not posted) while the user has it open. The page releases it; a window that is
+  // closed, reloaded or crashes cannot, so all holds are released then. One window at a time.
+  /** @type {WeakSet<Electron.WebContents>} */
+  const watched = new WeakSet();
+  const releaseAll = () => queue().releaseAll();
+  /** @param {Electron.WebContents} sender */
+  const watch = (sender) => {
+    if (watched.has(sender)) return;
+    watched.add(sender);
+    sender.on("destroyed", releaseAll);
+    sender.on("render-process-gone", releaseAll);
+    sender.on("did-start-navigation", (details) => {
+      if (details.isMainFrame && !details.isSameDocument) releaseAll();
+    });
+  };
+
   handle("schedule:state", () => pageState());
+  handle("schedule:hold", (event, id) => {
+    watch(event.sender);
+    return queue().hold(String(id));
+  });
+  handle("schedule:release", (_event, id) => queue().release(String(id)));
   handle("schedule:pick", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     /** @type {Electron.OpenDialogOptions} */
