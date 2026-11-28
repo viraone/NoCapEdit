@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Smile, Play, Square } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEditor } from "@/store/editorStore";
@@ -29,9 +29,22 @@ function formatTime(seconds: number): string {
 export function RecapPanel() {
   const project = useProject();
   const router = useRouter();
-  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly } = useRecap();
+  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly, opener, openerJob, openerError, loadOpener, addOpener, removeOpener } = useRecap();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [playingRange, setPlayingRange] = useState<{ start: number; end: number } | null>(null);
+  const [openerStart, setOpenerStart] = useState("0:00");
+  const [openerSeconds, setOpenerSeconds] = useState(3.5);
+
+  // The opening shot is shared by every project, so it is read once when the panel opens.
+  useEffect(() => {
+    void loadOpener();
+  }, [loadOpener]);
+
+  const handleOpenerFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) void addOpener(file, openerStart, openerSeconds);
+  };
 
   const clips = project?.clips ?? [];
   const currentKey = project ? recapKey(project.id, clips) : "";
@@ -164,12 +177,70 @@ export function RecapPanel() {
                     className="w-full rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white placeholder:text-label-2"
                   />
                 </div>
+                <div className="space-y-1.5" data-recap-opener>
+                  <p className="text-[13px] font-semibold text-white">Opening shot</p>
+                  {opener ? (
+                    <div className="flex items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-[11px] text-label-2" data-recap-opener-saved>
+                        Opening shot: {opener.name}, {opener.seconds} s
+                      </p>
+                      <Button variant="ghost" size="xs" onClick={() => void removeOpener()} data-recap-opener-remove>
+                        Remove
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        data-recap-opener-file
+                        aria-label="Opening shot video"
+                        disabled={!!openerJob}
+                        onChange={handleOpenerFile}
+                        className="block w-full text-[11px] text-label-2 file:mr-2 file:rounded-md file:border-0 file:bg-sys-gray4 file:px-2 file:py-1 file:text-[11px] file:text-white"
+                      />
+                      <div className="flex items-center gap-2">
+                        <label className="shrink-0 text-[11px] text-label-2" htmlFor="recap-opener-start">Start at</label>
+                        <input
+                          id="recap-opener-start"
+                          type="text"
+                          data-recap-opener-start
+                          placeholder="0:00"
+                          value={openerStart}
+                          disabled={!!openerJob}
+                          onChange={(e) => setOpenerStart(e.target.value)}
+                          className="w-16 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white placeholder:text-label-2"
+                        />
+                        <label className="shrink-0 text-[11px] text-label-2" htmlFor="recap-opener-seconds">Seconds</label>
+                        <input
+                          id="recap-opener-seconds"
+                          type="number"
+                          data-recap-opener-seconds
+                          min={0.5}
+                          max={10}
+                          step={0.5}
+                          value={openerSeconds}
+                          disabled={!!openerJob}
+                          onChange={(e) => setOpenerSeconds(Number(e.target.value))}
+                          className="w-16 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white"
+                        />
+                      </div>
+                    </>
+                  )}
+                  {openerJob && (
+                    <div className="space-y-1" data-recap-opener-status>
+                      <p className="text-[11px] text-label-2">{openerJob.message}</p>
+                      <ProgressBar value={openerJob.progress} />
+                    </div>
+                  )}
+                  {openerError && <p className="rf-read-note rf-error" data-recap-opener-error>{openerError}</p>}
+                </div>
                 {!making && (
                   <Button
                     variant="primary"
                     className="w-full"
                     onClick={() => make()}
-                    disabled={kept.length === 0 || !!making}
+                    disabled={kept.length === 0 || !!making || !!openerJob}
                     data-recap-make
                   >
                     Make the trailer

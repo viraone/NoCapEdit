@@ -13,20 +13,23 @@ vi.mock("@/lib/storage/db", () => ({
 }));
 
 vi.mock("@/lib/media/import", () => ({
-  importVideo: vi.fn(async () => ({
-    clip: {
-      id: "clip-1",
-      assetId: "asset-1",
-      inPoint: 0,
-      outPoint: 100,
-      duration: 100,
-      width: 1920,
-      height: 1080,
-      look: undefined,
-      background: undefined,
-    } as unknown as Clip,
-    blob: new Blob(["imported"], { type: "video/mp4" }),
-  })),
+  importVideo: vi.fn(async (file: File) => {
+    const opening = file.name === "opener.mp4";
+    return {
+      clip: {
+        id: opening ? "opener-clip" : "clip-1",
+        assetId: opening ? "opener-asset" : "asset-1",
+        inPoint: 0,
+        outPoint: opening ? 3.5 : 100,
+        duration: opening ? 3.5 : 100,
+        width: 1920,
+        height: 1080,
+        look: undefined,
+        background: undefined,
+      } as unknown as Clip,
+      blob: new Blob(["imported"], { type: "video/mp4" }),
+    };
+  }),
   updateProjectThumbnail: vi.fn(async () => undefined),
 }));
 
@@ -130,5 +133,43 @@ describe("makeTrailer", () => {
       const words = cue.words?.length ? cue.words : cue.text.split(/\s+/).filter(Boolean);
       expect(words.length).toBeLessThanOrEqual(1);
     }
+  });
+
+  it("puts the opening shot first and shifts cues and overlays by its length", async () => {
+    const source = makeSource();
+    const laughs = [
+      { start: 100, end: 102 },
+      { start: 200, end: 202 },
+    ];
+    const result = await makeTrailer({
+      source,
+      laughs,
+      opener: new Blob(["opener"], { type: "video/mp4" }),
+      nameAt: (t) => (t < 150 ? "A" : "B"),
+      closing: "x",
+    });
+
+    expect(result.clips.length).toBe(3);
+    const openerClip = result.clips[0];
+    expect(openerClip.id).toBe("opener-clip");
+    const shift = openerClip.outPoint - openerClip.inPoint;
+    expect(shift).toBeCloseTo(3.5, 2);
+
+    const firstCut = result.clips[1];
+    const secondCut = result.clips[2];
+
+    const before = result.cues.find((c) => c.text === "before");
+    const second = result.cues.find((c) => c.text === "second");
+    expect(before).toBeDefined();
+    expect(second).toBeDefined();
+    expect(before!.start).toBeCloseTo(firstCut.inPoint + shift, 1);
+    expect(second!.start).toBeCloseTo(secondCut.inPoint + shift, 1);
+
+    const nameA = result.overlays.find((o) => o.kind === "text" && o.text === "A");
+    const closing = result.overlays.find((o) => o.kind === "text" && o.text === "x");
+    expect(nameA).toBeDefined();
+    expect(closing).toBeDefined();
+    expect(nameA!.start).toBeCloseTo(firstCut.inPoint + shift, 1);
+    expect(closing!.start).toBeCloseTo(secondCut.inPoint + shift, 1);
   });
 });

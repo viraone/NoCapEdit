@@ -19,6 +19,8 @@ export interface TrailerOptions {
   onProgress?: (message: string, progress: number | null) => void;
   nameAt?: (sourceProjectTime: number) => string;
   closing?: string;
+  /** An already trimmed short video to play before the kept moments. */
+  opener?: Blob;
 }
 
 const abortError = () => new DOMException("Cancelled", "AbortError");
@@ -73,6 +75,16 @@ async function makeTrailerInner(o: TrailerOptions): Promise<VideoProject> {
   // Not tagged with sourceProjectId: that marks a reel, which the start screen files away under its source.
 
   try {
+    let openerClip: Clip | null = null;
+    if (o.opener) {
+      onProgress?.("Adding the opening shot", null);
+      const openerFile = new File([o.opener], "opener.mp4", { type: "video/mp4" });
+      const opened = await importVideo(openerFile, trailer.id, (m) => onProgress?.(m, null));
+      openerClip = opened.clip;
+    }
+    // Everything after the opener starts this much later.
+    const openerLength = openerClip ? Math.max(0, openerClip.outPoint - openerClip.inPoint) : 0;
+
     const file = new File([media], "trailer.mp4", { type: "video/mp4" });
     const { clip, blob } = await importVideo(file, trailer.id, (m) => onProgress?.(m, null));
 
@@ -131,12 +143,12 @@ async function makeTrailerInner(o: TrailerOptions): Promise<VideoProject> {
       }
     }
 
-    trailer.clips = clips;
+    trailer.clips = openerClip ? [openerClip, ...clips] : clips;
     const cues: CaptionCue[] = [];
     for (let i = 0; i < rangeLayouts.length; i++) {
       const { range } = rangeLayouts[i];
       const pieceCues = cuesForRange(source.cues, range.start, range.end);
-      const off = offsets[i];
+      const off = offsets[i] + openerLength;
       for (const cue of pieceCues) {
         const copy = structuredClone(cue);
         copy.start += off;
@@ -150,7 +162,7 @@ async function makeTrailerInner(o: TrailerOptions): Promise<VideoProject> {
     const trailerPieces = clips.map((c, i) => {
       const range = madeRanges[i];
       const middle = (range.start + range.end) / 2;
-      return { start: c.inPoint, end: c.outPoint, name: o.nameAt?.(middle) ?? "" };
+      return { start: c.inPoint + openerLength, end: c.outPoint + openerLength, name: o.nameAt?.(middle) ?? "" };
     });
     trailer.overlays = trailerOverlays(trailerPieces, o.closing ?? "");
 

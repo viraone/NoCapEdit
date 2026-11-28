@@ -5,6 +5,9 @@ import { useEditor } from "@/store/editorStore";
 import { findSets, setAt } from "@/lib/recap/performers";
 import { layoutClips } from "@/lib/models/timeline";
 import { loadRecap, saveRecap } from "@/lib/recap/recapNames";
+import { cutPieces } from "@/lib/recap/cutPieces";
+import { clearOpener, loadOpener as loadSavedOpener, parseClock, saveOpener, type Opener } from "@/lib/recap/opener";
+import { whileBusy } from "@/lib/utils/busy";
 
 export function recapKey(projectId: string, clips: { id: string; inPoint: number; outPoint: number; speed?: number }[]): string {
   const parts = [projectId];
@@ -26,6 +29,13 @@ interface RecapState {
   closing: string;
   setClosing(text: string): void;
   keepOnly(ids: string[]): void;
+  /** The opening shot shared by every project, or null when none is saved. */
+  opener: Opener | null;
+  openerJob: { message: string; progress: number | null } | null;
+  openerError: string | null;
+  loadOpener(): Promise<void>;
+  addOpener(file: File, startText: string, seconds: number): Promise<void>;
+  removeOpener(): Promise<void>;
   making: { message: string; progress: number | null } | null;
   trailerId: string | null;
   make(): Promise<void>;
@@ -74,10 +84,46 @@ export const useRecap = create<RecapState>((set, get) => ({
   keepOnly: (ids) => {
     set({ kept: ids });
   },
+  opener: null,
+  openerJob: null,
+  openerError: null,
+  loadOpener: async () => {
+    set({ opener: await loadSavedOpener() });
+  },
+  addOpener: async (file, startText, seconds) => {
+    if (get().openerJob) return;
+    const start = parseClock(startText);
+    if (start === null) {
+      set({ openerError: "Start at must be a time like 0:00." });
+      return;
+    }
+    if (!Number.isFinite(seconds) || seconds < 0.5 || seconds > 10) {
+      set({ openerError: "Seconds must be between 0.5 and 10." });
+      return;
+    }
+    set({ openerJob: { message: "Opening the video", progress: null }, openerError: null });
+    try {
+      const cut = await whileBusy(() =>
+        cutPieces(file, [{ start, seconds }], {
+          onStatus: (message) => set({ openerJob: { message, progress: null } }),
+          onProgress: (progress) => set({ openerJob: { message: "Cutting the opening shot", progress } }),
+        }),
+      );
+      const opener: Opener = { name: file.name, blob: cut, seconds };
+      await saveOpener(opener);
+      set({ opener, openerJob: null });
+    } catch (e) {
+      set({ openerJob: null, openerError: e instanceof Error ? e.message : String(e) });
+    }
+  },
+  removeOpener: async () => {
+    await clearOpener();
+    set({ opener: null, openerError: null });
+  },
   making: null,
   trailerId: null,
   make: async () => {
-    if (get().making || get().job) return;
+    if (get().making || get().job || get().openerJob) return;
     const project = useEditor.getState().project;
     if (!project) return;
     const laughs = get().laughs ?? [];
@@ -89,6 +135,7 @@ export const useRecap = create<RecapState>((set, get) => ({
     const sets = findSets(project.cues ?? [], duration);
     const names = get().names;
     const closing = get().closing;
+    const opener = get().opener;
 
     const controller = new AbortController();
     makeController = controller;
@@ -110,6 +157,7 @@ export const useRecap = create<RecapState>((set, get) => ({
           return i < 0 ? "" : (names[i] ?? sets[i].name);
         },
         closing,
+        opener: opener?.blob,
       });
       if (myRunId !== makeRunId) return;
       set({ trailerId: result.id, making: null });
