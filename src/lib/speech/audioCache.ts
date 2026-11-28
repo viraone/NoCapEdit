@@ -5,10 +5,10 @@ const cache = new Map<string, Promise<DecodedAudio | null>>();
 const MAX_ENTRIES = 3;
 
 /** Decodes (once) the 16 kHz mono audio of an asset for speech recognition. */
-export function getSpeechAudio(assetId: string, blob: Blob): Promise<DecodedAudio | null> {
+export function getSpeechAudio(assetId: string, blob: Blob, onProgress?: (fraction: number) => void): Promise<DecodedAudio | null> {
   const hit = cache.get(assetId);
   if (hit) return hit;
-  const p = decodeAudio(blob).catch(() => null);
+  const p = decodeAudio(blob, undefined, onProgress).catch(() => null);
   // The timeline waveform comes from the same samples, so a file import skipped gets one now.
   void p.then((d) => d && savePeaksIfMissing(assetId, d)).catch(() => undefined);
   cache.set(assetId, p);

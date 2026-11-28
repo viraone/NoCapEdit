@@ -61,13 +61,19 @@ export async function generateCaptions(o: GenerateCaptionsOptions): Promise<Gene
   let speakerOffset = 0;
   let device = "";
   let diarizationNote = "";
+  let unreadable = false;
   for (const [i, layout] of layouts.entries()) {
     const prefix = layouts.length > 1 ? `Clip ${i + 1}/${layouts.length}: ` : "";
     o.onProgress?.({ message: `${prefix}Decoding audio`, progress: null });
     const asset = await getAsset(layout.clip.assetId);
     if (!asset) continue;
-    const audio = await getSpeechAudio(asset.id, asset.blob);
-    if (!audio) continue;
+    const audio = await getSpeechAudio(asset.id, asset.blob, (fraction) => o.onProgress?.({ message: `${prefix}Decoding audio`, progress: fraction }));
+    // Reading a very long recording takes a while: Cancel pressed meanwhile stops here.
+    if (o.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    if (!audio) {
+      if (layout.clip.hasAudio) unreadable = true;
+      continue;
+    }
     const samples = sliceSamples(audio.samples, layout.clip.inPoint, layout.clip.outPoint, audio.sampleRate);
     if (samples.length < audio.sampleRate * 0.3) continue;
     const result = await transcribeWithSpeakers(samples, {
@@ -93,7 +99,10 @@ export async function generateCaptions(o: GenerateCaptionsOptions): Promise<Gene
     }
     if (result.diarizationError) diarizationNote = ` Speaker detection failed: ${result.diarizationError}`;
   }
-  if (!words.length) return null;
+  if (!words.length) {
+    if (unreadable) throw new Error("This video's sound could not be read, so no captions were made.");
+    return null;
+  }
   const cues = o.diarize ? buildSpeakerCues(words, segments.length ? segments : null, o.rules) : buildCues(words, o.rules);
   const speakerCount = new Set(cues.map((c) => c.speaker).filter((s) => s !== undefined)).size;
   return { cues, wordCount: words.length, device, speakerCount, hasSpeakers: segments.length > 0, diarizationNote };

@@ -1,7 +1,9 @@
 /**
- * Client-side audio decoding with the Web Audio API. Produces 16 kHz mono
- * samples (what Whisper expects) and waveform peaks for the timeline.
+ * Client-side audio decoding. Produces 16 kHz mono samples (what Whisper
+ * expects) and waveform peaks for the timeline. Ordinary files go through the
+ * Web Audio API; very large ones are read in pieces (WebCodecs).
  */
+import { MonoResampler } from "@/lib/mobile/audio";
 
 export interface DecodedAudio {
   samples: Float32Array;
@@ -16,6 +18,9 @@ export interface Peaks {
 }
 
 export const SPEECH_SAMPLE_RATE = 16000;
+
+/** Above this the whole file cannot be held in memory (a 31 GB recording), so its sound is read in pieces. */
+export const PIECEWISE_DECODE_BYTES = 1_200_000_000;
 
 function mixDown(buffer: AudioBuffer): Float32Array {
   const channels = buffer.numberOfChannels;
@@ -42,11 +47,41 @@ function resampleLinear(input: Float32Array, from: number, to: number): Float32A
   return out;
 }
 
+/** Demuxes and decodes the audio track a packet at a time: only the resampled mono sound is kept. */
+async function decodeInPieces(blob: Blob, sampleRate: number, onProgress?: (fraction: number) => void): Promise<DecodedAudio | null> {
+  const mb = await import("mediabunny");
+  const input = new mb.Input({ source: new mb.BlobSource(blob), formats: mb.ALL_FORMATS });
+  try {
+    const track = await input.getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) return null;
+    const total = await input.computeDuration([track]).catch(() => 0);
+    let resampler: MonoResampler | null = null;
+    let percent = -1;
+    for await (const { buffer, timestamp } of new mb.AudioBufferSink(track).buffers()) {
+      resampler ??= new MonoResampler(buffer.sampleRate, sampleRate);
+      resampler.push(mixDown(buffer));
+      const now = total > 0 ? Math.min(99, Math.floor((timestamp / total) * 100)) : -1;
+      if (now > percent) {
+        percent = now;
+        onProgress?.(now / 100);
+      }
+    }
+    if (!resampler || resampler.length === 0) return null;
+    const samples = resampler.finish();
+    return { samples, sampleRate, duration: samples.length / sampleRate };
+  } finally {
+    input.dispose();
+  }
+}
+
 /**
  * Decodes the audio track of any media Blob (video or audio) to mono samples
  * at `sampleRate`. Returns null when the file has no decodable audio.
+ * `onProgress` (0 to 1) is only reported for files read in pieces.
  */
-export async function decodeAudio(blob: Blob, sampleRate = SPEECH_SAMPLE_RATE): Promise<DecodedAudio | null> {
+export async function decodeAudio(blob: Blob, sampleRate = SPEECH_SAMPLE_RATE, onProgress?: (fraction: number) => void): Promise<DecodedAudio | null> {
+  if (blob.size > PIECEWISE_DECODE_BYTES) return decodeInPieces(blob, sampleRate, onProgress).catch(() => null);
+
   // decodeAudioData takes ownership of the bytes, so a retry reads the file
   // again rather than keeping a second copy of it in memory the whole time
   // (a 10-minute 4K phone video is over 1.5 GB).
