@@ -16,7 +16,7 @@ const TOOLS: { id: ToolId; label: string; hint: string; icon: React.ComponentTyp
   { id: "music", label: "Music", hint: "Music, sound effects and voice-over", icon: Music, color: "#64d2ff" },
   { id: "reels", label: "Reels", hint: "Cut the best moments into short reels", icon: Clapperboard, color: "#ff375f" },
   // Only the button so far: its panel is a placeholder until what it does is decided.
-  { id: "recap", label: "Recap Highlight Reel", hint: "Nothing here yet", icon: Sparkles, color: "#5e5ce6" },
+  { id: "recap", label: "Recap Highlight Reel", hint: "Find the biggest laughs", icon: Sparkles, color: "#5e5ce6" },
   { id: "export", label: "Export", hint: "Render the finished video", icon: Share, color: "#30d158" },
   // Desktop app only (DESKTOP_ONLY below): it needs the Android emulator.
   { id: "instagram", label: "Instagram", hint: "Send the finished video to the phone and post it", icon: Send, color: "#e1306c" },

@@ -25,6 +25,7 @@
     "@ffmpeg/util": "^0.12.2",
     "@huggingface/transformers": "^4.3.0",
     "@lottiefiles/dotlottie-web": "^0.80.0",
+    "@mediapipe/tasks-audio": "^1.0.1",
     "@mediapipe/tasks-vision": "^1.0.1",
     "fflate": "^0.8.3",
     "idb": "^8.0.3",

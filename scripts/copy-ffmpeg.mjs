@@ -12,9 +12,10 @@ const sources = [
   ["@ffmpeg/core/dist/esm", "core"],
   ["@ffmpeg/core-mt/dist/esm", "core-mt"],
 ];
-// MediaPipe vision runtime (face detection for auto-reframe), served same-origin.
+// MediaPipe runtimes, served same-origin: vision (face detection for auto-reframe) and audio (laughs for Recap).
 const extra = [
   ["@mediapipe/tasks-vision/wasm", join(root, "public", "mediapipe", "wasm")],
+  ["@mediapipe/tasks-audio/wasm", join(root, "public", "mediapipe", "wasm")],
   ["@lottiefiles/dotlottie-web/dist", join(root, "public", "lottie")],
 ];
 
@@ -82,10 +83,13 @@ if (existsSync(join(threadedCore, "ffmpeg-core.wasm"))) {
   console.log(`[copy-ffmpeg] core-mt heap raised to ${(THREADED_HEAP_PAGES * 65536) / 2 ** 30} GB`);
 }
 
+// Each folder is emptied once, before any copy: the two MediaPipe runtimes share one folder.
+for (const dest of new Set(extra.map(([, dest]) => dest))) {
+  if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+}
 for (const [src, dest] of extra) {
   const from = join(root, "node_modules", src);
   if (!existsSync(from)) continue;
-  if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   cpSync(from, dest, { recursive: true, filter: (f) => !f.endsWith(".d.ts") && !f.endsWith(".map") && (f.endsWith(".wasm") || !f.includes("dotlottie-web/dist/") || f.endsWith("dist")) });
   console.log(`[copy-ffmpeg] ${src} -> ${dest.replace(root + "/", "")}`);
