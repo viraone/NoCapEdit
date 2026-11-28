@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Smile, Play, Square, Pencil } from "lucide-react";
+import { Smile, Play, Square, Pencil, ChevronDown, ChevronUp, Check, Plus } from "lucide-react";
+import { cx } from "@/lib/utils/cx";
 import { useRouter } from "next/navigation";
 import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
@@ -28,6 +29,15 @@ function formatTime(seconds: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+function StepHeading({ n, title }: { n: number; title: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-sys-blue text-[14px] font-bold text-white">{n}</span>
+      <h3 className="text-[17px] font-bold text-white">{title}</h3>
+    </div>
+  );
+}
+
 export function RecapPanel() {
   const project = useProject();
   const router = useRouter();
@@ -37,6 +47,8 @@ export function RecapPanel() {
   const [openerStart, setOpenerStart] = useState("0:00");
   const [openerSeconds, setOpenerSeconds] = useState(3.5);
   const [openMomentId, setOpenMomentId] = useState<string | null>(null);
+  const [namesOpen, setNamesOpen] = useState(false);
+  const [extrasOpen, setExtrasOpen] = useState(false);
 
   // The opening shot is shared by every project, so it is read once when the panel opens.
   useEffect(() => {
@@ -101,16 +113,17 @@ export function RecapPanel() {
     <>
       <PanelHeader
         title="Recap Highlight Reel"
-        body={<p className="rf-read">Finds the biggest laughs in your video, on this Mac.</p>}
+        body={<p className="rf-read rf-recap-intro">Finds the biggest laughs in your video, on this Mac.</p>}
       />
-      <PanelSection title="Find the laughs">
+      <PanelSection className="rf-recap">
         {!project || !clips.length ? (
           <EmptyState icon={<Smile size={22} />} title="No video yet" description="Import a recording in Clips first." />
         ) : (
           <>
+            <StepHeading n={1} title="Find the laughs" />
             {!job && (
               <Button
-                variant="primary"
+                variant={laughs ? "outline" : "primary"}
                 size="lg"
                 className="w-full"
                 onClick={() => run()}
@@ -122,243 +135,286 @@ export function RecapPanel() {
             )}
             {job && (
               <div className="space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5" data-recap-status>
-                <p className="text-[13px] font-semibold text-white">{job.message}</p>
+                <p className="text-[15px] font-semibold text-white">{job.message}</p>
                 <ProgressBar value={job.progress} />
                 {job.progress !== null && (
-                  <p className="text-[11px] text-label-2">{Math.round(job.progress * 100)}%</p>
+                  <p className="text-[14px] text-label-2">{Math.round(job.progress * 100)}%</p>
                 )}
-                <Button variant="outline" size="xs" onClick={cancel}>
-                  <Square size={11} /> Cancel
+                <Button variant="outline" size="bar" onClick={cancel}>
+                  <Square size={14} /> Cancel
                 </Button>
               </div>
             )}
-            {error && <p className="rf-read-note rf-error mt-2">{error}</p>}
+            {error && <p className="rf-read-note rf-error">{error}</p>}
+            {showResults && laughs.length === 0 && (
+              <p className="rf-read-note">No laughs were found.</p>
+            )}
+
             {showResults && laughs.length > 0 && (
-              <div className="mt-4 space-y-2 rounded-lg border border-sys-gray4 bg-sys-gray5 p-2.5">
-                {kept.length === 0 ? (
-                  <p className="rf-read-note">Tick the ones to keep. About 6 or 7 makes a 30 second trailer.</p>
-                ) : (
-                  <p className="text-[13px] font-semibold text-white">{kept.length} kept, about {keptSeconds} s</p>
-                )}
+              <>
+                <div className="pt-3">
+                  <StepHeading n={2} title="Pick your moments" />
+                </div>
+                <p className="text-[15px]">Play to listen. Add the ones you want: 6 or 7 makes about 30 seconds.</p>
                 {!hasCues && (
                   <p className="rf-read-note">No captions yet. Make them in Subtitles first and the trailer will have captions and cleaner cuts.</p>
                 )}
                 {sets.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[13px] font-semibold text-white">Performers</p>
-                    {sets.map((set, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="shrink-0 text-[13px] text-white tabular-nums">{formatTime(set.start)}</span>
-                        <input
-                          type="text"
-                          data-recap-name
-                          aria-label={`Name of performer ${i + 1}`}
-                          placeholder="Name"
-                          value={names[i] ?? set.name}
-                          onChange={(e) => setName(i, e.target.value)}
-                          className="min-w-0 flex-1 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white placeholder:text-label-2"
-                        />
-                      </div>
-                    ))}
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onClick={() => keepOnly(oneEach(laughs ?? [], sets))}
-                      data-recap-one-each
-                    >
-                      Tick the best of each performer
-                    </Button>
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <label className="text-[13px] font-semibold text-white">Closing line</label>
-                  <input
-                    type="text"
-                    data-recap-closing
-                    value={closing}
-                    onChange={(e) => setClosing(e.target.value)}
-                    className="w-full rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white placeholder:text-label-2"
-                  />
-                </div>
-                <div className="space-y-1.5" data-recap-opener>
-                  <p className="text-[13px] font-semibold text-white">Opening shot</p>
-                  {opener ? (
-                    <div className="flex items-center gap-2">
-                      <p className="min-w-0 flex-1 truncate text-[11px] text-label-2" data-recap-opener-saved>
-                        Opening shot: {opener.name}, {opener.seconds} s
-                      </p>
-                      <Button variant="ghost" size="xs" onClick={() => void removeOpener()} data-recap-opener-remove>
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <input
-                        type="file"
-                        accept="video/*"
-                        data-recap-opener-file
-                        aria-label="Opening shot video"
-                        disabled={!!openerJob}
-                        onChange={handleOpenerFile}
-                        className="block w-full text-[11px] text-label-2 file:mr-2 file:rounded-md file:border-0 file:bg-sys-gray4 file:px-2 file:py-1 file:text-[11px] file:text-white"
-                      />
-                      <div className="flex items-center gap-2">
-                        <label className="shrink-0 text-[11px] text-label-2" htmlFor="recap-opener-start">Start at</label>
-                        <input
-                          id="recap-opener-start"
-                          type="text"
-                          data-recap-opener-start
-                          placeholder="0:00"
-                          value={openerStart}
-                          disabled={!!openerJob}
-                          onChange={(e) => setOpenerStart(e.target.value)}
-                          className="w-16 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white placeholder:text-label-2"
-                        />
-                        <label className="shrink-0 text-[11px] text-label-2" htmlFor="recap-opener-seconds">Seconds</label>
-                        <input
-                          id="recap-opener-seconds"
-                          type="number"
-                          data-recap-opener-seconds
-                          min={0.5}
-                          max={10}
-                          step={0.5}
-                          value={openerSeconds}
-                          disabled={!!openerJob}
-                          onChange={(e) => setOpenerSeconds(Number(e.target.value))}
-                          className="w-16 rounded-md border border-sys-gray4 bg-sys-gray5 px-2 py-1 text-[13px] text-white"
-                        />
-                      </div>
-                    </>
-                  )}
-                  {openerJob && (
-                    <div className="space-y-1" data-recap-opener-status>
-                      <p className="text-[11px] text-label-2">{openerJob.message}</p>
-                      <ProgressBar value={openerJob.progress} />
-                    </div>
-                  )}
-                  {openerError && <p className="rf-read-note rf-error" data-recap-opener-error>{openerError}</p>}
-                </div>
-                {!making && (
                   <Button
-                    variant="primary"
+                    variant="outline"
+                    size="bar"
                     className="w-full"
-                    onClick={() => make()}
-                    disabled={kept.length === 0 || !!making || !!openerJob}
-                    data-recap-make
+                    onClick={() => keepOnly(oneEach(laughs ?? [], sets))}
+                    data-recap-one-each
                   >
-                    Make the trailer
+                    Pick the best of each performer
                   </Button>
                 )}
-                {making && (
-                  <div className="space-y-2" data-recap-making>
-                    <p className="text-[13px] font-semibold text-white">{making.message}</p>
-                    <ProgressBar value={making.progress} />
-                    {making.progress !== null && (
-                      <p className="text-[11px] text-label-2">{Math.round(making.progress * 100)}%</p>
+                {sets.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      data-recap-names-toggle
+                      aria-expanded={namesOpen}
+                      onClick={() => setNamesOpen((open) => !open)}
+                      className="flex h-[40px] w-full items-center justify-between gap-2 rounded-[10px] border border-sys-gray4 bg-sys-gray5 px-3 text-[15px] font-semibold text-white"
+                    >
+                      <span>Performer names ({sets.length})</span>
+                      {namesOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                    {namesOpen && (
+                      <div className="space-y-2">
+                        {sets.map((set, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="w-[56px] shrink-0 text-[14px] text-label-2 tabular-nums">{formatTime(set.start)}</span>
+                            <input
+                              type="text"
+                              data-recap-name
+                              aria-label={`Name of performer ${i + 1}`}
+                              placeholder="Name"
+                              value={names[i] ?? set.name}
+                              onChange={(e) => setName(i, e.target.value)}
+                              className="h-[40px] w-full min-w-0 flex-1 rounded-[10px] border border-sys-gray4 bg-sys-gray5 px-3 text-[15px] text-white placeholder:text-label-2"
+                            />
+                          </div>
+                        ))}
+                      </div>
                     )}
-                    <Button variant="outline" size="xs" onClick={cancelMake}>
-                      <Square size={11} /> Cancel
-                    </Button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  data-recap-extras-toggle
+                  aria-expanded={extrasOpen}
+                  onClick={() => setExtrasOpen((open) => !open)}
+                  className="flex h-[40px] w-full items-center justify-between gap-2 rounded-[10px] border border-sys-gray4 bg-sys-gray5 px-3 text-[15px] font-semibold text-white"
+                >
+                  <span>Closing line and opening shot</span>
+                  {extrasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+                {extrasOpen && (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-[14px] font-semibold text-white">Closing line</label>
+                      <input
+                        type="text"
+                        data-recap-closing
+                        value={closing}
+                        onChange={(e) => setClosing(e.target.value)}
+                        className="h-[40px] w-full rounded-[10px] border border-sys-gray4 bg-sys-gray5 px-3 text-[15px] text-white placeholder:text-label-2"
+                      />
+                    </div>
+                    <div className="space-y-2" data-recap-opener>
+                      <p className="text-[14px] font-semibold text-white">Opening shot</p>
+                      {opener ? (
+                        <div className="flex items-center gap-2">
+                          <p className="min-w-0 flex-1 truncate text-[14px] text-label-2" data-recap-opener-saved>
+                            Opening shot: {opener.name}, {opener.seconds} s
+                          </p>
+                          <Button variant="ghost" size="bar" onClick={() => void removeOpener()} data-recap-opener-remove>
+                            Remove
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            type="file"
+                            accept="video/*"
+                            data-recap-opener-file
+                            aria-label="Opening shot video"
+                            disabled={!!openerJob}
+                            onChange={handleOpenerFile}
+                            className="block w-full text-[14px] text-label-2 file:mr-2 file:rounded-[10px] file:border-0 file:bg-sys-gray4 file:px-3 file:py-2 file:text-[14px] file:text-white"
+                          />
+                          <div className="flex items-center gap-2">
+                            <label className="shrink-0 text-[14px] text-label-2" htmlFor="recap-opener-start">Start at</label>
+                            <input
+                              id="recap-opener-start"
+                              type="text"
+                              data-recap-opener-start
+                              placeholder="0:00"
+                              value={openerStart}
+                              disabled={!!openerJob}
+                              onChange={(e) => setOpenerStart(e.target.value)}
+                              className="h-[40px] w-20 rounded-[10px] border border-sys-gray4 bg-sys-gray5 px-3 text-[15px] text-white placeholder:text-label-2"
+                            />
+                            <label className="shrink-0 text-[14px] text-label-2" htmlFor="recap-opener-seconds">Seconds</label>
+                            <input
+                              id="recap-opener-seconds"
+                              type="number"
+                              data-recap-opener-seconds
+                              min={0.5}
+                              max={10}
+                              step={0.5}
+                              value={openerSeconds}
+                              disabled={!!openerJob}
+                              onChange={(e) => setOpenerSeconds(Number(e.target.value))}
+                              className="h-[40px] w-20 rounded-[10px] border border-sys-gray4 bg-sys-gray5 px-3 text-[15px] text-white"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+                {openerJob && (
+                  <div className="space-y-2" data-recap-opener-status>
+                    <p className="text-[14px] text-label-2">{openerJob.message}</p>
+                    <ProgressBar value={openerJob.progress} />
                   </div>
                 )}
-              </div>
-            )}
-            {showResults && trailerId && (
-              <div className="mt-2 space-y-2">
-                <p className="rf-read-note">Trailer made.</p>
-                <Button
-                  variant="primary"
-                  className="w-full"
-                  onClick={() => {
-                    engine.pause();
-                    router.push(`/editor?id=${trailerId}&tool=recap`);
-                  }}
-                  data-recap-open
-                >
-                  Open the trailer
-                </Button>
-              </div>
-            )}
-            {showResults && (
-              laughs.length === 0 ? (
-                <p className="rf-read-note mt-2">No laughs were found.</p>
-              ) : (
-                <div className="mt-4 space-y-2">
-                  <p className="text-[13px] font-semibold text-white">{laughs.length} moments, biggest first</p>
-                  <ul className="space-y-1.5">
-                    {laughs.map((laugh, i) => {
-                      const rank = i + 1;
-                      const seconds = Math.max(1, Math.round(laugh.end - laugh.start));
-                      const isPlaying = playingId === laugh.id;
-                      const isKept = kept.includes(laugh.id);
-                      const setIdx = setAt(sets, laugh.start);
-                      const performerName = setIdx >= 0 ? (names[setIdx] ?? sets[setIdx].name) : "";
-                      const label = performerName ? `${performerName} · ${seconds} s` : `${seconds} s laugh`;
-                      const hasEdit = edits[laugh.id] !== undefined;
-                      const isOpen = openMomentId === laugh.id;
-                      return (
-                        <li key={laugh.id} className="rounded-lg border border-sys-gray4 bg-sys-gray5/60 px-2.5 py-2" data-recap-laugh>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={isKept}
-                              onChange={() => toggleKeep(laugh.id)}
-                              data-recap-keep
-                              aria-label={`Keep moment ${rank}`}
-                            />
-                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-sys-gray4 text-[11px] font-semibold text-white/80">{rank}</span>
-                            <button
-                              type="button"
-                              className="min-w-0 flex-1 text-left text-[13px] text-white tabular-nums hover:underline"
-                              onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
-                              data-recap-open-moment
-                              aria-expanded={isOpen}
-                            >
-                              {formatTime(laugh.start)}
-                            </button>
-                            <Button
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
-                              data-recap-edit-moment
-                              aria-expanded={isOpen}
-                              aria-label={`${isOpen ? "Close" : "Edit"} moment ${rank}`}
-                            >
-                              <Pencil size={11} /> {isOpen ? "Close" : "Edit"}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => handlePlay(laugh)}
-                              data-recap-play
-                              aria-label={`Play moment ${rank}`}
-                            >
-                              {isPlaying ? <Square size={11} /> : <Play size={11} />} {isPlaying ? "Stop" : "Play"}
-                            </Button>
-                          </div>
-                          {/* The name has its own line: beside the buttons there is no room for it. */}
-                          <button
-                            type="button"
-                            className="block w-full truncate text-left text-[11px] text-label-2 hover:underline"
-                            onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
-                            data-recap-open-moment
-                            aria-expanded={isOpen}
+                {openerError && <p className="rf-read-note rf-error" data-recap-opener-error>{openerError}</p>}
+                <p className="text-[14px] text-label-2">{laughs.length} moments, biggest first</p>
+                <ul className="space-y-2.5">
+                  {laughs.map((laugh, i) => {
+                    const rank = i + 1;
+                    const seconds = Math.max(1, Math.round(laugh.end - laugh.start));
+                    const isPlaying = playingId === laugh.id;
+                    const isKept = kept.includes(laugh.id);
+                    const setIdx = setAt(sets, laugh.start);
+                    const performerName = setIdx >= 0 ? (names[setIdx] ?? sets[setIdx].name) : "";
+                    const hasEdit = edits[laugh.id] !== undefined;
+                    const isOpen = openMomentId === laugh.id;
+                    return (
+                      <li
+                        key={laugh.id}
+                        data-recap-laugh
+                        className={cx(
+                          "space-y-2.5 rounded-xl border p-3",
+                          isKept ? "border-sys-blue bg-sys-blue/10" : "border-sys-gray4 bg-sys-gray5/60",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          className="block w-full text-left"
+                          onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
+                          data-recap-open-moment
+                          aria-expanded={isOpen}
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate text-[17px] font-bold text-white">{performerName || "Laugh"}</span>
+                            <span className="shrink-0 text-[14px] font-semibold text-label-2 tabular-nums">#{rank}</span>
+                          </span>
+                          <span className="mt-1 block text-[14px] text-label-2 tabular-nums">
+                            {formatTime(laugh.start)} · {seconds} s laugh{hasEdit ? " · edited" : ""}
+                          </span>
+                        </button>
+                        <div className="grid grid-cols-3 gap-2">
+                          <Button
+                            variant="secondary"
+                            size="bar"
+                            className="w-full !px-1"
+                            onClick={() => handlePlay(laugh)}
+                            data-recap-play
+                            aria-label={`Play moment ${rank}`}
                           >
-                            {label}{hasEdit ? " · edited" : ""}
-                          </button>
-                          {isOpen && (
-                            <MomentEditor laugh={laugh} cues={cues} duration={duration} />
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )
+                            {isPlaying ? <Square size={14} /> : <Play size={14} />} {isPlaying ? "Stop" : "Play"}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="bar"
+                            className="w-full !px-1"
+                            onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
+                            data-recap-edit-moment
+                            aria-expanded={isOpen}
+                            aria-label={`${isOpen ? "Close" : "Edit"} moment ${rank}`}
+                          >
+                            <Pencil size={14} /> {isOpen ? "Close" : "Edit"}
+                          </Button>
+                          <Button
+                            variant={isKept ? "primary" : "secondary"}
+                            size="bar"
+                            className="w-full !px-1"
+                            onClick={() => toggleKeep(laugh.id)}
+                            data-recap-keep
+                            role="checkbox"
+                            aria-checked={isKept}
+                            aria-label={`Keep moment ${rank}`}
+                          >
+                            {isKept ? <Check size={14} /> : <Plus size={14} />} {isKept ? "Added" : "Add"}
+                          </Button>
+                        </div>
+                        {isOpen && (
+                          <MomentEditor laugh={laugh} cues={cues} duration={duration} />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
             )}
           </>
         )}
       </PanelSection>
+
+      {showResults && laughs.length > 0 && (
+        <div data-recap-footer className="rf-recap sticky bottom-0 z-10 mt-auto shrink-0 space-y-2 border-t border-sys-gray4 bg-sys-gray6 px-4 py-3">
+          <p className="text-[14px] text-label-2">
+            {kept.length === 0 ? "Add a moment to start your trailer" : `${kept.length} in the trailer, about ${keptSeconds} s`}
+          </p>
+          {!making && (
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              onClick={() => make()}
+              disabled={kept.length === 0 || !!making || !!openerJob}
+              data-recap-make
+            >
+              Make the trailer
+            </Button>
+          )}
+          {making && (
+            <div className="space-y-2" data-recap-making>
+              <p className="text-[15px] font-semibold text-white">{making.message}</p>
+              <ProgressBar value={making.progress} />
+              {making.progress !== null && (
+                <p className="text-[14px] text-label-2">{Math.round(making.progress * 100)}%</p>
+              )}
+              <Button variant="outline" size="bar" className="w-full" onClick={cancelMake}>
+                <Square size={14} /> Cancel
+              </Button>
+            </div>
+          )}
+          {trailerId && (
+            <>
+              <p className="text-[14px] text-label-2">Trailer made.</p>
+              <Button
+                variant="primary"
+                size="bar"
+                className="w-full"
+                onClick={() => {
+                  engine.pause();
+                  router.push(`/editor?id=${trailerId}&tool=recap`);
+                }}
+                data-recap-open
+              >
+                Open the trailer
+              </Button>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }

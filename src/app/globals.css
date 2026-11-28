@@ -283,6 +283,16 @@ body {
 .rf-panel .text-\[12px\] { font-size: 13.5px; }
 .rf-panel .text-\[13px\] { font-size: 14px; }
 .rf-panel .text-\[15px\] { font-size: 16px; }
+/* Recap Highlight Reel: a wider panel with larger text than the other tools. The selectors are
+   deliberately longer than the desktop skin's, which shrinks long and three-across buttons. */
+.rf-panel:has(.rf-recap) .rf-panel-title { font-size: 14px; }
+.rf-panel.rf-panel .rf-read.rf-recap-intro { font-size: 15px; }
+.rf-panel .rf-recap .rf-read-note { font-size: 15px; }
+.rf-panel .rf-recap button.whitespace-nowrap.w-full,
+.rf-panel .rf-recap .grid-cols-3 > button.whitespace-nowrap { font-size: 15px; letter-spacing: normal; }
+.rf-panel .rf-recap .grid-cols-3 > button.whitespace-nowrap { gap: 6px; }
+/* The skin pads the bottom of the panel: the pinned footer sits flush over it. */
+.rf-skin > [data-recap-footer] { bottom: -10px; margin-bottom: -10px; }
 
 
 /* Reading text: sentences people are meant to read and remember, as opposed

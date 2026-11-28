@@ -119,67 +119,77 @@ export function MomentEditor({ laugh, cues, duration }: MomentEditorProps) {
   const playheadInside = currentTime >= current.start && currentTime <= current.end;
 
   return (
-    <div className="mt-1.5 space-y-1.5 rounded-md border border-sys-gray4 bg-sys-gray5/80 p-2" data-moment-editor>
-      <p className="text-[11px] text-label-2">
+    <div className="space-y-2.5 rounded-lg border border-sys-gray4 bg-sys-gray5/80 p-3" data-moment-editor>
+      <p className="text-[15px] text-label-2">
         Plays {formatClock(current.start)} to {formatClock(current.end)} · {totalSeconds.toFixed(1)} s
       </p>
 
-      <div className="flex items-center gap-1.5">
-        <span className="shrink-0 text-[11px] font-semibold text-white">Start</span>
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={() => handleNudgeStart(-1)}
-          data-moment-start-earlier
-        >
-          − 1 s
-        </Button>
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={() => handleNudgeStart(1)}
-          data-moment-start-later
-        >
-          + 1 s
-        </Button>
+      <div className="flex items-center gap-2">
+        <span className="w-[56px] shrink-0 text-[15px] font-semibold text-white">Starts</span>
+        <div className="grid flex-1 grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            size="bar"
+            className="w-full"
+            onClick={() => handleNudgeStart(-1)}
+            data-moment-start-earlier
+          >
+            1 s earlier
+          </Button>
+          <Button
+            variant="outline"
+            size="bar"
+            className="w-full"
+            onClick={() => handleNudgeStart(1)}
+            data-moment-start-later
+          >
+            1 s later
+          </Button>
+        </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <span className="shrink-0 text-[11px] font-semibold text-white">End</span>
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={() => handleNudgeEnd(-1)}
-          data-moment-end-earlier
-        >
-          − 1 s
-        </Button>
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={() => handleNudgeEnd(1)}
-          data-moment-end-later
-        >
-          + 1 s
-        </Button>
+      <div className="flex items-center gap-2">
+        <span className="w-[56px] shrink-0 text-[15px] font-semibold text-white">Ends</span>
+        <div className="grid flex-1 grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            size="bar"
+            className="w-full"
+            onClick={() => handleNudgeEnd(-1)}
+            data-moment-end-earlier
+          >
+            1 s earlier
+          </Button>
+          <Button
+            variant="outline"
+            size="bar"
+            className="w-full"
+            onClick={() => handleNudgeEnd(1)}
+            data-moment-end-later
+          >
+            1 s later
+          </Button>
+        </div>
       </div>
 
       <Button
         variant="outline"
-        size="xs"
+        size="bar"
+        className="w-full"
         onClick={handlePlay}
         data-moment-play
       >
-        {playing ? <Square size={11} /> : <Play size={11} />} {playing ? "Stop" : "Play this"}
+        {playing ? <Square size={14} /> : <Play size={14} />} {playing ? "Stop" : "Play this"}
       </Button>
 
-      <div className="space-y-1">
-        <p className="text-[11px] font-semibold text-white">Cut out a part</p>
-        <p className="text-[10px] text-label-2">Press Play this, then mark where the dead part starts and ends.</p>
-        <div className="flex items-center gap-1.5">
+      <div className="space-y-2">
+        <p className="text-[17px] font-bold text-white">Cut out a middle part</p>
+        <p className="text-[15px]">Press Play this. When the dull bit starts press Cut from here, and when it ends press Cut to here.</p>
+        <div className="grid grid-cols-2 gap-2">
           <Button
             variant="outline"
-            size="xs"
+            size="bar"
+            className="w-full"
             onClick={handleCutFrom}
             disabled={!playheadInside}
             data-moment-cut-from
@@ -188,7 +198,8 @@ export function MomentEditor({ laugh, cues, duration }: MomentEditorProps) {
           </Button>
           <Button
             variant="outline"
-            size="xs"
+            size="bar"
+            className="w-full"
             onClick={handleCutTo}
             disabled={!playheadInside || cutFrom === null}
             data-moment-cut-to
@@ -196,14 +207,19 @@ export function MomentEditor({ laugh, cues, duration }: MomentEditorProps) {
             Cut to here
           </Button>
         </div>
+        {cutFrom !== null && (
+          <p className="text-[14px] text-label-2">
+            Cut starts at {formatClock(cutFrom)}. Now press Cut to here.
+          </p>
+        )}
         {current.cut && (
-          <div className="flex items-center gap-1.5">
-            <p className="text-[11px] text-label-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[14px] text-label-2">
               Leaves out {formatClock(current.cut.start)} to {formatClock(current.cut.end)}
             </p>
             <Button
               variant="ghost"
-              size="xs"
+              size="bar"
               onClick={handleUndoCut}
             >
               Undo cut
@@ -215,10 +231,10 @@ export function MomentEditor({ laugh, cues, duration }: MomentEditorProps) {
       {hasEdit && (
         <Button
           variant="ghost"
-          size="xs"
+          size="bar"
           onClick={handleReset}
         >
-          Reset
+          Undo all changes
         </Button>
       )}
     </div>
