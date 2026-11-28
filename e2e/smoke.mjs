@@ -75,7 +75,7 @@ try {
   await page.waitForFunction(() => /Cues \([1-9]\d*\)/i.test(document.body.innerText) || /Speech recognition error|failed|Error:/i.test(document.body.innerText), null, { timeout: 8 * 60_000 });
   const cueText = await page.locator("[data-cue] input").first().inputValue();
   const cueCount = await page.evaluate(() => Number(document.body.innerText.match(/Cues \((\d+)\)/i)?.[1] ?? 0));
-  if (!cueCount) throw new Error(`no cues; panel says: ${await page.locator("aside").innerText()}`);
+  if (!cueCount) throw new Error(`no cues; panel says: ${await page.locator("aside.rf-panel").innerText()}`);
   log(`captions: ${cueCount} cues in ${Math.round((Date.now() - started) / 1000)}s, first: "${cueText}"`);
   const transcript = await page.evaluate(() => Array.from(document.querySelectorAll("[data-cue] input")).map((i) => i.value).join(" "));
   log("transcript:", transcript);
@@ -92,8 +92,8 @@ try {
   page.on("download", (d) => downloads.push(d));
   const t0 = Date.now();
   await page.getByRole("button", { name: "Export MP4" }).click();
-  await page.waitForFunction(() => /Rendered in|exited with code|cancelled|failed|Error/i.test(document.querySelector("aside")?.innerText ?? ""), null, { timeout: 5 * 60_000 });
-  if (!/Rendered in/.test(await page.locator("aside").innerText())) throw new Error(`export failed: ${(await page.locator("aside").innerText()).slice(-600)}`);
+  await page.waitForFunction(() => /Rendered in|exited with code|cancelled|failed|Error/i.test(document.querySelector("aside.rf-panel")?.innerText ?? ""), null, { timeout: 5 * 60_000 });
+  if (!/Rendered in/.test(await page.locator("aside.rf-panel").innerText())) throw new Error(`export failed: ${(await page.locator("aside.rf-panel").innerText()).slice(-600)}`);
   log(`export finished in ${Math.round((Date.now() - t0) / 1000)}s`);
   await page.waitForFunction(() => document.body.innerText.includes("Rendered in"));
   await new Promise((r) => setTimeout(r, 1500));

@@ -82,8 +82,14 @@ const store = (page) => page.evaluate(() => window.__nocap.useEditor.getState())
 const seek = (page, t) => page.evaluate((t) => window.__nocap.useEditor.getState().seek(t), t);
 const clipIds = async (page) => (await store(page)).project.clips.map((c) => c.id);
 const rail = (page) => page.getByRole("navigation", { name: "Tools" });
-const tool = (page, name) => rail(page).getByRole("button", { name, exact: true }).click();
-const aside = (page) => page.locator("aside");
+/** Opens a tool's panel. Clicking the open tool closes it, so a click that left no panel is repeated. */
+const tool = async (page, name) => {
+  const button = rail(page).getByRole("button", { name, exact: true });
+  await button.click();
+  if (!(await page.locator("aside.rf-panel").count())) await button.click();
+};
+// The tool panel only: the editor also has chat, notes and phone side columns.
+const aside = (page) => page.locator("aside.rf-panel");
 const readProject = (page, id) =>
   page.evaluate(async (id) => {
     const db = await new Promise((res, rej) => {
@@ -312,7 +318,7 @@ async function testEditor() {
       (assetId) => {
         const s = window.__nocap.useEditor.getState();
         const ov = s.project.overlays.find((o) => o.kind === "image");
-        return ov.assetId !== assetId || /stalled|Unsupported|failed|Error/i.test(document.querySelector("aside")?.innerText ?? "");
+        return ov.assetId !== assetId || /stalled|Unsupported|failed|Error/i.test(document.querySelector("aside.rf-panel")?.innerText ?? "");
       },
       before.assetId,
       { timeout: 6 * 60_000 },
@@ -333,7 +339,7 @@ async function testEditor() {
     await aside(page).getByLabel("Mask rate").selectOption("4");
     const t2 = Date.now();
     await aside(page).getByRole("button", { name: "Cut out the subject" }).click();
-    await page.waitForFunction(() => window.__nocap.useEditor.getState().project.clips[0]?.matte || /stalled|Unsupported|failed|Error/i.test(document.querySelector("aside")?.innerText ?? ""), null, { timeout: 10 * 60_000 });
+    await page.waitForFunction(() => window.__nocap.useEditor.getState().project.clips[0]?.matte || /stalled|Unsupported|failed|Error/i.test(document.querySelector("aside.rf-panel")?.innerText ?? ""), null, { timeout: 10 * 60_000 });
     const clip = (await store(page)).project.clips[0];
     const matteAsset = clip.matte ? await inspectAsset(page, clip.matte.assetId) : null;
     record("matte.clip", !!clip.matte && Math.abs(clip.matte.count - 36) <= 1 && clip.matte.fps === 4, { ms: Date.now() - t2, matte: clip.matte, asset: matteAsset, device: await page.evaluate(() => localStorage.getItem("reelflow.mlDevice.matte")), gpuOff });
@@ -373,7 +379,7 @@ async function runExport(page, console_, { label, resolution, segments, renderMo
   // Progress messages with timestamps, observed from inside the page.
   await page.evaluate(() => {
     window.__progress = [];
-    const el = document.querySelector("aside");
+    const el = document.querySelector("aside.rf-panel");
     let last = "";
     const tick = () => {
       const m = el.innerText.match(/(Loading[^\n]*|Preparing[^\n]*|Rendering[^\n]*|Encoding[^\n]*|Writing[^\n]*|Finishing[^\n]*|Rendered in[^\n]*|stalled[^\n]*|exited with code[^\n]*)/);
@@ -391,7 +397,7 @@ async function runExport(page, console_, { label, resolution, segments, renderMo
   const started = Date.now();
   const startedPerf = await page.evaluate(() => performance.now());
   await page.getByRole("button", { name: "Export MP4" }).click();
-  await page.waitForFunction(() => /Rendered in|exited with code|cancelled|failed|Error/i.test(document.querySelector("aside")?.innerText ?? ""), null, { timeout: 10 * 60_000 });
+  await page.waitForFunction(() => /Rendered in|exited with code|cancelled|failed|Error/i.test(document.querySelector("aside.rf-panel")?.innerText ?? ""), null, { timeout: 10 * 60_000 });
   const elapsed = (Date.now() - started) / 1000;
   await wait(1200);
   page.off("download", onDownload);
