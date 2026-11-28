@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Smile, Play, Square } from "lucide-react";
+import { Smile, Play, Square, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEditor } from "@/store/editorStore";
 import { engine } from "@/lib/playback/engine";
@@ -309,22 +309,23 @@ export function RecapPanel() {
                             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-sys-gray4 text-[11px] font-semibold text-white/80">{rank}</span>
                             <button
                               type="button"
-                              className="shrink-0 text-[13px] text-white tabular-nums hover:underline"
+                              className="min-w-0 flex-1 text-left text-[13px] text-white tabular-nums hover:underline"
                               onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
                               data-recap-open-moment
                               aria-expanded={isOpen}
                             >
                               {formatTime(laugh.start)}
                             </button>
-                            <button
-                              type="button"
-                              className="min-w-0 flex-1 truncate text-left text-[11px] text-label-2 hover:underline"
+                            <Button
+                              variant="ghost"
+                              size="xs"
                               onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
-                              data-recap-open-moment
+                              data-recap-edit-moment
                               aria-expanded={isOpen}
+                              aria-label={`${isOpen ? "Close" : "Edit"} moment ${rank}`}
                             >
-                              {label}{hasEdit ? " · edited" : ""}
-                            </button>
+                              <Pencil size={11} /> {isOpen ? "Close" : "Edit"}
+                            </Button>
                             <Button
                               variant="ghost"
                               size="xs"
@@ -335,6 +336,16 @@ export function RecapPanel() {
                               {isPlaying ? <Square size={11} /> : <Play size={11} />} {isPlaying ? "Stop" : "Play"}
                             </Button>
                           </div>
+                          {/* The name has its own line: beside the buttons there is no room for it. */}
+                          <button
+                            type="button"
+                            className="block w-full truncate text-left text-[11px] text-label-2 hover:underline"
+                            onClick={() => setOpenMomentId(isOpen ? null : laugh.id)}
+                            data-recap-open-moment
+                            aria-expanded={isOpen}
+                          >
+                            {label}{hasEdit ? " · edited" : ""}
+                          </button>
                           {isOpen && (
                             <MomentEditor laugh={laugh} cues={cues} duration={duration} />
                           )}
