@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadRecap, saveRecap } from "@/lib/recap/recapNames";
+import { loadRecap, saveRecap, saveTitles } from "@/lib/recap/recapNames";
 
 describe("recapNames", () => {
   afterEach(() => {
@@ -24,6 +24,19 @@ describe("recapNames", () => {
     const loaded = loadRecap(projectId);
     expect(loaded.names).toEqual(names);
     expect(loaded.closing).toBe(closing);
+  });
+
+  it("keeps moment names when the other choices are saved, and adds to them", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v); },
+    });
+
+    saveTitles("p9", { "10": "First" });
+    saveRecap("p9", { names: { 0: "Alice" }, closing: "Bye" });
+    saveTitles("p9", { "20": "Second" });
+    expect(loadRecap("p9")).toEqual({ names: { 0: "Alice" }, closing: "Bye", titles: { "10": "First", "20": "Second" } });
   });
 
   it("bad JSON gives empty result", () => {

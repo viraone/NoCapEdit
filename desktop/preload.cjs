@@ -100,6 +100,8 @@ contextBridge.exposeInMainWorld("nocapDesktop", {
     polish: (notes) => ipcRenderer.invoke("caption:polish", notes),
     cover: (frames) => ipcRenderer.invoke("caption:cover", frames),
     style: (look) => ipcRenderer.invoke("caption:style", look),
+    // Names for the Recap panel's moments: the Mac Studio, or DeepSeek when it does not answer.
+    titles: (texts) => ipcRenderer.invoke("caption:titles", texts),
   },
   // Exports saved straight into a folder the user picked (desktop/exportFolderHost.mjs). The page
   // gives a file name, never a path; the folder comes from the Mac's own folder window.

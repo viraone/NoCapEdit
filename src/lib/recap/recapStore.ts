@@ -4,7 +4,8 @@ import { makeTrailer } from "@/lib/recap/makeTrailer";
 import { useEditor } from "@/store/editorStore";
 import { findSets, setAt } from "@/lib/recap/performers";
 import { layoutClips } from "@/lib/models/timeline";
-import { loadRecap, saveRecap } from "@/lib/recap/recapNames";
+import { loadRecap, saveRecap, saveTitles } from "@/lib/recap/recapNames";
+import { batches, matchTitles, momentText, titleKey } from "@/lib/recap/clipTitles";
 import { cutPieces } from "@/lib/recap/cutPieces";
 import { clearOpener, loadOpener as loadSavedOpener, parseClock, saveOpener, type Opener } from "@/lib/recap/opener";
 import { whileBusy } from "@/lib/utils/busy";
@@ -16,6 +17,14 @@ export function recapKey(projectId: string, clips: { id: string; inPoint: number
     parts.push(c.id, String(c.inPoint), String(c.outPoint), String(c.speed ?? 1));
   }
   return parts.join("|");
+}
+
+type Namer = (texts: string[]) => Promise<{ titles: string[]; by: "Mac Studio" | "DeepSeek" }>;
+
+/** The desktop app's naming call (desktop/captionAi.mjs); null on the website. */
+function namer(): Namer | null {
+  if (typeof window === "undefined") return null;
+  return (window as unknown as { nocapDesktop?: { caption?: { titles?: Namer } } }).nocapDesktop?.caption?.titles ?? null;
 }
 
 interface RecapState {
@@ -45,6 +54,14 @@ interface RecapState {
   cancel(): void;
   edits: Record<string, MomentEdit>;
   setEdit(id: string, edit: MomentEdit | null): void;
+  /** A short name for each moment, by laugh id. */
+  titles: Record<string, string>;
+  naming: { done: number; total: number } | null;
+  /** Who made the names just asked for. */
+  namedBy: ("Mac Studio" | "DeepSeek")[];
+  namingError: string | null;
+  /** Names the moments that have none yet. Needs captions and the desktop app. */
+  nameClips(): Promise<void>;
 }
 
 let currentController: AbortController | null = null;
@@ -197,7 +214,7 @@ export const useRecap = create<RecapState>((set, get) => ({
     const myRunId = ++runId;
 
     const saved = loadRecap(project.id);
-    set({ key, job: { message: "Starting", progress: null }, error: null, laughs: null, kept: [], names: saved.names, closing: saved.closing ?? "Like and follow for the next show", trailerId: null, edits: {} });
+    set({ key, job: { message: "Starting", progress: null }, error: null, laughs: null, kept: [], names: saved.names, closing: saved.closing ?? "Like and follow for the next show", trailerId: null, edits: {}, titles: {}, naming: null, namedBy: [], namingError: null });
 
     try {
       const laughs = await findLaughs({
@@ -210,6 +227,7 @@ export const useRecap = create<RecapState>((set, get) => ({
       });
       if (myRunId !== runId) return;
       set({ laughs, job: null });
+      void get().nameClips();
     } catch (e) {
       if (myRunId !== runId) return;
       if (e instanceof DOMException && e.name === "AbortError") {
@@ -228,6 +246,57 @@ export const useRecap = create<RecapState>((set, get) => ({
     // The cancelled run may still report progress (its sound is still being read): ignore it from here.
     runId++;
     set({ job: null });
+  },
+  titles: {},
+  naming: null,
+  namedBy: [],
+  namingError: null,
+  nameClips: async () => {
+    const project = useEditor.getState().project;
+    const laughs = get().laughs;
+    const ask = namer();
+    if (!ask || !project || !laughs?.length || get().naming) return;
+    const cues = project.cues ?? [];
+    if (!cues.length) return;
+
+    // Names already made for this project are kept: only the rest are asked for.
+    const titles = matchTitles(laughs, loadRecap(project.id).titles);
+    const wanted = laughs
+      .filter((l) => !titles[l.id])
+      .map((laugh) => ({ laugh, text: momentText(laugh, cues) }))
+      .filter((w) => w.text);
+    set({ titles, namingError: null });
+    if (!wanted.length) return;
+
+    const myRunId = runId;
+    set({ naming: { done: 0, total: wanted.length } });
+    try {
+      let done = 0;
+      for (const group of batches(wanted, 10)) {
+        const reply = await ask(group.map((w) => w.text));
+        if (myRunId !== runId) return;
+        const fresh: Record<string, string> = {};
+        const keep: Record<string, string> = {};
+        group.forEach(({ laugh }, i) => {
+          const title = reply.titles[i];
+          if (!title) return;
+          fresh[laugh.id] = title;
+          keep[titleKey(laugh)] = title;
+        });
+        saveTitles(project.id, keep);
+        done += group.length;
+        set((s) => ({
+          titles: { ...s.titles, ...fresh },
+          namedBy: s.namedBy.includes(reply.by) ? s.namedBy : [...s.namedBy, reply.by],
+          naming: { done, total: wanted.length },
+        }));
+      }
+      set({ naming: null });
+    } catch (e) {
+      if (myRunId !== runId) return;
+      const why = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e);
+      set({ naming: null, namingError: why });
+    }
   },
   edits: {},
   setEdit: (id, edit) => {

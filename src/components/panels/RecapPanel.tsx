@@ -41,7 +41,7 @@ function StepHeading({ n, title }: { n: number; title: string }) {
 export function RecapPanel() {
   const project = useProject();
   const router = useRouter();
-  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly, opener, openerJob, openerError, loadOpener, addOpener, removeOpener, edits } = useRecap();
+  const { key, laughs, job, error, run, cancel, kept, toggleKeep, making, trailerId, make, cancelMake, names, setName, closing, setClosing, keepOnly, opener, openerJob, openerError, loadOpener, addOpener, removeOpener, edits, titles, naming, namedBy, namingError, nameClips } = useRecap();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [playingRange, setPlayingRange] = useState<{ start: number; end: number } | null>(null);
   const [openerStart, setOpenerStart] = useState("0:00");
@@ -285,6 +285,24 @@ export function RecapPanel() {
                 )}
                 {openerError && <p className="rf-read-note rf-error" data-recap-opener-error>{openerError}</p>}
                 <p className="text-[14px] text-label-2">{laughs.length} moments, biggest first</p>
+                {naming && (
+                  <p className="text-[15px] font-semibold text-white" data-recap-naming>
+                    Naming your moments… {naming.done} of {naming.total}
+                  </p>
+                )}
+                {!naming && namedBy.length > 0 && (
+                  <p className="text-[14px] text-label-2" data-recap-named-by>
+                    Named by {namedBy.map((who) => (who === "Mac Studio" ? "the Mac Studio" : "DeepSeek")).join(" and ")}
+                  </p>
+                )}
+                {namingError && (
+                  <div className="space-y-2" data-recap-naming-error>
+                    <p className="rf-read-note rf-error">Could not name the moments. {namingError}</p>
+                    <Button variant="outline" size="bar" className="w-full" onClick={() => void nameClips()}>
+                      Try naming again
+                    </Button>
+                  </div>
+                )}
                 <ul className="space-y-2.5">
                   {laughs.map((laugh, i) => {
                     const rank = i + 1;
@@ -293,6 +311,7 @@ export function RecapPanel() {
                     const isKept = kept.includes(laugh.id);
                     const setIdx = setAt(sets, laugh.start);
                     const performerName = setIdx >= 0 ? (names[setIdx] ?? sets[setIdx].name) : "";
+                    const title = titles[laugh.id] ?? "";
                     const hasEdit = edits[laugh.id] !== undefined;
                     const isOpen = openMomentId === laugh.id;
                     return (
@@ -311,10 +330,13 @@ export function RecapPanel() {
                           data-recap-open-moment
                           aria-expanded={isOpen}
                         >
-                          <span className="flex items-center justify-between gap-2">
-                            <span className="min-w-0 truncate text-[17px] font-bold text-white">{performerName || "Laugh"}</span>
+                          <span className="flex items-start justify-between gap-2">
+                            <span className="min-w-0 break-words text-[17px] font-bold text-white" data-recap-title>
+                              {title || performerName || "Laugh"}
+                            </span>
                             <span className="shrink-0 text-[14px] font-semibold text-label-2 tabular-nums">#{rank}</span>
                           </span>
+                          {title && performerName && <span className="mt-1 block text-[15px] text-white">{performerName}</span>}
                           <span className="mt-1 block text-[14px] text-label-2 tabular-nums">
                             {formatTime(laugh.start)} · {seconds} s laugh{hasEdit ? " · edited" : ""}
                           </span>

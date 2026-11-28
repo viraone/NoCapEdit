@@ -7,6 +7,9 @@
 //   { "apiKeyFile": "~/.config/nocap-edit/gemini_key", "model": "gemini-flash-latest" }
 // Without that file, or with no key in the key file, the button does not appear. The key is read here and never reaches the page.
 //
+// The Recap panel's moment names go to the Mac Studio (desktop/studioProxy.mjs) first, and to DeepSeek
+// only when the Studio does not answer: what is sent is the transcript text of each moment.
+//
 // DeepSeek can stand in when Gemini is too busy to answer (the same two jobs, so the notes or frames go
 // there instead). It is on only with its own config file, ~/.config/nocap-edit/deepseek.json:
 //   { "apiKeyFile": "~/path/to/key-or-env-file", "model": "deepseek-flash" }
@@ -18,6 +21,8 @@ import { isAppUrl } from "./lib/appUrl.mjs";
 import { captionRequest, captionFromReply, parseGeminiConfig } from "./lib/captionAi.mjs";
 import { coverFromReply, coverRequest, validCoverFrames } from "./lib/coverAi.mjs";
 import { styleFromReply, styleRequest, validStyleAsk } from "./lib/styleAi.mjs";
+import { titleMessages, titlesFromReply, validTitleAsk } from "./lib/clipTitles.mjs";
+import { studioChat } from "./studioProxy.mjs";
 import { asGeminiReply, keyFromFile, parseDeepseekConfig, toDeepseekRequest } from "./lib/deepseek.mjs";
 
 const CONFIG_FILE = process.env.NOCAP_GEMINI_CONFIG ?? path.join(os.homedir(), ".config", "nocap-edit", "gemini.json");
@@ -161,6 +166,35 @@ async function styleText(look) {
   return style;
 }
 
+/**
+ * A short name for each moment: the Mac Studio first, DeepSeek when it does not answer.
+ * @param {string[]} texts what is said in each moment
+ * @returns {Promise<{ titles: string[], by: "Mac Studio" | "DeepSeek" }>}
+ */
+async function titleClips(texts) {
+  const [system, user] = titleMessages(texts);
+  try {
+    const content = await studioChat({ messages: [system, user], temperature: 0.6, max_tokens: 800 }, 60_000);
+    const titles = titlesFromReply(content, texts.length);
+    if (titles) return { titles, by: "Mac Studio" };
+    console.error("[titles] the Mac Studio's answer could not be used");
+  } catch (e) {
+    console.error("[titles]", e instanceof Error ? e.message : e);
+  }
+  const spare = await loadSpare();
+  if (!spare) throw new Error("The Mac Studio did not answer, and DeepSeek is not set up on this Mac.");
+  const reply = await askDeepseek(spare, {
+    systemInstruction: { parts: [{ text: system.content }] },
+    contents: [{ parts: [{ text: user.content }] }],
+    generationConfig: { responseMimeType: "application/json", temperature: 0.6, maxOutputTokens: 800 },
+  }).catch((e) => {
+    throw new Error(`The Mac Studio did not answer. ${e.message}`);
+  });
+  const titles = titlesFromReply(/** @type {any} */ (reply)?.candidates?.[0]?.content?.parts?.[0]?.text, texts.length);
+  if (!titles) throw new Error("DeepSeek's answer could not be used.");
+  return { titles, by: "DeepSeek" };
+}
+
 export function registerCaptionAi() {
   /** @param {string} channel @param {(...args: any[]) => unknown} fn */
   const handle = (channel, fn) =>
@@ -184,6 +218,10 @@ export function registerCaptionAi() {
   handle("caption:cover", (frames) => {
     if (!validCoverFrames(frames)) throw new Error("The video's frames could not be used.");
     return pickCover(/** @type {string[]} */ (frames));
+  });
+  handle("caption:titles", (texts) => {
+    if (!validTitleAsk(texts)) throw new Error("The moments' words could not be used.");
+    return titleClips(/** @type {string[]} */ (texts));
   });
   handle("caption:style", (look) => {
     if (!validStyleAsk(look)) throw new Error("The words or the picture could not be used.");

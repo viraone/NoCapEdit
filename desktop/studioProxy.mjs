@@ -93,6 +93,28 @@ export async function handleStudioRequest(request) {
   }
 }
 
+/**
+ * One chat request made by the shell itself. Throws when the Studio is not set up or does not answer.
+ * @param {Record<string, unknown>} body without a model
+ * @param {number} timeout milliseconds
+ * @returns {Promise<unknown>} the text of the reply
+ */
+export async function studioChat(body, timeout) {
+  const config = await loadConfig();
+  if (!config) throw new Error("The Mac Studio connection is not set up on this Mac.");
+  const key = (await fsp.readFile(config.apiKeyFile, "utf8")).trim();
+  const res = await fetch(`${await withAddress(config.baseUrl)}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    // Short answers only: no reasoning first.
+    body: JSON.stringify({ ...body, model: config.model, chat_template_kwargs: { enable_thinking: false } }),
+    signal: AbortSignal.timeout(timeout),
+  });
+  if (!res.ok) throw new Error(`The Mac Studio refused the request: status ${res.status}`);
+  const reply = await res.json();
+  return reply?.choices?.[0]?.message?.content;
+}
+
 export function registerStudio() {
   ipcMain.handle("studio:info", async (event) => {
     if (!event.senderFrame || !isAppUrl(event.senderFrame.url)) throw new Error("not allowed");
